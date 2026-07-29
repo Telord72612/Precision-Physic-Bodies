@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="http://qconsulting.ca/fo3/ModConfig5.0.xsd">
+
+  <moduleName>Precision Physic Bodies</moduleName>
+
+  <!-- Banner shown at the top of every installer page.
+       Path is relative to the ARCHIVE ROOT, backslashes, and the file must actually
+       exist or Vortex/MO2 will error on install. -->
+  <moduleImage path="fomod\images\header.jpg" showImage="true" showFade="true" height="-1"/>
+
+  <installSteps order="Explicit">
+
+    <!-- ══════════════════════════════════════════════════════════════════════
+         Sibling-mod compatibility — ONE option, and it writes a file that
+         belongs to another mod, so it is opt-in and says plainly what it
+         overwrites.
+         PPB deliberately ships NO copy of higgs_vr.ini, activeragdoll.ini or
+         NextGenDecapitations.ini. Replacing a user's whole config to change one
+         line is not a trade worth making, and the NGD file only ever differed
+         by a debug log level.
+         ══════════════════════════════════════════════════════════════════════ -->
+    <installStep name="Compatibility Patch">
+      <optionalFileGroups order="Explicit">
+
+        <group name="Dismembering Framework" type="SelectAny">
+          <plugins order="Explicit">
+
+            <plugin name="Dismembering Framework - VR freeze fix">
+              <description>
+INSTALL THIS IF YOU USE DISMEMBERING FRAMEWORK. Skip it otherwise.
+
+Fixes the hard freeze when one NPC dismembers another. That freeze is a thread deadlock:
+DF cuts on a worker thread that needs the SKSE task queue, while the main thread holds the
+same lock inside the death-frame gear-attach and skinning pass. It predates PPB.
+
+This installs an override for DismemberingFramework.ini that turns DF's threaded hit
+processing OFF, which makes the deadlock structurally impossible. PPB then supplies the
+death confirmation DF loses that way, by calling DF's own public API on the main thread.
+DF keeps all of its own conditions, chances, sounds and limb physics.
+
+The file is stock DF settings with exactly ONE value changed:
+    bDeferredHitProcess = 0     (DF default: 1)
+
+OVERWRITES: SKSE/Plugins/DismemberingFramework.ini — if you have tuned DF yourself, copy
+that one line into your own file instead of installing this.
+
+If you use DF and do NOT apply this, open PPB_tuning.txt and set dgDeathCut 0, or you may
+get doubled cuts.
+              </description>
+              <files>
+                <folder source="10 Dismembering Framework fix" destination="" priority="0"/>
+              </files>
+              <typeDescriptor><type name="Optional"/></typeDescriptor>
+            </plugin>
+
+          </plugins>
+        </group>
+
+      </optionalFileGroups>
+    </installStep>
+
+  </installSteps>
+
+  <!-- Core payload: always installed, nothing to choose.
+       All four race skeletons ship together on purpose — the race map points a race at a
+       skeleton file, and a map entry pointing at a file that was not installed would leave
+       those NPCs without a skeleton. They are ~100 KB each; which races are actually driven
+       is decided by PPB_Skeletons_Added_Race.ini, which the user can edit at any time. -->
+  <requiredInstallFiles>
+    <folder source="00 Core" destination="" priority="0"/>
+  </requiredInstallFiles>
+
+</config>

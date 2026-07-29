@@ -1,0 +1,136 @@
+# PPB_skeletons.txt — RUNTIME SKELETON MAP (2026-07-17). Read ONCE at kDataLoaded by PPB.dll.
+# No ESP overrides, no masters: the DLL rewrites each race's in-memory FEMALE skeleton path after
+# every plugin has resolved, before any NPC 3D exists. Receipts: PPB.log "SKELMAP:" lines.
+#
+#   race   <RaceEditorID>  <path relative to Data\meshes\>
+#   npcCap <localHexID>:<Plugin.esp>  <slot>  <childIdx>  ax ay az bx by bz r
+#          (slot: hand|forearm|upperarm|head|spine0|spine1|spine2|thigh|calf|foot|com;
+#           per-NPC child geometry — WINS over the global cap*C* knob for that actor only)
+
+# ── ACTIVE ─────────────────────────────────────────────────────────────────────────────────────
+# M'rissi = Magically Altered Khajiit (human face, armor-carried SMP tail): the HUMAN skeleton.
+# Bone trees are identical (byte-copy lineage) — this changes ONLY the collision children, and
+# pulls her off skeletonBeast_female.nif BEFORE the Argonian horns/ridge get dialed there.
+# [RETIRED 2026-07-21] superseded by PPB_Skeletons.ini — the legacy parser ran
+# AFTER the ini and clobbered it back to the vanilla-path name. ini is authoritative.
+# race MRTMrissiRace Actors\Character\Character Assets Female\skeleton_female.nif
+
+# Ulliss / half-dragons (Unslaad): race skeleton was actors\Crb\HalfDragon\skeleton.nif — verified
+# 2026-07-19 a STRICT SUBSET of ours (648 nodes, 0 extras, chain locals identical 0.0000u, scale 1)
+# = an old XP32 copy with stock 2011 collision. Repoint is visually a no-op + gives the full PPB
+# body. Tail = equipable CrbTail.nif skinned to TailBone01..05 (we carry them dormant) ✓; horns =
+# CrbHorn.nif head-rigid ✓. Also covers Austella + the Hoarfrost Witch (same race, all female).
+# [RETIRED 2026-07-21] superseded by PPB_Skeletons.ini — the legacy parser ran
+# AFTER the ini and clobbered it back to the vanilla-path name. ini is authoritative.
+# race zzzCrbHalfDragonRace Actors\Character\Character Assets Female\skeleton_female.nif
+
+# Yvanni (Draenei follower): race skeleton was Yvanni meshes\body\skeleton_female.nif — old XP32,
+# stock 2011 collision, LACKS 108 of our nodes (Softbody/CME/mouth). Verified 2026-07-19: every
+# mesh she wears skins only to bones we carry (hooves = standard Toe0 bones + 4u NiOverride heel,
+# handled by the heel fix); her Mal_Tail 1..13 SMP bones are tail-NIF-carried -> FSMP clones them
+# onto any skeleton. HER OWN skeleton file (byte-copy of skeleton_female.nif incl. the 23-child
+# head w/ 8 horn seeds) so her hoof/horn capsules can be dialed + BAKED without touching others:
+# [RETIRED 2026-07-21] superseded by PPB_Skeletons.ini — the legacy parser ran
+# AFTER the ini and clobbered it back to the vanilla-path name. ini is authoritative.
+# race DraeneiRace Actors\Character\Character Assets Female\skeleton_female_draenei.nif
+
+# ── YVANNI per-NPC HOOVES + BREASTS (dialed + finalized 2026-07-20) ──────────────────────────
+# Scoped to HER via npcCap so they WIN over the global calf/foot/spine2 knobs (which are reset to
+# the human base) AND keep ReShape working for every other woman. capMirrorL mirrors calf/foot to
+# her left leg. Her HORNS are baked into skeleton_female_draenei.nif head 15..22 (separate).
+# childIdx: main=0, C1=1 … . Needs the 2026-07-20 npcCap spaced-plugin parser fix (DLL 2e4ae535).
+npcCap 000800:Yvanni Follower.esp calf 0  0.5 -6.0 -2.4  0.92 -3.75 14.4  2.618
+npcCap 000800:Yvanni Follower.esp calf 1  0.6 -1.0 -9.9  0.775 -4.895 -2.745  3.838
+npcCap 000800:Yvanni Follower.esp calf 2  0.95 -4.31 13.59  0.525 -2.705 15.64  3.133
+npcCap 000800:Yvanni Follower.esp calf 3  0.2 -3.32 14.58  0.15 1.57 23.57  2.328
+npcCap 000800:Yvanni Follower.esp calf 4  0.0 -0.8 -11.5  0.0 -2.8 -4.5  1.313
+npcCap 000800:Yvanni Follower.esp foot 0  0.87 2.26 6.85  0.87 4.06 2.37  1.5
+npcCap 000800:Yvanni Follower.esp foot 1  1.82 1.76 9.85  1.82 2.76 -0.63  1.2
+npcCap 000800:Yvanni Follower.esp foot 2  -1.08 1.76 8.35  0.92 2.76 -0.63  0.8
+npcCap 000800:Yvanni Follower.esp spine2 11  2.853 7.587 11.565  5.404 11.788 10.565  4.6
+npcCap 000800:Yvanni Follower.esp spine2 12  -2.853 7.587 11.565  -5.404 11.788 10.565  4.6
+
+# Orc: NO map line — uses the default human skeleton_female.nif (2026-07-19, user decision:
+# "orc jaw is not different enough to matter"). skeleton_female_orc.nif DELETED (archived to
+# tools/ppb-scratch/deleted_skeletons/). Orc females now load skeleton_female.nif = the full
+# human bake + the 8 head-joint seeds (below), same as every other non-beast female.
+
+# ── ELVES: use the default human skeleton_female.nif (no map line; 2026-07-18 decision — the
+# dialed elf head came out identical to human). skeleton_female_elf.nif DELETED (archived to
+# tools/ppb-scratch/deleted_skeletons/) — its reason to exist (2 buried antler seeds) is
+# SUPERSEDED by the 8 head-joint seeds now in skeleton_female.nif (2026-07-19). Auri, a vanilla
+# WoodElfRace, therefore loads skeleton_female.nif and gets those 8 head children automatically.
+
+# ── 8 HEAD-JOINT SEED CAPSULES (2026-07-19) ─────────────────────────────────────────────────
+# skeleton_female.nif head list = 23 children now: main + C1..C14 (baked human skull) + 8 SEEDS
+# at child indices 15..22, each a tiny 2u rod (r0.5u) buried at the head Havok joint origin.
+# For NPCs with horns/antlers/etc. They stay INVISIBLE for everyone (no capHeadC15..22 knobs;
+# ApplyListSlot leaves a no-knob/no-npcCap child as its buried seed) until a per-NPC npcCap line
+# below positions them. ⚠ Beast heads (khajiit/argonian) also have children 15/16 = ears/horns
+# driven by the dormant capHeadC15/C16 knobs; a HUMAN head now ALSO has 15/16, so a future beast
+# head re-dial MUST use a `sculpt` gate or every human woman sprouts ear/horn capsules.
+#
+# Auri (000D63:018Auri.esp, vanilla WoodElfRace -> skeleton_female.nif): FIRST test. Antlers are a
+# boneless head part (shape 'auriantlers' in Auri - A High Poly Replacer/.../FaceGeom/018Auri.esp/
+# 00000D63.nif). Next session: summon her, dial these seeds onto her antlers by eye, write the
+# values here (up to 8 capsules, children 15..22). Placeholders below — MEASURE before enabling.
+# ★ AURI'S ANTLERS — FINAL dialed values 2026-07-20 (archived tools/ppb-scratch/auri_antlers.txt).
+# STAGED, not yet active. They need: (a) the npcCap base-vs-REFERENCE fix (npcCap keys on the base
+# NPC FormID but CapFix looks up by the actor's REFERENCE id — Yvanni hit this too, DLL rebuild
+# pending), and (b) the game-close finalization = reset capHeadC15..22 to the up-20u seed +
+# Enable 0 + comment the `sculpt skeleton_female.nif head` gate. UNCOMMENT these there. NEVER bake
+# (shared human nif → every woman would get antlers). 4 segments/side, L=X-mirror of R.
+npcCap 000D63:018Auri.esp head 15   4.0  7.8  13.2    3.7  7.0   9.2   0.5
+npcCap 000D63:018Auri.esp head 16  -4.0  7.8  13.2   -3.7  7.0   9.2   0.5
+npcCap 000D63:018Auri.esp head 17   4.3  7.6  11.4    6.42 3.73 13.37  0.5
+npcCap 000D63:018Auri.esp head 18  -4.3  7.6  11.4   -6.42 3.73 13.37  0.5
+npcCap 000D63:018Auri.esp head 19   6.3  4.1  13.1    5.5 -2.5  13.5   0.5
+npcCap 000D63:018Auri.esp head 20  -6.3  4.1  13.1   -5.5 -2.5  13.5   0.5
+npcCap 000D63:018Auri.esp head 21   6.05 4.34 13.22   5.8  2.8  15.5   0.5
+npcCap 000D63:018Auri.esp head 22  -6.05 4.34 13.22  -5.8  2.8  15.5   0.5
+
+# ── SCULPT GATE (2026-07-17) ────────────────────────────────────────────────────────────────
+# During a capsule dial session, uncomment ONE `sculpt` line: global cap* knobs then apply ONLY
+# to actors whose race female skeleton is that NIF — finished/baked capsules on every other
+# skeleton stay frozen. Comment it back out (and restart) when the session ends. npcCap lines
+# are exempt (they target one NPC by design). Needs a game restart to change (parsed once).
+# PREFER the slot-scoped form (`sculpt <nif> <slot>`): only that slot is gated, so every other
+# actor keeps her normal body dressing (arc re-scale + body-shape ratios). A slot-less line gates
+# ALL slots — non-target actors then revert to bare NIF geometry on their next ragdoll rebuild.
+# Slots: hand fore upper head spine0 spine1 spine2 thigh calf foot com
+# sculpt skeletonbeast_female.nif head            <- Argonian head sessions
+# sculpt skeletonbeast_female_khajiit.nif head    <- Khajiit head sessions
+# sculpt skeleton_female.nif head                 <- human/elf/orc head sessions (all non-beast
+#    females share this NIF now: Nord/Breton/Imperial/Redguard/Orc/all elves + M'rissi + Auri
+#    + Ulliss/half-dragons)
+# ── NEXT SESSION MENU (2026-07-20) — Yvanni's horns are BAKED into her draenei NIF. Remaining:
+# her hooves + breast, and Auri's antlers. The gate stores ONE target (slot lines can't stack),
+# is read ONCE at launch, and while ON other women lose ReScale+ReShape — so it's OFF now (normal
+# play; Yvanni already shows her baked horns). ARM ONE task at the session's start, then restart:
+#   • YVANNI hooves + breast → uncomment the slot-less draenei line below (covers her whole
+#       skeleton): dial capCalf*/capFoot* (hooves) + capSpine2C11/C12 (breast), then bake into her nif.
+#   • AURI antlers → uncomment the skeleton_female.nif head line + set capHeadC15..C22 Enable 1
+#       (reset to the up-20u seed): dial, then TRANSCRIBE to her npcCap head 15..22 (never bake — shared nif).
+# ★ AURI ANTLER dial ARMED (2026-07-20): Yvanni is FINALIZED (horns baked; hooves/breasts via the
+# npcCap block above; global calf/foot/spine2 knobs reset to human base), so the gate is free for
+# Auri. Head slot gated to skeleton_female.nif = every human-skeleton woman; capHeadC15..C22 are
+# Enable 1 at the up-20u seed. Dial Auri's antlers, then TRANSCRIBE to her npcCap head 15..22
+# (never bake — shared nif), knobs Enable 0, comment this out. Yvanni (draenei) is gated OUT so
+# her baked horns show; her npcCap hooves/breasts are gate-exempt and apply regardless.
+# ★ FINALIZED 2026-07-20: Auri's antlers transcribed to her npcCap head 15..22 (above) → gate OFF
+# (normal play, ReShape restored for all women; the head knobs are reset to seed + Enable 0).
+# sculpt skeleton_female.nif head
+# sculpt skeleton_female_draenei.nif               <- YVANNI (done; re-arm only for touch-ups)
+#
+# !! Every race head is BAKED into its NIF and every capHead* knob is OFF. The tuning's capHead*
+# !! VALUES currently hold the ARGONIAN bake (not khajiit ears) — NEVER re-enable any capHead*
+# !! knob without an active sculpt line, or every head in the game wears argonian geometry again.
+# !! (Doubly true now that the human head has 23 children incl. 15/16 — see the seed note above.)
+
+# ── RACE BIAS (2026-07-19e) — flat lateral+radius capsule bias per race (fur-race measurement
+# correction: M'rissi's mesh reads systematically wider than her judged silhouette). Height
+# untouched. Parsed at kDataLoaded; receipt: "SKELMAP: raceBias ...".
+# raceBias RETIRED for M'rissi (2026-07-19f): the 0.93 was a shim canceling the 3BA-vs-Softbody
+# BASE offset — per-body-type neutrals (fingerprint-keyed, in the DLL) now handle it properly.
+# The mechanism stays for genuinely odd races:
+#raceBias <RaceEditorID> <mult>

@@ -1,0 +1,1679 @@
+# PPB — Precision Physic Bodies live tuning (split from AIHands_grab_tuning.txt 2026-07-07).
+# Edit a value and save: the plugin polls this file ~1x/second even while idle, so changes take
+# effect live in VR — no rebuild, no game restart. Format: "key value", one per line. '#' = comment.
+#
+# Watch PPB.log for "GrabTune FILE LOADED ..." (confirms the file IS read) and
+# "CapFix FILE-CHANGE detected" (confirms a change was picked up + a new generation armed).
+# The PPB keys: capHand*/capFore*/capUpper*/capHead*/capHandC1-3*/capSpine0-2*/capNeck*/capThigh*/
+# capCalf*/capFoot*/capCom* (capsules), piv* (joint pivots + the NEW piv*UpU world-Z lifts),
+# pivAutoSeat, pivClavFollow, capAutoFit, heelFix.
+
+# --- HEEL FIX (2026-07-02, PROTOTYPE — flip LIVE while looking at a heeled NPC) ---
+# Heels raise the VISIBLE body ~8u but the Havok ragdoll (PLANCK touch zones, HIGGS contact, our weld
+# anchor) stays at barefoot height — measured on Carmella: ragdoll hand exactly heelZ below the visible
+# hand. This fix reads each NPC's heel offset live and drives her ENTIRE ragdoll up to match the visuals.
+#   heelFix 1 = ON. Verify: AIHands.log prints "HEELFIX ... heelZ=8.0" and GA-TRACK's boneVsRag should
+#   drop from ~9.3u to ~2.2u on a heeled NPC mid-give. WATCH FOR the two failure modes: the NPC visibly
+#   RISING ~8u (double-raise — toggle back off) or feet/legs fighting (foot-IK). Applies to every
+#   PLANCK-driven NPC near you while on; barefoot NPCs are untouched.
+# *** VERIFIED WORKING 2026-07-02 (ragdoll raised to the visual, body stays planted). This key is the
+# *** STARTUP DEFAULT, read ONCE at game load: 1 = auto-on for every NPC (per-NPC amount detected live
+# *** from the applied skeleton offset — stuck/failed heels read 0 and are correctly skipped; sitting
+# *** NPCs auto-suspend while Heels Fix cancels their offset). Toggle live in-game with the console
+# *** command:  heelfix   (or hf)
+heelFix 1
+
+# --- CAP FIX (2026-07-02, LIVE hand-capsule calibration) ---
+# The RIGHT hand's collision capsule is DEGENERATE (both endpoints at the wrist, radius 2.4) — objects
+# hit it before reaching the visible palm, bending the hand inward on receives. WORKFLOW:
+#   1. In-game near a driven NPC, type  capfix  in the console with capHandEnable 0 — the log prints the
+#      CURRENT capsule ("CapFix ... BEFORE ...") so you know the starting values.
+#      frame sits at the wrist), save, type  capfix  again — the capsule updates instantly; watch it with
+#      the collision visualizer. Repeat until it hugs the palm.
+#      properly mirrored) and this runtime tool turns back off.
+# Applies to the RIGHT hand of every driven NPC, once per capfix press. Session-only until baked.
+# *** CLAUDE-DRIVEN live capsule editor (1 Hz auto-poll): I edit; changes apply in-game within ~1s.
+# *** Toggle the collision visualizer OFF/ON to see each change. Log proof: "CapFix FILE-CHANGE".
+# *** Axes (right side): +X = thumb/outward, +Y = knuckles/back, +Z = along the limb away from the joint.
+# HAND: DIALED & BAKED into skeleton_female.nif 2026-07-03 (A=[2.0 0.7 1.0] B=[0.17 -0.3 6.3] r=2.0,
+# mirrored left). Knob left off; re-enable only for touch-ups.
+capHandEnable 0
+capHandAX 2.0
+capHandAY 0.7
+capHandAZ 1.0
+capHandBX 0.17
+capHandBY -0.3
+capHandBZ 6.3
+capHandR 2.0
+# FOREARM (NPC R Forearm [RLar]) — stock: capsule z 0.75->13.4, r 3.7 (starting values below = stock).
+# AXIS CALIBRATION 2026-07-03 (in-VR observed): forearm-bone +X = PALM side (not thumb!), so -X = knuckle
+# side. +Y = THUMB side (wrist +1.5Y move accepted). +Z = wrist-ward along the bone (B = wrist end).
+capForeEnable 1
+capForeAX 0.0
+capForeAY 2.7
+capForeAZ -1.3
+capForeBX -0.1
+capForeBY 2.0
+capForeBZ 4.3
+capForeR 2.2
+# UPPER ARM (NPC R UpperArm [RUar]) — stock: z 3.13->14.27, r 6.07.
+# AXIS CALIBRATION 2026-07-03 (in-VR observed): +X = TOWARD the body (inward), so -X = away/outward.
+# +Z = elbow-ward along the bone (A = shoulder end, B = elbow end). Front/back axis = ±Y, not yet observed.
+capUpperEnable 1
+capUpperAX 2.7
+capUpperAY 0.5
+capUpperAZ -0.5
+capUpperBX 1.3
+capUpperBY 0.2
+capUpperBZ 11.2
+capUpperR 3.0
+# HEAD (NPC Head [Head]) — IT IS A CAPSULE, revealed by the 2026-07-03 BEFORE log: a near-degenerate
+# BALL — A=[-0.01 3.00 3.20] B=[-0.01 2.24 3.20] r=8.17 (endpoints only 0.76u apart). That's why it
+# doesn't reach the face. Starting values below = live stock; dial = stretch it along the face axis.
+capHeadEnable 0
+capHeadAX -0.011
+capHeadAY 3.57
+capHeadAZ 7.46
+capHeadBX -0.011
+capHeadBY 1.197
+capHeadBZ 7.46
+capHeadR 5.517
+
+# --- 3-CAPSULE HAND (R hand = bhkListShape since the 2026-07-03 bake; VR-verified same day) ---
+# Each of the three palm rods is individually live-tunable (needs the DLL built 2026-07-03+; the tool
+# drills into the list children and re-patches the cached union AABB automatically). Child order:
+# C1 = center rod, C2 = thumb-side rod, C3 = pinky-side rod. Same axes as the hand slot
+# (+X thumb, +Y knuckles/back, +Z fingertips). Starting values = the baked NIF values.
+# NOTE: adding/removing a rod stays a FILE-ONLY operation (structure change) — these knobs only
+# move/resize the three that exist. Final values get re-baked into the NIF (mirrored left).
+capHandC1Enable 1
+capHandC1AX 2.7
+capHandC1AY -1.0
+capHandC1AZ -2.1
+capHandC1BX 2.87
+capHandC1BY -1.5
+capHandC1BZ 4.5
+capHandC1R 1.0
+capHandC2Enable 1
+capHandC2AX 3.3
+capHandC2AY -1.2
+capHandC2AZ -2.1
+capHandC2BX 4.67
+capHandC2BY -2.8
+capHandC2BZ 2.15
+capHandC2R 1.0
+capHandC3Enable 1
+capHandC3AX 0.0
+capHandC3AY -1.0
+capHandC3AZ -2.1
+capHandC3BX -0.93
+capHandC3BY -2.2
+capHandC3BZ 3.45
+capHandC3R 1.0
+capHandC4Enable 1
+capHandC4AX 1.8
+capHandC4AY -1.0
+capHandC4AZ -2.1
+capHandC4BX 1.603
+capHandC4BY -1.733
+capHandC4BZ 4.15
+capHandC4R 1.0
+capHandC5Enable 1
+capHandC5AX 0.9
+capHandC5AY -1.0
+capHandC5AZ -2.1
+capHandC5BX 0.337
+capHandC5BY -1.967
+capHandC5BZ 3.8
+capHandC5R 1.0
+
+# --- PIV FIX (2026-07-03, LIVE joint-pivot re-seat — the blue balls; RIGHT side only) ---
+# Knob = the pivot's ABSOLUTE position in the CHILD bone's local frame (skyrim u):
+#   wrist    -> hand frame      (+X thumb, +Y knuckles/back, +Z fingertips)
+#   elbow    -> forearm frame   (+X palm side, +Y thumb side, +Z wrist-ward)
+#   shoulder -> upper-arm frame (+X toward body, +Z elbow-ward)
+# The DLL writes BOTH stored copies of the pivot (one per connected body) in lock-step, position only.
+# Enable 0 = discovery: the BEFORE log prints each joint's CURRENT pivot -> copy those values here as
+# the baseline, THEN enable and dial. (Zeros below are placeholders, NOT the real pivots.)
+pivWristEnable 0
+pivWristX 2.5
+pivWristY -0.3
+pivWristZ -4.6
+pivElbowEnable 0
+pivElbowX -0.5
+pivElbowY 1.9
+pivElbowZ -3.6
+pivShoulderEnable 0
+pivShoulderX -0.7
+pivShoulderY 0.2
+pivShoulderZ -3.5
+
+# ── FULL-BODY JOINTS (2026-07-05, Precision Physic Bodies) — same dial protocol as the arm.
+# Child-bone-frame absolute position, skyrim u; [0,0,0] = the child body's own origin (2011 spot).
+# Statue her + trf (red bone cubes) + trd, enable a joint, walk the ball onto its cube.
+# spine0 = pelvis/COM->Spine0 | spine1 = Spine0->Spine1 | spine2 = Spine1->Spine2 (the arm anchor!)
+pivSpine0Enable 0
+pivSpine0X 0
+pivSpine0Y -1.0
+pivSpine0Z 0
+pivSpine1Enable 0
+pivSpine1X 0
+pivSpine1Y 0.5
+pivSpine1Z 4.0
+pivSpine2Enable 0
+pivSpine2X 0
+pivSpine2Y -0.5
+pivSpine2Z 3.7
+pivNeckEnable 0
+pivNeckX 0
+pivNeckY -0.6
+pivNeckZ 3.3
+pivHeadEnable 0
+pivHeadX 0
+pivHeadY 0
+pivHeadZ 3.2
+# right leg (left mirrors at bake, like the arm)
+pivHipEnable 0
+pivHipX 0
+pivHipY 0
+pivHipZ 0
+pivKneeEnable 0
+pivKneeX 0
+pivKneeY 0
+pivKneeZ 0
+pivAnkleEnable 0
+pivAnkleX 0
+pivAnkleY 0
+pivAnkleZ 0
+
+# ── AUTO-SEAT + CLAVICLE-FOLLOW (2026-07-05) ──
+# pivAutoSeat 1: while she is STATUED, the DLL walks every enabled joint ball onto its XP32 bone
+#   origin numerically (child := live bone-in-body-frame, partner := bind math). PIVTRACK -> ~0 is
+#   the receipt. Your eye verifies against the red cubes; the knobs above become the fallback record.
+pivAutoSeat 0
+# pivClavFollow 1
+# capAutoFit 1
+
+# ── FULL-BODY CAPSULE SLOTS (2026-07-05) — endpoints AUTO-FITTED ball-to-ball (capAutoFit),
+# radius = your knob (stock values staged from the live body dump; dial to flesh by eye).
+# foot + com are MANUAL (no bounding joints) — enable to discover, then dial like the old days.
+capSpine0Enable 1
+capSpine0AX -5.775
+capSpine0AY 3.728
+capSpine0AZ 10.238
+capSpine0BX 5.775
+capSpine0BY 3.728
+capSpine0BZ 10.238
+capSpine0R 4.401
+capSpine1Enable 1
+capSpine1AX 0.0
+capSpine1AY 5.985
+capSpine1AZ 7.56
+capSpine1BX 0.0
+capSpine1BY 5.985
+capSpine1BZ 11.13
+capSpine1R 6.533
+capSpine2Enable 1
+capSpine2AX 3.675
+capSpine2AY 1.838
+capSpine2AZ 15.015
+capSpine2BX -3.675
+capSpine2BY 1.838
+capSpine2BZ 15.015
+capSpine2R 6.599
+capNeckEnable 1
+capNeckAX 0.0
+capNeckAY 1.155
+capNeckAZ 1.26
+capNeckBX 0.0
+capNeckBY 0.315
+capNeckBZ 10.29
+capNeckR 3.575
+capThighEnable 1
+capThighAX -2.2
+capThighAY -3.2
+capThighAZ -6.0
+capThighBX 0.7
+capThighBY -0.3
+capThighBZ 27.4
+capThighR 2.472
+capCalfEnable 1
+capCalfAX 0.5
+capCalfAY -1.0
+capCalfAZ -6.4
+capCalfBX 1.0
+capCalfBY -0.7
+capCalfBZ 18.4
+capCalfR 1.818
+capFootEnable 1
+capFootAX 1.02
+capFootAY 3.38
+capFootAZ 2.27
+capFootBX 1.02
+capFootBY 5.18
+capFootBZ -2.21
+capFootR 1.5
+# COM (2026-07-07): full A/B/r knobs (NEW DLL). Discovered stock = a hip-to-hip ±X ROD, r 7.66
+# (A=[2.79,-3.83,5.33] B=[-2.79,-3.83,5.33]) — not a ball. Endpoint seeds below = stock, so the only
+# change on enable is the radius 7.66 -> 3.0 (user-requested "smaller and precise").
+capComEnable 1
+capComAX 1.99
+capComAY -3.33
+capComAZ 2.63
+capComBX -1.99
+capComBY -3.33
+capComBZ 2.63
+capComR 1.0
+# capAutoFit 1: forearm + upper-arm capsule ENDPOINTS derived from the seated joint balls
+#   (elbow->wrist, shoulder->elbow) — ball-to-ball spans, radius stays your dialed knob.
+capAutoFit 0
+# pivClavFollow 1: the R shoulder chest-side anchor rides the LIVE clavicle chain every frame -
+#   the fix for the 4.7u whole-arm displacement in hands-on-hips/crossed-arms poses (the ragdoll
+#   has no clavicle body; a fixed anchor cannot follow shoulder protraction).
+pivClavFollow 1
+
+# ── PER-JOINT WORLD-Z LIFT (2026-07-07, NEW in PPB) ──
+# Raise a joint's seated pivot straight UP in WORLD space by this many game units (negative = down).
+# Applied AFTER the child target is selected — works on top of the manual knobs AND the sticky
+# auto-seat targets alike; the partner copy inherits automatically through the bind-relation mapping.
+# The APPLIED/HEAL log line appends " upU=<val>" while one of these is nonzero. 0 = off.
+pivWristUpU 0
+pivElbowUpU 0
+pivShoulderUpU 0
+pivSpine0UpU 0
+pivSpine1UpU 0
+pivSpine2UpU 0
+pivNeckUpU 0
+pivHeadUpU 0
+pivHipUpU 0
+pivKneeUpU 0
+pivAnkleUpU 0
+
+# ══ FLESH-FIT LIST CHILDREN (baked into skeleton_female.nif 2026-07-07, R+L mirrored) ══
+# Each converted body is now a bhkListShape: child 0 = the MAIN capsule (still driven by the
+# existing capUpper*/capFore*/capThigh*/capCalf*/capFoot* slot knobs above), children 1..N = the
+# ADDED capsules below. Seeds = the exact baked values (enable = identity write, no visual change).
+# Thigh = 5 superposed rings, calf = 3, foot = 2 parallel sole rods, arms = 1 taper each.
+# capMirrorL replays every write on the LEFT twin (X-negated) so both sides stay matched.
+capUpperC1Enable 1
+capUpperC1AX 1.3
+capUpperC1AY 0.7
+capUpperC1AZ 11.2
+capUpperC1BX 0.4
+capUpperC1BY 1.0
+capUpperC1BZ 20.2
+capUpperC1R 2.6
+capForeC1Enable 1
+capForeC1AX 0.1
+capForeC1AY 2.0
+capForeC1AZ 5.3
+capForeC1BX 0.5
+capForeC1BY 1.3
+capForeC1BZ 11.3
+capForeC1R 2.0
+capThighC1Enable 1
+capThighC1AX 0.138
+capThighC1AY -4.397
+capThighC1AZ -3.046
+capThighC1BX -0.402
+capThighC1BY -2.902
+capThighC1BZ 0.78
+capThighC1R 5.564
+capThighC2Enable 1
+capThighC2AX -1.62
+capThighC2AY -0.62
+capThighC2AZ -9.62
+capThighC2BX 1.105
+capThighC2BY 0.105
+capThighC2BZ -1.645
+capThighC2R 3.503
+capThighC3Enable 1
+capThighC3AX -0.7
+capThighC3AY -1.7
+capThighC3AZ -1.0
+capThighC3BX -0.275
+capThighC3BY -0.975
+capThighC3BZ 5.975
+capThighC3R 6.079
+capThighC4Enable 1
+capThighC4AX 0.482
+capThighC4AY -1.018
+capThighC4AZ 7.5
+capThighC4BX 0.12
+capThighC4BY -0.08
+capThighC4BZ 12.52
+capThighC4R 5.564
+capThighC5Enable 1
+capThighC5AX 0.482
+capThighC5AY 0.082
+capThighC5AZ 17.5
+capThighC5BX 0.82
+capThighC5BY -0.08
+capThighC5BZ 23.52
+capThighC5R 4.018
+capCalfC1Enable 1
+capCalfC1AX 0.1
+capCalfC1AY -2.0
+capCalfC1AZ -3.9
+capCalfC1BX 0.275
+capCalfC1BY -1.895
+capCalfC1BZ 0.255
+capCalfC1R 3.838
+capCalfC2Enable 1
+capCalfC2AX 0.35
+capCalfC2AY -2.11
+capCalfC2AZ 2.09
+capCalfC2BX 0.525
+capCalfC2BY -2.005
+capCalfC2BZ 7.24
+capCalfC2R 3.333
+capCalfC3Enable 1
+capCalfC3AX 0.2
+capCalfC3AY -1.32
+capCalfC3AZ 9.58
+capCalfC3BX 0.35
+capCalfC3BY -1.23
+capCalfC3BZ 13.57
+capCalfC3R 2.828
+capFootC1Enable 1
+capFootC1AX 1.97
+capFootC1AY 2.88
+capFootC1AZ 5.27
+capFootC1BX 1.97
+capFootC1BY 3.88
+capFootC1BZ -5.21
+capFootC1R 1.2
+capFootC2Enable 1
+capFootC2AX -0.93
+capFootC2AY 2.88
+capFootC2AZ 3.77
+capFootC2BX 1.07
+capFootC2BY 3.88
+capFootC2BZ -5.21
+capFootC2R 0.8
+
+# ── LIVE LEFT-MIRROR (2026-07-07): every capsule slot/child write replays on the LEFT twin body
+# (X-negated endpoints, same r — the NIF-verified transform). 1 = on. Center slots have no twin.
+capMirrorL 1
+
+# ── PIV GRAB GATE (2026-07-07, the grab-bounce fix): pause the pivot re-seat/heal while the player
+# HIGGS-grabs this NPC (+1.5 s post-release grace; drift heuristic when HIGGS is absent). 1 = on.
+pivGrabGate 1
+
+# ============================================================================
+# WAVE-2 TORSO LIST CHILDREN (baked 2026-07-08). child0 = main (driven by the
+# capSpine0*/capSpine1*/capSpine2*/capCom* slot knobs above). C1..CN = added
+# sub-capsules, identity-seeded to the baked values (tiny r0.2 inside the main).
+# Dial them out to sculpt: spine0/1/2 = 10 each, COM = 20 (the orifice ring).
+# ============================================================================
+capSpine0C1Enable 1
+capSpine0C1AX 1.335
+capSpine0C1AY 7.875
+capSpine0C1AZ 4.237
+capSpine0C1BX 7.037
+capSpine0C1BY 6.336
+capSpine0C1BZ 10.097
+capSpine0C1R 2.200
+capSpine0C2Enable 1
+capSpine0C2AX -1.335
+capSpine0C2AY 7.875
+capSpine0C2AZ 4.237
+capSpine0C2BX -7.037
+capSpine0C2BY 6.336
+capSpine0C2BZ 10.097
+capSpine0C2R 2.200
+capSpine0C3Enable 1
+capSpine0C3AX -4.2
+capSpine0C3AY 6.825
+capSpine0C3AZ 11.55
+capSpine0C3BX 4.2
+capSpine0C3BY 6.825
+capSpine0C3BZ 11.55
+capSpine0C3R 3.300
+capSpine0C4Enable 1
+capSpine0C4AX -1.575
+capSpine0C4AY 7.35
+capSpine0C4AZ 7.35
+capSpine0C4BX 1.575
+capSpine0C4BY 7.35
+capSpine0C4BZ 7.35
+capSpine0C4R 3.300
+capSpine0C5Enable 1
+capSpine0C5AX 3.623
+capSpine0C5AY -0.819
+capSpine0C5AZ 8.43
+capSpine0C5BX 2.435
+capSpine0C5BY 1.24
+capSpine0C5BZ 12.975
+capSpine0C5R 3.300
+capSpine0C6Enable 1
+capSpine0C6AX -3.623
+capSpine0C6AY -0.819
+capSpine0C6AZ 8.43
+capSpine0C6BX -2.435
+capSpine0C6BY 1.24
+capSpine0C6BZ 12.975
+capSpine0C6R 3.300
+capSpine0C7Enable 1
+capSpine0C7AX 6.773
+capSpine0C7AY 1.281
+capSpine0C7AZ 7.38
+capSpine0C7BX 4.955
+capSpine0C7BY 2.29
+capSpine0C7BZ 12.975
+capSpine0C7R 3.300
+capSpine0C8Enable 1.0
+capSpine0C8AX 0.0
+capSpine0C8AY 0.0
+capSpine0C8AZ 0.0
+capSpine0C8BX 0.0
+capSpine0C8BY 0.0
+capSpine0C8BZ 2.0
+capSpine0C8R 0.500
+capSpine0C9Enable 1.0
+capSpine0C9AX 0.0
+capSpine0C9AY 0.0
+capSpine0C9AZ 0.0
+capSpine0C9BX 0.0
+capSpine0C9BY 0.0
+capSpine0C9BZ 2.0
+capSpine0C9R 0.500
+capSpine0C10Enable 1.0
+capSpine0C10AX 1.276
+capSpine0C10AY -27.773
+capSpine0C10AZ 10.238
+capSpine0C10BX 2.326
+capSpine0C10BY -27.773
+capSpine0C10BZ 10.238
+capSpine0C10R 0.220
+capSpine1C1Enable 1.0
+capSpine1C1AX 2.835
+capSpine1C1AY 7.56
+capSpine1C1AZ 5.791
+capSpine1C1BX 4.087
+capSpine1C1BY 8.4
+capSpine1C1BZ 12.05
+capSpine1C1R 3.812
+capSpine1C2Enable 1
+capSpine1C2AX -2.835
+capSpine1C2AY 7.56
+capSpine1C2AZ 5.791
+capSpine1C2BX -4.087
+capSpine1C2BY 8.4
+capSpine1C2BZ 12.05
+capSpine1C2R 3.812
+capSpine1C3Enable 1
+capSpine1C3AX 4.2
+capSpine1C3AY 4.725
+capSpine1C3AZ 5.145
+capSpine1C3BX 4.2
+capSpine1C3BY 3.545
+capSpine1C3BZ 14.587
+capSpine1C3R 3.267
+capSpine1C4Enable 1
+capSpine1C4AX -4.2
+capSpine1C4AY 4.725
+capSpine1C4AZ 5.145
+capSpine1C4BX -4.2
+capSpine1C4BY 3.545
+capSpine1C4BZ 14.587
+capSpine1C4R 3.267
+capSpine1C5Enable 1
+capSpine1C5AX 5.46
+capSpine1C5AY 5.985
+capSpine1C5AZ 5.145
+capSpine1C5BX 6.443
+capSpine1C5BY 6.929
+capSpine1C5BZ 14.58
+capSpine1C5R 2.178
+capSpine1C6Enable 1
+capSpine1C6AX -5.46
+capSpine1C6AY 5.985
+capSpine1C6AZ 5.145
+capSpine1C6BX -6.443
+capSpine1C6BY 6.929
+capSpine1C6BZ 14.58
+capSpine1C6R 2.178
+capSpine1C7Enable 1.0
+capSpine1C7AX 0.0
+capSpine1C7AY 0.0
+capSpine1C7AZ 0.0
+capSpine1C7BX 0.0
+capSpine1C7BY 0.0
+capSpine1C7BZ 2.0
+capSpine1C7R 0.495
+capSpine1C8Enable 1.0
+capSpine1C8AX 0.0
+capSpine1C8AY 0.0
+capSpine1C8AZ 0.0
+capSpine1C8BX 0.0
+capSpine1C8BY 0.0
+capSpine1C8BZ 2.0
+capSpine1C8R 0.495
+capSpine1C9Enable 1.0
+capSpine1C9AX 0.0
+capSpine1C9AY -25.515
+capSpine1C9AZ 9.134
+capSpine1C9BX 0.0
+capSpine1C9BY -25.515
+capSpine1C9BZ 10.184
+capSpine1C9R 0.218
+capSpine1C10Enable 1.0
+capSpine1C10AX 0.0
+capSpine1C10AY -25.515
+capSpine1C10AZ 9.224
+capSpine1C10BX 0.0
+capSpine1C10BY -25.515
+capSpine1C10BZ 10.274
+capSpine1C10R 0.218
+capSpine2C1Enable 1
+capSpine2C1AX 4.725
+capSpine2C1AY 2.625
+capSpine2C1AZ 5.25
+capSpine2C1BX 6.461
+capSpine2C1BY -0.805
+capSpine2C1BZ 13.483
+capSpine2C1R 3.300
+capSpine2C2Enable 1
+capSpine2C2AX -4.725
+capSpine2C2AY 2.625
+capSpine2C2AZ 5.25
+capSpine2C2BX -6.461
+capSpine2C2BY -0.805
+capSpine2C2BZ 13.483
+capSpine2C2R 3.300
+capSpine2C3Enable 1
+capSpine2C3AX 4.2
+capSpine2C3AY 8.4
+capSpine2C3AZ 5.25
+capSpine2C3BX 5.411
+capSpine2C3BY 6.02
+capSpine2C3BZ 13.483
+capSpine2C3R 3.300
+capSpine2C4Enable 1
+capSpine2C4AX -4.2
+capSpine2C4AY 8.4
+capSpine2C4AZ 5.25
+capSpine2C4BX -5.411
+capSpine2C4BY 6.02
+capSpine2C4BZ 13.483
+capSpine2C4R 3.300
+capSpine2C5Enable 1
+capSpine2C5AX 2.625
+capSpine2C5AY 1.312
+capSpine2C5AZ 7.665
+capSpine2C5BX -2.625
+capSpine2C5BY 1.312
+capSpine2C5BZ 7.665
+capSpine2C5R 3.300
+capSpine2C6Enable 1
+capSpine2C6AX 9.45
+capSpine2C6AY -1.312
+capSpine2C6AZ 19.215
+capSpine2C6BX 2.1
+capSpine2C6BY 0.263
+capSpine2C6BZ 23.94
+capSpine2C6R 2.749
+capSpine2C7Enable 1
+capSpine2C7AX -9.45
+capSpine2C7AY -1.312
+capSpine2C7AZ 19.215
+capSpine2C7BX -2.1
+capSpine2C7BY 0.263
+capSpine2C7BZ 23.94
+capSpine2C7R 2.749
+capSpine2C8Enable 1
+capSpine2C8AX 9.45
+capSpine2C8AY 0.263
+capSpine2C8AZ 20.265
+capSpine2C8BX 1.301
+capSpine2C8BY 3.57
+capSpine2C8BZ 21.557
+capSpine2C8R 2.200
+capSpine2C9Enable 1
+capSpine2C9AX -9.45
+capSpine2C9AY 0.263
+capSpine2C9AZ 20.265
+capSpine2C9BX -1.301
+capSpine2C9BY 3.57
+capSpine2C9BZ 21.557
+capSpine2C9R 2.200
+capSpine2C10Enable 1
+capSpine2C10AX 2.625
+capSpine2C10AY 7.613
+capSpine2C10AZ 9.765
+capSpine2C10BX -2.625
+capSpine2C10BY 7.613
+capSpine2C10BZ 9.765
+capSpine2C10R 4.400
+capComC1Enable 1
+capComC1AX 1.99
+capComC1AY -3.33
+capComC1AZ 4.63
+capComC1BX -1.99
+capComC1BY -3.33
+capComC1BZ 4.63
+capComC1R 0.5
+capComC2Enable 1
+capComC2AX 1.99
+capComC2AY -2.83
+capComC2AZ 6.63
+capComC2BX -1.99
+capComC2BY -2.83
+capComC2BZ 6.63
+capComC2R 0.5
+capComC3Enable 1
+capComC3AX 3.0
+capComC3AY 0.16
+capComC3AZ 1.13
+capComC3BX 3.0
+capComC3BY -7.699
+capComC3BZ 4.105
+capComC3R 1.0
+capComC4Enable 1
+capComC4AX -3.0
+capComC4AY 0.16
+capComC4AZ 1.13
+capComC4BX -3.0
+capComC4BY -7.699
+capComC4BZ 4.105
+capComC4R 1.0
+capComC5Enable 1
+capComC5AX 2.49
+capComC5AY 2.67
+capComC5AZ 5.63
+capComC5BX -2.49
+capComC5BY 2.67
+capComC5BZ 5.63
+capComC5R 1.0
+capComC6Enable 1
+capComC6AX 0.49
+capComC6AY 2.67
+capComC6AZ 4.13
+capComC6BX 3.0
+capComC6BY 0.16
+capComC6BZ 1.13
+capComC6R 1.0
+capComC7Enable 1
+capComC7AX -0.514
+capComC7AY 2.804
+capComC7AZ 4.337
+capComC7BX -3.15
+capComC7BY 0.168
+capComC7BZ 1.186
+capComC7R 1.1
+capComC8Enable 1
+capComC8AX 3.455
+capComC8AY 2.804
+capComC8AZ 5.912
+capComC8BX 3.99
+capComC8BY -0.357
+capComC8BZ 1.186
+capComC8R 1.1
+capComC9Enable 1
+capComC9AX -3.455
+capComC9AY 2.804
+capComC9AZ 5.912
+capComC9BX -3.99
+capComC9BY -0.357
+capComC9BZ 1.186
+capComC9R 1.1
+capComC10Enable 1
+capComC10AX 0.011
+capComC10AY -7.697
+capComC10AZ 6.962
+capComC10BX -2.625
+capComC10BY -7.707
+capComC10BZ 4.862
+capComC10R 1.1
+capComC11Enable 1
+capComC11AX -0.011
+capComC11AY -7.697
+capComC11AZ 6.962
+capComC11BX 2.625
+capComC11BY -7.707
+capComC11BZ 4.862
+capComC11R 1.1
+capComC12Enable 1
+capComC12AX 2.022
+capComC12AY -6.64
+capComC12AZ 11.42
+capComC12BX 3.217
+capComC12BY -8.763
+capComC12BZ 5.653
+capComC12R 2.2
+capComC13Enable 1
+capComC13AX -2.022
+capComC13AY -6.64
+capComC13AZ 11.42
+capComC13BX -3.217
+capComC13BY -8.763
+capComC13BZ 5.653
+capComC13R 2.2
+capComC14Enable 1
+capComC14AX 3.15
+capComC14AY 1.218
+capComC14AZ 5.912
+capComC14BX 3.15
+capComC14BY -7.161
+capComC14BZ 8.011
+capComC14R 0.55
+capComC15Enable 1
+capComC15AX -3.15
+capComC15AY 1.218
+capComC15AZ 5.912
+capComC15BX -3.15
+capComC15BY -7.161
+capComC15BZ 8.011
+capComC15R 0.55
+capComC16Enable 1
+capComC16AX 5.25
+capComC16AY -7.140
+capComC16AZ 4.725
+capComC16BX 5.25
+capComC16BY -7.140
+capComC16BZ 7.875
+capComC16R 4.4
+capComC17Enable 1
+capComC17AX -5.25
+capComC17AY -7.140
+capComC17AZ 4.725
+capComC17BX -5.25
+capComC17BY -7.140
+capComC17BZ 7.875
+capComC17R 4.4
+capComC18Enable 1
+capComC18AX 6.3
+capComC18AY -0.347
+capComC18AZ 6.951
+capComC18BX 6.3
+capComC18BY -3.497
+capComC18BZ 3.822
+capComC18R 3.85
+capComC19Enable 1
+capComC19AX -6.3
+capComC19AY -0.347
+capComC19AZ 6.951
+capComC19BX -6.3
+capComC19BY -3.497
+capComC19BZ 3.822
+capComC19R 3.85
+capComC20Enable 0
+capComC20AX 0.525
+capComC20AY -3.465
+capComC20AZ 2.73
+capComC20BX -0.525
+capComC20BY -3.465
+capComC20BZ 2.73
+capComC20R 0.051
+
+# ===== WAVE-2B new children (baked 2026-07-09) — Enable 0, dormant tiny seeds inside the body.
+# Head is a NEW list (main=capHead*). Spine2 gained C11/C12 for the L/R breast.
+# Dial next session: I'll enable + position each when you say 'bring head C1' etc.
+# (spine0 C8-C10 / spine1 C7-C10 knobs are now inert no-ops — their NIF children were trimmed.)
+capHeadC1Enable 1
+capHeadC1AX -0.85
+capHeadC1AY 8.90
+capHeadC1AZ 2.61
+capHeadC1BX 0.83
+capHeadC1BY 8.90
+capHeadC1BZ 2.61
+capHeadC1R 0.88
+capHeadC2Enable 1
+capHeadC2AX 3.35
+capHeadC2AY 2.08
+capHeadC2AZ 0.41
+capHeadC2BX 0.62
+capHeadC2BY 8.38
+capHeadC2BZ -1.16
+capHeadC2R 0.88
+capHeadC3Enable 1
+capHeadC3AX -3.35
+capHeadC3AY 2.08
+capHeadC3AZ 0.41
+capHeadC3BX -0.62
+capHeadC3BY 8.38
+capHeadC3BZ -1.16
+capHeadC3R 0.88
+capHeadC4Enable 1
+capHeadC4AX 2.61
+capHeadC4AY 8.06
+capHeadC4AZ 3.35
+capHeadC4BX 1.46
+capHeadC4BY 7.12
+capHeadC4BZ -0.85
+capHeadC4R 0.88
+capHeadC5Enable 1
+capHeadC5AX -2.61
+capHeadC5AY 8.06
+capHeadC5AZ 3.35
+capHeadC5BX -1.46
+capHeadC5BY 7.12
+capHeadC5BZ -0.85
+capHeadC5R 0.88
+capHeadC6Enable 1
+capHeadC6AX 3.56
+capHeadC6AY 2.60
+capHeadC6AZ 2.82
+capHeadC6BX 2.72
+capHeadC6BY 6.80
+capHeadC6BZ 4.08
+capHeadC6R 1.65
+capHeadC7Enable 0
+capHeadC7AX -3.56
+capHeadC7AY 2.604
+capHeadC7AZ 2.825
+capHeadC7BX -2.72
+capHeadC7BY 6.804
+capHeadC7BZ 4.085
+capHeadC7R 1.65
+capHeadC8Enable 1
+capHeadC8AX -0.01
+capHeadC8AY 9.85
+capHeadC8AZ 3.56
+capHeadC8BX -0.01
+capHeadC8BY 7.85
+capHeadC8BZ 6.92
+capHeadC8R 0.77
+capHeadC9Enable 1
+capHeadC9AX -1.80
+capHeadC9AY 7.75
+capHeadC9AZ 4.19
+capHeadC9BX 1.77
+capHeadC9BY 7.75
+capHeadC9BZ 4.19
+capHeadC9R 1.32
+# C10 = THROAT WALL (2026-07-26): the END of the mouth cavity — a vertical bar at the back
+# (Y=2.3, where the chin lines C2/C3 end deep), spanning jaw height up to palate height.
+# The mouth gate's deep-hold keeps the mouth open while a tip is within mouthThroatU of it,
+# and MOUTHTOUCH THROAT REACHED/LEFT fires. Dial by eye: touch deep + read TOUCHPROBE.
+# C10 = PALATE/THROAT capsule — EYE-CONFIRMED on Lydia (standard skeleton) 2026-07-26.
+# Front-to-back bar inside the mouth cavity, tilted up toward the deep (back) end:
+#   A = back/deep end [0, 3.4, 4.11]  ·  B = front end [0, 6.4, 3.61]  ·  r 1.5  (head-body frame)
+# Global knob -> applies to head child 10 on EVERY skeleton whose head list carries C10.
+# NOTE: beast/Khajiit muzzles differ; user will per-skeleton tune when time permits.
+capHeadC10Enable 1
+capHeadC10AX 0.0
+capHeadC10AY 3.4
+capHeadC10AZ 4.11
+capHeadC10BX 0.0
+capHeadC10BY 6.4
+capHeadC10BZ 3.61
+capHeadC10R 1.5
+capSpine2C11Enable 1
+capSpine2C11AX 2.353
+capSpine2C11AY 4.005
+capSpine2C11AZ 10.203
+capSpine2C11BX 5.179
+capSpine2C11BY 9.887
+capSpine2C11BZ 9.759
+capSpine2C11R 2.686
+capSpine2C12Enable 1
+capSpine2C12AX -2.353
+capSpine2C12AY 4.587
+capSpine2C12AZ 10.565
+capSpine2C12BX -4.904
+capSpine2C12BY 8.788
+capSpine2C12BZ 9.565
+capSpine2C12R 3.600
+
+# ===== WAVE-2B new children (baked 2026-07-09) — Enable 0, dormant tiny seeds inside the body.
+# Head is a NEW list (main=capHead*). Spine2 gained C11/C12 for the L/R breast.
+# Dial next session: I'll enable + position each when you say 'bring head C1' etc.
+# (spine0 C8-C10 / spine1 C7-C10 knobs are now inert no-ops — their NIF children were trimmed.)
+capHeadC11Enable 0
+capHeadC11AX -2.898
+capHeadC11AY 3.444
+capHeadC11AZ -0.325
+capHeadC11BX 2.877
+capHeadC11BY 3.444
+capHeadC11BZ -0.325
+capHeadC11R 0.88
+capHeadC12Enable 0
+capHeadC12AX 3.56
+capHeadC12AY -0.021
+capHeadC12AZ 2.3
+capHeadC12BX 2.72
+capHeadC12BY 6.069
+capHeadC12BZ 1.46
+capHeadC12R 1.21
+capHeadC13Enable 0
+capHeadC13AX -3.56
+capHeadC13AY -0.021
+capHeadC13AZ 2.3
+capHeadC13BX -2.72
+capHeadC13BY 6.069
+capHeadC13BZ 1.46
+capHeadC13R 1.21
+capHeadC14Enable 0
+capHeadC14AX -1.071
+capHeadC14AY -0.42
+capHeadC14AZ 3.035
+capHeadC14BX 1.05
+capHeadC14BY -0.42
+capHeadC14BZ 3.035
+capHeadC14R 3.3
+capSpine2C13Enable 1
+capSpine2C13AX 6.793
+capSpine2C13AY 0.693
+capSpine2C13AZ 19.667
+capSpine2C13BX 12.044
+capSpine2C13BY 1.743
+capSpine2C13BZ 17.567
+capSpine2C13R 2.200
+capSpine2C14Enable 1
+capSpine2C14AX -6.793
+capSpine2C14AY 0.693
+capSpine2C14AZ 19.667
+capSpine2C14BX -12.044
+capSpine2C14BY 1.743
+capSpine2C14BZ 17.567
+capSpine2C14R 2.200
+capUpperC2Enable 0
+capUpperC2AX 3.0
+capUpperC2AY 0
+capUpperC2AZ 2.0
+capUpperC2BX 6.29
+capUpperC2BY -1.0
+capUpperC2BZ 0.71
+capUpperC2R 2.0
+capUpperC3Enable 0
+capUpperC3AX 1.8
+capUpperC3AY 0
+capUpperC3AZ -1.0
+capUpperC3BX 1.8
+capUpperC3BY 0
+capUpperC3BZ 2.0
+capUpperC3R 2.0
+capFootC3Enable 1
+capFootC3AX 1.0
+capFootC3AY 9.0
+capFootC3AZ -4.0
+capFootC3BX 1.0
+capFootC3BY 5.0
+capFootC3BZ -4.0
+capFootC3R 1.2
+capThighC6Enable 1
+capThighC6AX 0.7
+capThighC6AY 0.7
+capThighC6AZ 26.4
+capThighC6BX 0.7
+capThighC6BY -2.8
+capThighC6BZ 28.9
+capThighC6R 1.442
+capCalfC4Enable 1
+capCalfC4AX 0.0
+capCalfC4AY -2.8
+capCalfC4AZ -9.5
+capCalfC4BX 0.0
+capCalfC4BY 0.2
+capCalfC4BZ -5.5
+capCalfC4R 1.313
+perfPreset 50
+filterSelfThigh -1
+filterCrossPelvis -1
+lodEnable 0
+lodNearDist 180
+lodFarDist 700
+lodHystPct 0.10
+lodSettleFrames 45
+lodStageBits 6
+npcFingerEnable 0
+npcFingerOwnBody 1
+npcFingerFollow 0.8
+npcFingerR 0.5
+npcFingerTipU 0.65
+npcFingerCount 4
+npcFingerLog 1
+# logVerbose 1 = per-slot CapFix geometry lines (BEFORE/APPLIED/MIRROR-L/AUTOFIT) back in PPB.log (dial sessions)
+logVerbose 1
+handBoxEnable 1
+handBoxFollowMode 2
+handBoxArm 2
+handBoxDump 0
+pivDescale 0
+# pivReScale 1 = re-scale system ON. (Was briefly 0 to verify Lydia's raw 1:1 scale before re-baselining.)
+pivReScale 1
+# pivReScaleApply 0 = DIAGNOSTIC-ONLY: PivScaleCorrect measures + logs ARCDIAG/NAM6DIAG but does NOT write
+# the pivots. SET 0 for the arc-sum validation test (no accidental re-scale of Lydia); back to 1 for normal.
+pivReScaleApply 1
+
+# --- BODY SCALE (2026-07-14, NEW) — size collision CAPSULES to an NPC's actual body SHAPE ---
+# Reads OBody/SKEE body-morph deviations from the ZERO-slider base (what the capsules were sculpted on) and
+# scales each capsule GROUP away from its Havok joint via the EXISTING CapScaleOf scale-from-joint method.
+# HEAD uses a cached mesh-extent measure (head sculpt is not a body morph). One-shot per NPC on 3D-load,
+# cached, ~1 Hz throttle, never per-frame. NEVER touches ragdoll joints or the re-scale.
+#   bodyScale 1 = ON  (0 = OFF -> capsules stay at the sculpted zero-slider base).
+#   Per-region GAINS below: 0 = that region never scales, 1 = full morph deviation applied. Dial to taste.
+#   Clamp bounds every region ratio (Lo re-bounded to 0.3..1.0, Hi to 1.0..3.0) so a bad read can't explode a capsule.
+#   bodyScaleDump: flip 0 -> non-0 to force a re-measure of every nearby NPC and dump
+#     (actor / region / morphKey=value / ratio / group) to PPB.log for tuning.
+# bodyScale  RETIRED 2026-07-23 - gated the girth/slider generation, now deleted.
+#            The shape master switch is now lmReShape.
+# per-region GAIN = size change per FULL morph. 0.12 ≈ +12% at morph 100, -12% at -100 (was 1.0 = +100%, way too hot).
+bodyScaleChest 0.12
+bodyScaleBreasts 0.12
+bodyScaleBelly 0.55
+bodyScaleWaist 1.04
+# 2026-07-19: butt factor RESTORED — the orifice-ring protection is STRUCTURAL now
+# (only COM C16/C17, the cheeks, carry the butt region; ring children never scale).
+bodyScaleButt 0.12
+bodyScaleThighs 0.55
+bodyScaleArms 0.12
+bodyScaleHead 0.12
+bodyScaleClampLo 0.7
+bodyScaleClampHi 2.0
+bodyScaleDump 21
+handBoxTipFrac 1.15
+handBoxPlateLenFrac 0.5
+handBoxPlateTipFrac 0.85
+handBoxPlateTiltDeg -30
+handBoxPlateTiltAxis 2
+higgsSlabHalfX 0.045
+higgsSlabHalfY 0.015
+higgsSlabHalfZ 0.0405
+handBoxSlabLenFrac 0.75
+# jtrackNow: diagnostic joint-vs-node dump (flip 0->1 to re-fire). Off for normal play.
+jtrackNow 0
+# refCapNow: flip to 1 WHILE STANDING NEXT TO LYDIA to read her exact scale-1 reference spans
+# (COM->head / COM->calf) into the log, then set back to 0. Bakes the measured-scale reference.
+refCapNow 0
+# poseConform 1 = per-bone XP32 conform (the working system — joints track nodes at ~0.2u). KEEP ON.
+poseConform 1
+# poseConformDump: diagnostic per-bone dump. Off for normal play (log spam otherwise).
+poseConformDump 0
+# poseConformRoot: RETIRED 2026-07-13. It floated Lydia ~2u and knocked joints 3.76u off the nodes;
+# OFF gives 0.21u joints-on-nodes + on the floor. Do NOT set to 1 (see Tuning.h for the full evidence).
+poseConformRoot 0
+poseConformEveryN 2
+perfContactKeep 0
+npcTailTest 0
+npcTailR 2.0
+npcTailOffScale 1.0
+npcTailMassKg 4.0
+nodeCensusNow 0
+npcFingerAlpha 0.9
+npcFingerMassKg 4.0
+npcFingerMaxVel 25
+# ── contact-driven finger CURL (2026-07-16): displaced finger capsules curl the finger
+# bones to conform. Gain /u/s (0 = off), decay /s, max 0..1, mode 0=additive 1=grasp-override.
+npcFingerCurlGain 2.5
+npcFingerCurlDecay 1.5
+npcFingerCurlMax 1.0
+npcFingerCurlMode 0
+# lag gate: displacement only charges curl while the finger chord moves < this (u/s), unless a
+# HIGGS hand is within 20u (deliberate touch). Stops arm-swing servo lag from fisting the hand.
+npcFingerCurlLagGate 25
+# ── finger collision widening (finger rig only; DEFAULT OFF — statics are infinite-mass,
+# flicker risk). Flip live to test: clutter/dropped weapons | world statics/ground | other NPCs.
+npcFingerVsClutter 0
+npcFingerVsWorld 0
+npcFingerVsNpc 0
+# 2026-07-26 RESTORED to the USER-DIALED values (Report 07): force 12000 / max 32000.
+# The hair agent had cut them to 2400/6400 (~0.2x) — the "collision at .15 force" regression.
+# Push ON is the tail touch-response path; OFF kills touch entirely (learned tonight).
+fsmpPush 1
+fsmpPushForce 12000
+fsmpPushMaxForce 32000
+fsmpPushMinDispU 0.15
+npcFollower 1
+fsmpPushMult 1.0
+fsmpMassScale 1
+# ── HAIR/garment collision SOUND (2026-07-26): the capsules are ALREADY GRASS (npcGarmentMat 3 =
+# soft rustle; verified stamped at create). The noise is the servo re-injecting velocity while your
+# hand is near the DENSE hair caps (52 Jeeta / 164 DreadGirl) — many caps crossing the sound/haptic
+# threshold at once. npcSilentVelMS clamps that velocity below the threshold while a hand is near a
+# chord, so the caps yield SILENTLY (live, ~1 s file poll — no rebuild). 0 = off. GLOBAL (also softens
+# tail touch, but the contact gate below blocks the old lag->push drag). Set 0 to revert instantly.
+# Material selector npcGarmentMat: 0 skin / 1 cloth / 2 snow / 3 grass / 4 none.
+npcGarmentMat 4
+# 2026-07-26 REVERTED 0.15 -> 0: this clamp is GLOBAL (all garment rigs incl. TAILS) and re-created the
+# Report-15 tail drag/mush when a hand is near (user: "khajiit/argonian tails don't act the same"). It also
+# throttled the hair's own drive. Proper hair-noise fix = garment-scoped fMinSoundVel raise (code), pending.
+npcSilentVelMS 0
+# ── contact-VERIFIED push gate (2026-07-17, the floaty-tail fix): force publishes only while a
+# capsule's predicted-vs-actual motion deviates (= something really pressed it), not merely while
+# a hand is within 20u. Gate 0 = legacy proximity-only (A/B the floatiness live). DevU = deviation
+# threshold u/frame (dt-free check, jitter-immune; lower = more sensitive, >2 latches gentle presses
+# late). HoldMS = how long a verified contact keeps the force alive (wall-clock; raise under slow-mo).
+fsmpContactGate 1
+fsmpContactDevU 0.8
+fsmpContactHoldMS 200
+# ── KHAJIIT EARS (2026-07-16): C15/C16 = X-MIRRORS of the dialed C12/C13 (the right ear).
+# These children exist ONLY in skeletonbeast_female_khajiit.nif (head list = 17), so CapFix's
+# loop (bounded by the actor's real childInfo.size()) can never write them on a human head.
+# ⚠ The ARGONIAN head is ALSO 17 children, so these same knobs land on Argonian heads too —
+# bake the Khajiit ears into its NIF BEFORE re-dialing C15/C16 as Argonian horns.
+# ── AURI ANTLER DIAL (2026-07-20, user "all 8 capsule, up 20u"): all 8 head capsules C15..C22
+# ENABLED and lifted to Z 20→22 (the joint-origin 0→2u seed, +20u). Behind `sculpt
+# skeleton_female.nif head` so only human-skeleton women move — Auri is the target; other human
+# women (incl. M'rissi via the race map) show them in collviz DURING the session = expected.
+# C15/C16 double as the Khajiit EAR / Argonian HORN knobs on the BEAST heads, but the gate
+# excludes beast skeletons, so they're free to reuse here. Currently all 8 are COINCIDENT (one
+# stack) — dial them apart into two antlers, then TRANSCRIBE Auri's values into her npcCap head
+# 15..22 lines (never bake into the shared NIF, never leave enabled — seeds stay buried for all).
+# ★ AURI'S ANTLERS FINALIZED to her npcCap head 15..22 (2026-07-20, PPB_skeletons.txt) + YVANNI'S
+# HORNS baked into skeleton_female_draenei.nif. These GLOBAL head knobs are RESET to the up-20u
+# seed + Enable 0 = buried for every woman; a named NPC's antlers/horns come from her npcCap or her
+# own baked NIF. Re-enable + arm a `sculpt` gate only for a future head dial (dialed values archived
+# at tools/ppb-scratch/auri_antlers.txt + yvanni_horns_baked.txt).
+capHeadC15Enable 0
+capHeadC15AX 0
+capHeadC15AY 0
+capHeadC15AZ 20
+capHeadC15BX 0
+capHeadC15BY 0
+capHeadC15BZ 22
+capHeadC15R 0.5
+capHeadC16Enable 0
+capHeadC16AX 0
+capHeadC16AY 0
+capHeadC16AZ 20
+capHeadC16BX 0
+capHeadC16BY 0
+capHeadC16BZ 22
+capHeadC16R 0.5
+capHeadC17Enable 0
+capHeadC17AX 0
+capHeadC17AY 0
+capHeadC17AZ 20
+capHeadC17BX 0
+capHeadC17BY 0
+capHeadC17BZ 22
+capHeadC17R 0.5
+capHeadC18Enable 0
+capHeadC18AX 0
+capHeadC18AY 0
+capHeadC18AZ 20
+capHeadC18BX 0
+capHeadC18BY 0
+capHeadC18BZ 22
+capHeadC18R 0.5
+capHeadC19Enable 0
+capHeadC19AX 0
+capHeadC19AY 0
+capHeadC19AZ 20
+capHeadC19BX 0
+capHeadC19BY 0
+capHeadC19BZ 22
+capHeadC19R 0.5
+capHeadC20Enable 0
+capHeadC20AX 0
+capHeadC20AY 0
+capHeadC20AZ 20
+capHeadC20BX 0
+capHeadC20BY 0
+capHeadC20BZ 22
+capHeadC20R 0.5
+capHeadC21Enable 0
+capHeadC21AX 0
+capHeadC21AY 0
+capHeadC21AZ 20
+capHeadC21BX 0
+capHeadC21BY 0
+capHeadC21BZ 22
+capHeadC21R 0.5
+capHeadC22Enable 0
+capHeadC22AX 0
+capHeadC22AY 0
+capHeadC22AZ 20
+capHeadC22BX 0
+capHeadC22BY 0
+capHeadC22BZ 22
+capHeadC22R 0.5
+
+# ── ARGONIAN DORSAL RIDGE (2026-07-16): extra spine children that exist ONLY in
+# skeletonbeast_female.nif (spine0 10 / spine1 9 / spine2 17). Human + Khajiit spines are
+# unchanged, so these knobs are silently skipped there — per-race by EXISTENCE, no race gate.
+# Seeded TINY at each bone's origin (never A==B — the degenerate/invisible trap): dial them out.
+capSpine0C8Enable 1
+capSpine0C8AX 0.0
+capSpine0C8AY 0.0
+capSpine0C8AZ 0.0
+capSpine0C8BX 0.0
+capSpine0C8BY 0.0
+capSpine0C8BZ 2.0
+capSpine0C8R 0.500
+capSpine0C9Enable 1
+capSpine0C9AX 0.0
+capSpine0C9AY 0.0
+capSpine0C9AZ 0.0
+capSpine0C9BX 0.0
+capSpine0C9BY 0.0
+capSpine0C9BZ 2.0
+capSpine0C9R 0.500
+capSpine1C7Enable 1
+capSpine1C7AX 0.0
+capSpine1C7AY 0.0
+capSpine1C7AZ 0.0
+capSpine1C7BX 0.0
+capSpine1C7BY 0.0
+capSpine1C7BZ 2.0
+capSpine1C7R 0.495
+capSpine1C8Enable 1
+capSpine1C8AX 0.0
+capSpine1C8AY 0.0
+capSpine1C8AZ 0.0
+capSpine1C8BX 0.0
+capSpine1C8BY 0.0
+capSpine1C8BZ 2.0
+capSpine1C8R 0.495
+capSpine2C15Enable 1
+capSpine2C15AX 0.0
+capSpine2C15AY 0.0
+capSpine2C15AZ 0.0
+capSpine2C15BX 0.0
+capSpine2C15BY 0.0
+capSpine2C15BZ 2.0
+capSpine2C15R 0.500
+capSpine2C16Enable 1
+capSpine2C16AX 0.0
+capSpine2C16AY 0.0
+capSpine2C16AZ 0.0
+capSpine2C16BX 0.0
+capSpine2C16BY 0.0
+capSpine2C16BZ 2.0
+capSpine2C16R 0.500
+
+# --- 2026-07-18 BUILD: morph translation + shrink boost + body material + auto re-fit ---
+# npcBodyMat: ALL 18 body capsules' touch-sound material (the ground-thud killer).
+#   0 skin/NIF (loud thud), 1 cloth, 2 snow, 3 grass (near-silent, DEFAULT), 4 none.
+npcBodyMat 4
+# Morph-driven TRANSLATION (u per morph unit, es-scaled): breasts ride forward+up, butt cheeks
+# ride backward. Signed — petite presets pull them inward past the neutral base.
+bodyShiftBreastsUpU 1.25
+bodyShiftBreastsFwdU 0.6
+bodyShiftButtBackU 7.1
+# Shrink-side factor multiplier (net<0 only): petite meshes shrink more than the grow-side dial
+# predicts (07-18 in-VR verdict). Effective petite response = factor x this.
+bodyScaleLoBoost 2
+# NOTE: manual bodyScaleDump pulses are OBSOLETE — OBody preset changes push "Obody_ApplyMorph"
+# and the plugin re-fits + re-dresses that NPC automatically (also on first latch).
+
+# --- 2026-07-18 ROUTE B: MEASURED trueShape (Report 21 "ROUTE B GREENLIT") ---
+# Girth sampled from the LIVE morphed body mesh, per region, ratioed vs a captured neutral.
+# Once ALL 7 meshNeutral* are captured, MEASURED mode replaces the slider vocabulary entirely
+# (custom bases like Sofia/M'rissi finally measured; UNMAPPED presets impossible).
+#
+# ═ NEUTRAL CAPTURE SESSION (the Redguard) ═
+#  1. Spawn the scale-1 Redguard (player.placeatme 00045803 1... verify the base), zero-slider
+#     preset, NAKED (dressed = the outfit gets measured; capture must be the body).
+#  2. meshShape stays 1; Claude pulses meshShapeDump -> log prints "MESHGIRTH chest=.. ..." for
+#     every nearby NPC + band counts. Verify her bandN counts look sane (hundreds+ per region);
+#     Claude dials meshBand* live if a band lands wrong.
+#  3. Claude copies HER seven girths into the meshNeutral* knobs below -> MEASURED mode arms.
+#  4. Verify ladder: Lydia ~1.0 everywhere -> Sofia >1 (curvy custom base) -> M'rissi <1 (petite
+#     base) -> O-key presets on top of each (auto re-fit; translation rides the measured ratios).
+# meshShape  RETIRED 2026-07-23 - selected girth-vs-slider source. Only one source
+#            exists now (UV landmarks), so there is nothing left to select.
+meshShapeDump 67
+# meshMarkers 1 = visible ghost capsules on the 7 girth-defining vertices at every latch
+# (band-placement check by eye; collviz shows them; part-29 ghosts, collide with nothing)
+meshMarkers 0
+# meshBoneTest 1 = PATH-B DIAGNOSTIC: assign every body vert to its dominant skeleton bone via
+# skin weights, then log each bone's 12-angle girth (BONETEST lines in PPB.log). Flip 0->1 with
+# Auri + Lydia naked & A-posed nearby -> everyone re-latches -> both dump. Moves nothing. Flip
+# back to 0 when done. (Self-validates the decode: weight sums, per-bone z-ladder, sector radii.)
+meshBoneTest 0
+# ══ ReShape v2 — BONE-ANCHORED (2026-07-21) ═══════════════════════════════════════════════════
+# boneShape 1 = v2 LIVE (bone-anchored skin-weight measurement). The legacy bbox-band sampler is
+# still compiled and untouched — set boneShape 0 to revert to it instantly if v2 misbehaves.
+# v2 rules: HORIZONTAL only (no capsule moves up/down), torso rings move radially from the SPINE
+# AXIS, COM main + C1..C6 never move or resize, ONE neutral (Lydia) for every body type.
+# Every latch now logs "BONEGIRTH <id> '<mesh>' chest= breasts= ... cup=" — that IS the capture
+# source (meshBoneTest 1 only adds the verbose decode + z-ladder dump on top).
+boneShape 1
+# Neutrals = LYDIA bone-anchored, zero slider. 0 = UNCAPTURED -> that region stays INERT (ratio 1.0).
+# Deliberate: breasts/butt/arms/cup use NEW measures I could not capture from Lydia while you slept.
+# TO CAPTURE: stand near naked zero-slider Lydia, read her BONEGIRTH line in PPB.log, paste here.
+boneNeutralChest 10.44
+boneNeutralBelly 8.46
+boneNeutralWaist 8.62
+boneNeutralThighs 11.40
+# breast measure CHANGED to wall-relative (v2.1) -> old capture invalid, RECAPTURE:
+boneNeutralBreasts 3.72
+boneNeutralBreastZ 11.55
+# butt measure CHANGED to wall-relative (v2.2) -> old 12.91 invalid; RECAPTURE from
+# Lydia BONEGIRTH next launch (butt stays inert until then):
+boneNeutralButt 0
+boneNeutralArms 7.17
+boneNeutralCup 0
+# ★ v2.3 ABSOLUTE-POSITION neutrals (bone-local mound Y) — these drive the SHIFT, while
+# the wall-relative ones above drive SIZE. Wall-relative is blind to position by design,
+# which is why capsules sat 1.5u out with only a 0.02u correction available (Clove).
+# 0 = UNCAPTURED -> that shift stays OFF. Capture from naked zero-slider Lydia: read
+# brAbsY= and buAbsY= off her BONEGIRTH line and paste them here.
+boneNeutralBreastAbs 0
+boneNeutralButtAbs 0
+# ★ TIP PROBE — walk the BREAST ghost capsule onto the real nipple, live (hot, ~1s).
+# Mesh space: +X = her LEFT · -Y = FORWARD · +Z = UP.  Your correction was fwd 6u, down 8u.
+# Once it sits ON the nipple, tell me and PPB logs the exact point (TIPMARK PROBED=).
+tipProbeX 7.03
+tipProbeY 12.69
+tipProbeZ 11.07
+# ★ UV LANDMARK: drops the ghost capsule on the vertex nearest this UV, on EVERY body.
+# CBBE/3BA/Softbody share one UV layout, so a matching landing = universal nipple key.
+nipUVu 0.4265
+nipUVv 0.6558
+# RE-CAPTURED 2026-07-20 from live Lydia (user: "Lydia, perfect") — the old 07-19 capture had
+# drifted (she read chest 1.048 / breasts 0.901 against it; OBody has processed everyone since).
+meshNeutralChest 14.06
+meshNeutralBreasts 7.92
+meshNeutralBelly 7.62
+meshNeutralWaist 9.41
+meshNeutralButt 12.71
+meshNeutralThighs 6.60
+meshNeutralArms 3.40
+# z-bands as FRACTIONS of the body-mesh bounding box (ankles~0, neck~1); live-dialable.
+# breasts = FRONT half of its ring; butt = REAR half; thighs/arms per-side (max side reported).
+meshBandChestLo 0.8
+meshBandChestHi 0.82
+meshBandBreastLo 0.76
+meshBandBreastHi 0.9
+meshBandBellyLo 0.7
+meshBandBellyHi 0.72
+meshBandWaistLo 0.64
+meshBandWaistHi 0.66
+meshBandButtLo 0.48
+meshBandButtHi 0.6
+meshBandThighLo 0.3
+meshBandThighHi 0.46
+meshBandArmLo 0.8
+meshBandArmHi 0.84
+meshArmFrac 0.40
+
+# --- 2026-07-19b GEOMETRIC RESPONSE (the Sofia/M'rissi ladder lessons) ---
+# Radius follows the widest-point ratio DAMPED: applied = 1 + (measured-1) x gain. Dial on Sofia.
+meshRadiusGain 1.0
+# Capsule shifts = u per u of MEASURED surface movement (no slider-unit inversion):
+meshShiftButtK 0.4
+meshShiftBreastFwdK 0.79
+meshShiftBreastZK 2.7
+# Neutral breast front-mass Z — spine2-RELATIVE (DLL b7710e81; the kSpine2BindZ constant path).
+# CAPTURED 2026-07-20 from live Lydia (her breastZrel=4.86) — Softbody sag now ARMED: a preset
+# whose mound sits lower than 4.86-above-spine2 drops the breast capsules, higher lifts them.
+# The 3BA/CBBE table rows in the DLL are still 0 (uncaptured); Yvanni's own row carries +5.32.
+meshNeutralBreastZ 4.86
+# CUP measure (2026-07-19c): breast RADIUS rides the cup's vertical extent (not protrusion —
+# equal protrusion can be half or double the cup). CAPTURE on zero Lydia: read cup= from her
+# MESHGIRTH line, write it here. 0 = protrusion-ratio fallback meanwhile.
+meshNeutralBreastCup 9.01
+# MOUND threshold (2026-07-19d): the cup counts only verts protruding >= frac x near-max.
+meshCupFrac 0.8
+
+# ══ UV LANDMARKS — LIVE (2026-07-22) ═══════════════════════════════════════════════════════════
+# Each landmark's texture coordinate on femalebody_1.dds. Edit + pulse = the point moves. No rebuild.
+# HIGHER V = LOWER on the body.  U 0.5 = front centreline.
+# lmBrUpV nudged 0.662100 -> 0.652100 (user: "top point up 1%") 2026-07-22.
+lmNipU 0.424242
+lmNipV 0.698242
+lmBrUpU 0.450787
+lmBrUpV 0.652100
+lmBrDnU 0.424242
+lmBrDnV 0.740200
+lmChestU 0.500000
+lmChestV 0.705550
+lmBellyU 0.500000
+lmBellyV 0.820310
+lmWaistU 0.500000
+lmWaistV 0.878900
+lmButtU 0.444330
+lmButtV 0.146480
+
+# --- LIMB UV PAIRS (2026-07-23, user-supplied) -------------------------------
+# Two points per limb. The DISTANCE between the pair is the girth chord at that
+# band -- arms and legs grow in RADIUS ONLY, so a chord is the whole measurement.
+# leg -> NPC R Thigh [RThg]   arm -> NPC R UpperArm [RUar]
+# These are the first OFF-CENTRE bone frames (bind X != 0), so the landmark is
+# de-biased on all three axes, not just Y/Z like every spine point.
+lmLegAU 0.278320
+lmLegAV 0.659170
+lmLegBU 0.178710
+lmLegBV 0.659170
+lmArmAU 0.244140
+lmArmAV 0.561520
+lmArmBU 0.244140
+lmArmBV 0.419920
+# HEAD nose landmark - PLACEHOLDER, awaiting the user's read off femalehead.dds
+# (BnP - Female Skin). Facegen never moves UVs, so one nose UV = every human head.
+lmNoseU 0.480950
+lmNoseV 0.468750
+lmChinU 0.484400
+lmChinV 0.695800
+
+# --- LANDMARK BUTT FIT (2026-07-22) -----------------------------------------
+# The cheek capsules are PLACED from the UV butt landmark instead of ridden by a
+# girth ratio. Neutral = Lydia's landmark (6.75,-10.24,5.23) pushed 0.6u along its
+# own outward radial -- she read 0.6u inside her own skin, a pre-skin-vs-posed bias
+# that is the same on every body, so it cancels in the delta and only anchors here.
+# Every other NPC's cheek translates by how far HER landmark sits from that anchor,
+# in FULL 3D (the old shift was Y-only and could never reach a wider or lower butt).
+# OWN SWITCH: bodyScale/meshShape can neither enable nor freeze this.
+lmButtFit 1
+lmButtOutU 0.6000
+# PROPORTIONAL damp on the cheek displacement. At the neutral shape the delta is ~0, so
+# this cannot disturb a zero-slider body at ANY value - it only reins in extreme presets.
+# 0.482 = your 'bring it 1.5u in' on the extreme Lydia preset.
+lmButtPosGain 0.482
+lmButtNeutX 7.08
+lmButtNeutY -10.74
+lmButtNeutZ 5.23
+
+# --- NEUTRAL SHAPE (2026-07-23) : LYDIA -------------------------------------
+# THE reference body. Every other NPC's ReShape interpolates away from these.
+# UV landmarks, BONE-LOCAL, scale-free base-mesh units. +X right, +Y fwd, +Z up.
+# Derived: breastDistance 3.130 | cup 9.130 | sag +0.180
+#          chest fwd 12.090 | belly fwd 11.010 | waist fwd 10.850
+#          butt radial 12.265 (+0.6 push -> 12.865)
+# Full record: tools/ppb-scratch/neutral_shape_lydia.txt
+lmNeutNipX 7.240
+lmNeutNipY 13.000
+lmNeutNipZ 5.520
+lmNeutBrUpX 4.460
+lmNeutBrUpY 10.370
+lmNeutBrUpZ 9.620
+lmNeutBrDnX 7.290
+lmNeutBrDnY 11.810
+lmNeutBrDnZ 1.060
+lmNeutChestX 0.000
+lmNeutChestY 12.090
+lmNeutChestZ 4.020
+lmNeutBellyX 0.000
+lmNeutBellyY 11.010
+lmNeutBellyZ 1.400
+lmNeutWaistX 0.000
+lmNeutWaistY 10.850
+lmNeutWaistZ 2.680
+lmNeutButtX 6.750
+lmNeutButtY -10.240
+lmNeutButtZ 5.230
+
+# --- UV ReShape (2026-07-23) : THE shape system ------------------------------
+# One measurement source (UV landmarks), one response path, no fallback.
+#   chest -> spine2 ring   belly -> spine1 ring   waist -> spine0 ring
+#   butt  -> COM C16/C17   breast -> spine2 C11/C12 (own model)
+# Rings scale RADIALLY only; Z is never touched (height belongs to ReScale).
+# Long bones (arms/legs) take the ratio on RADIUS ONLY - endpoints untouched.
+lmReShape 1
+# per-channel trim. 1.0 = capsule follows the flesh exactly. 0 = channel off.
+lmGainChest 1.0
+lmGainBelly 1.0
+lmGainWaist 1.0
+lmGainButt 1.0
+# LIMB channel: the driver is the CHORD across the limb, not a distance-from-node.
+# Arms/legs grow in RADIUS ONLY, so girth at a fixed band is the whole measurement.
+# Lydia zero-slider neutrals, captured 2026-07-23.
+lmNeutLegChord 11.382
+lmNeutArmChord 6.437
+# HEAD channel (2026-07-24) - THE LAST ReShape PIECE. Face height (nose->chin from
+# the disk-facegen landmarks) vs Lydia's neutral drives the head capsule scale on
+# top of es. Faralda: sculpt 0.914 x race 1.08 = 0.99 -> capsules at her true face.
+lmNeutNoseChin 5.161
+lmGainHead 1.0
+
+# --- ReTouch GHOST ZONES + MOUTH TOUCH (2026-07-24, Path B test) --------------
+# Havok-native touch: detection recomputed per frame from live transforms (tracks
+# the body EXACTLY, zero physics cost). Markers refresh ~4 Hz for dialing.
+ghostZones 1
+ghostViz 0
+ghostRangeU 250
+ghostBreastPadU 1.5
+ghostButtPadU 1.0
+# mouth ghost capsule, HEAD BODY frame - dial by eye (behind the lips)
+mouthGhostAX -1.2
+mouthGhostAY 8.6
+mouthGhostAZ 0.2
+mouthGhostBX 1.2
+mouthGhostBY 8.6
+mouthGhostBZ 0.2
+mouthGhostR 1.0
+mouthEnterU 2.2
+mouthExitU 3.2
+mouthPhonemeIdx 11
+mouthPhonemeMax 1.0
+mouthPhoneme2Idx 1
+mouthPhoneme2Max 0.5
+mouthNeedFinger 1
+mouthDeepChinU 2.5
+mouthDeepPalU 5.0
+mouthRampIn 5
+mouthRampOut 3
+mouthFingerBox 1
+touchProbe 1
+touchProbeRangeU 3.0
+lmGainThigh 1.0
+lmGainArm 1.0
+lmClampLo 0.70
+lmClampHi 1.60
+# BREAST MODEL - fully computed, not knob+delta. Fitted from the M'rissi/Sofia
+# bodyScale-0 anchors; Lydia holdout landed 0.12u from her hand-dialled value.
+#   A.Y,B.Y = f(breastDistance)   A.Z,B.Z = f(sag)   R = f(cup)   B.X = 25% rule
+lmBrAYc 3.3588
+lmBrAYm 0.2065
+lmBrBYc 8.1069
+lmBrBYm 0.5688
+lmBrAZc 9.9623
+lmBrAZm 1.3371
+lmBrBZc 9.8965
+lmBrBZm -0.7820
+lmBrRc -0.6418
+lmBrRm 0.3645
+# tilt + height vertical (2026-07-23, the Imperial finding) + saturation clamps
+lmBrHK 0.994
+lmBrMidZ0 5.330
+lmBrCupSat 10.40
+lmBrSagLo -0.60
+lmBrSagHi 1.00
+lmBrAX 2.353
+lmBrLatK 0.25
+lmBrLatX 4.904
+lmBrLatY0 8.788
+
+# ── LANDMARK BUTT FIT (2026-07-22) ───────────────────────────────────────────
+# The cheek capsules are PLACED from the UV butt landmark instead of ridden by a
+# girth ratio. Neutral = Lydia's landmark (6.75,-10.24,5.23) pushed 0.6u along its
+# own outward radial — she read 0.6u inside her own skin, a pre-skin-vs-posed bias
+# that is the same on every body, so it cancels in the delta and only anchors here.
+# Every other NPC's cheek translates by how far HER landmark sits from that anchor,
+# in FULL 3D (the old shift was Y-only and could never reach a wider or lower butt).
+# OWN SWITCH: bodyScale/meshShape can neither enable nor freeze this.
+
+# ── DISMEMBER GUARD (2026-07-26, DF/NGD <-> PLANCK) ──────────────────────────
+# On any NPC death PPB tells PLANCK to ignore the victim for dgGraceDeadS
+# seconds, so a killing-blow dismemberment is skeleton surgery on an UN-driven
+# ragdoll (the NPC-vs-NPC freeze class). Actors wearing Next-Gen Decapitations
+# / Dismembering Framework gear (severed-head clone actors, stump-capped
+# corpses) stay ignored FOREVER and are fully skipped by every PPB system —
+# no rig on the invisible clone, no GHOST/NFING latch, no PIVRESCALE fights.
+dgEnable 1
+# dgGraceDeadS 15 = corpses stay PLANCK-ignored FOREVER (2026-07-26: the 22:46 freeze was a
+# gib on a corpse PLANCK had taken back after the 15s grace — mutilation happens arbitrarily
+# late, so timed hand-back can never cover it). Set a positive value to experiment.
+dgGraceDeadS 15
+dgLog 1
+
+# ── MOUTH THROAT GATE (2026-07-26) ───────────────────────────────────────────
+# mouthThroatChild = which head child is the throat wall (C10); mouthThroatU =
+# tip within this of the wall -> deep-hold stays open + THROAT event fires.
+mouthThroatChild 10
+mouthThroatU 1.5
+
+# ── DISMEMBER GUARD v2 (2026-07-26) ──────────────────────────────────────────
+# dgDeathIgnore: the death-INSTANT PLANCK ignore is now OPT-IN (0). Evidence: it
+# starved DF of the victim's ragdoll -> 3/3 dismember declines. Flip to 1 ONLY
+# if the NPC-vs-NPC freeze returns (then leave the game frozen for a dump).
+# dgCloneStrip: NGD head-clones reduced to their COM body (the head anchor) ->
+# severed heads become single-body objects (pick up / throw works).
+dgDeathIgnore 0
+dgCloneStrip 0
+dgStripDelayS 3
+
+# ── BEAST MOUTH GATE (2026-07-26, TOUCHPROBE-mapped on spawned Khajiit + Argonian) ──
+# Entry = ALL THREE of the family's entry capsules within mouthBeastEnterU of a fingertip
+# (finger classification still required); deep hold = both chins. Live-dialable indices.
+mouthKhaE1 6
+mouthKhaE2 7
+mouthKhaE3 8
+mouthKhaC1 2
+mouthKhaC2 3
+mouthArgE1 1
+mouthArgE2 6
+mouthArgE3 8
+mouthArgC1 2
+mouthArgC2 4
+mouthBeastEnterU 2.5
+
+# ── DF FREEZE FIX (2026-07-27) ───────────────────────────────────────────────
+# 1 = PPB hooks DF's ProcessDismemberment; a cut arriving on DF's worker thread is
+#     deep-copied and re-issued on the MAIN thread (scenegraph surgery belongs there;
+#     off-thread it races FSMP's parallel skinning in VR and deadlocks the game).
+#     Keep DF's own bDeferredHitProcess = 1 so its death-confirm still works.
+# 0 = no patch written into DF at all (the VR dismember freeze returns).
+dgDeferDf 0
+
+# 1 = log head-actor creation during decap (race-swap research)
+dgHeadTrack 0
+# ── DEATH-CONFIRMED DISMEMBERMENT (2026-07-27) ───────────────────────────────
+# Replaces DF's own worker-thread death-confirm (that worker is what deadlocks VR).
+# REQUIRES DismemberingFramework.ini bDeferredHitProcess = 0 (no DF worker at all).
+# PPB watches the kill, then asks DF — via its PUBLIC API, on the main thread — to
+# dismember. DF still applies all its own conditions, chance, sounds and limb physics.
+dgDeathCut 1
+dgDeathCutDelayS 0.20
+# how many limb nodes to offer DF per death (1 = closest to DF's natural feel;
+# raise if you want a better chance of a visible sever per kill)
+dgDeathNodeTries 1
+# 1 = sever the limb NEAREST the killing blow (0 = simple rotation)
+dgHitLocated 1
+# accuracy gate: the blow must land within this many units of a limb SPAN or nothing
+# is severed (mirrors DF own radius requirement). 0 = no gate.
+dgHitMaxDistU 0
+
+# ── SEVERED-HEAD SKELETON SWAP (2026-07-27) ──────────────────────────────────
+# At NGD OnDecapitate_Step01 the head actor exists with NO 3D yet (verified in game),
+# and it loads its skeleton from ITS RACE — the victim's — which is why it inherited
+# the full 130-capsule body bake. PPB now points that race at PPB\<skeleton>_head.nif
+# for the moment the head loads, then restores the real path. The *_head.nif files are
+# PPB's own bakes with every non-head capsule collapsed and every non-head body set to
+# collide with nothing, so a severed head carries head collision ONLY.
+# Because it is a SEPARATE FILE used only by heads, it cannot contaminate live NPCs.
+dgHeadSkel 0
+dgHeadSkelHoldS 3.0
+# 1 = park every severed-head body ON the COM anchor and cut its constraints, so nothing
+# orbits the head or drags it (per-actor writes; bodies are NOT shared between actors)
+dgHeadPark 0
+# 1 = unequip hair-slot armor (SMP wigs) from a severed head: wig strands intercept the
+# HIGGS palm-triangle pick, so a grab holds a hair strand instead of the head (17:21 hunt)
+dgHeadStripHair 0
+# Report 09 §6: HIGGS's hand box carries ragdoll sub-layer 3(R)/5(L) and SKIPS any body
+# whose sub-layer differs by exactly 1 (i.e. 2/4/6). A severed head's one reachable body
+# (the COM anchor) inherits its biped part number there — if it lands on 2/4/6 the hand
+# passes straight through it, which is why the head could never be grabbed while a weapon
+# still shoved it. This clears the anchor's sub-layer to 0 so the hand can contact it.
+dgHeadGrabFix 1
+
+# GRAB TEST: 1 = leave NGD severed-head clones under PLANCK management instead of ignoring them.
+# PLANCK is what drives a ragdolled actor, so a grab may need it. WARNING: this is the setting whose
+# absence stopped PLANCK driving the clone (floating head / driven SMP hair). If those artifacts come
+# back, that IS the trade-off answer. Set 0 to revert.
+dgHeadPlanck 1

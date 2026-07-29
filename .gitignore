@@ -1,0 +1,25 @@
+# build output
+build/
+out/
+*.dll
+*.pdb
+*.lib
+*.exp
+*.obj
+*.ilk
+
+# CMake / vcpkg
+CMakeUserPresets.json
+vcpkg_installed/
+.cache/
+
+# editors
+.vs/
+.vscode/
+.idea/
+
+# local backups / scratch
+*.bak
+*.bak_*
+*.tmp
+*~
