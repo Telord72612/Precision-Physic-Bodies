@@ -29,6 +29,11 @@ The MIT licence above covers the source code in this repository only.
 Building it requires the Havok 2010.2 SDK, which is proprietary and is NOT
 included here and NOT covered by this licence. You must obtain it yourself.
 
-Skeleton meshes (.nif) distributed with the released mod are derived from the
-XP32 Maximum Skeleton Special Extended and are governed by that mod's own
-permissions, not by this licence. They are not included in this repository.
+The skeleton meshes (meshes/.../PPB/*.nif) are XP32 Maximum Skeleton Special
+Extended skeletons with PPB's Havok collision layer built onto them. XPMSSE's
+author states that its skeleton .nif files are permission-free, being based on
+Bethesda's original files, and explicitly permits modifying them and shipping
+those modifications inside other mods. PPB is not, and must not be used as, an
+XPMSSE replacement -- it REQUIRES XP32 to be installed.
+
+Credit for the underlying skeleton belongs to Groovtama (XPMSSE) and xp32.
