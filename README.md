@@ -266,4 +266,21 @@ thousands of installed mods for conflicts, work that would otherwise have taken 
 
 ## Credits
 
-**FlyingParticle** — PLANCK, HIGGS and Collision Visualizer VR. None of this exists without them.
+PPB is a layer on top of other people's work. Every one of these is load-bearing:
+
+- **FlyingParticle** — **PLANCK**, **HIGGS** and **Collision Visualizer VR**. PPB is built directly on
+  their plugin APIs, and the visualizer is how every capsule in this mod was placed by eye. None of
+  this exists without them.
+- **Groovtama** — **XP32 Maximum Skeleton Special Extended** (and xp32 for the original skeleton).
+  XP32 is the rig PPB's joints track; the whole premise of this mod is "make the physics follow that
+  skeleton".
+- **Caliente and ousnius** — **CBBE** and BodySlide. The body standard ReShape measures against; the
+  UV landmark system works because CBBE-based meshes share a layout.
+- **The SKSE team** — **SKSE VR**. No script extender, no plugin, no mod.
+- **alandtse** — **VR Address Library for SKSEVR**. PPB binds engine functions by address; this is
+  what makes that possible without hardcoding offsets per game version.
+
+Also relied on for optional features: **FSMP / Faster HDT-SMP** (the SMP bones the hair and tail
+capsules ride), **SKEE / RaceMenu** and **OBody NG** (the morph data ReShape reads), and **MFG Fix**
+(the facial reaction used by the mouth sensor).
+
