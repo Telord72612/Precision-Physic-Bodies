@@ -209,15 +209,15 @@ ground" — the log-tumbling-down-stairs noise from an NPC caught on furniture. 
 
 **Requirements**
 
-- SKSE VR
-- VR Address Library for SKSEVR
-- Skyrim VR ESL Support
-- PLANCK
-- HIGGS VR
-- XP32 Maximum Skeleton
-- A CBBE-based body (3BA, SoftBody, custom NPC bodies, OBody)
+- [SKSE VR](https://skse.silverlock.org/)
+- [VR Address Library for SKSEVR](https://www.nexusmods.com/skyrimspecialedition/mods/58101)
+- [Skyrim VR ESL Support](https://www.nexusmods.com/skyrimspecialedition/mods/106712)
+- [PLANCK](https://www.nexusmods.com/skyrimspecialedition/mods/66025)
+- [HIGGS VR](https://www.nexusmods.com/skyrimspecialedition/mods/43930)
+- [XP32 Maximum Skeleton](https://www.nexusmods.com/skyrimspecialedition/mods/1988)
+- [A CBBE-based body](https://www.nexusmods.com/skyrimspecialedition/mods/30174) (3BA, SoftBody, custom NPC bodies, OBody)
 
-**Optional:** OBody NG · FSMP / SMP Flex · Dismembering Framework · Next-Gen Decapitations · Heels Fix
+**Optional:** [OBody NG](https://www.nexusmods.com/skyrimspecialedition/mods/77016) · [FSMP](https://www.nexusmods.com/skyrimspecialedition/mods/57339) / [SMP Flex](https://www.nexusmods.com/skyrimspecialedition/mods/101564) · [Dismembering Framework](https://www.nexusmods.com/skyrimspecialedition/mods/126203) · [Heels Fix](https://www.nexusmods.com/skyrimspecialedition/mods/64442)
 · SMP hair and tail mods
 
 Install with a mod manager. Keep it above other skeleton mods.
