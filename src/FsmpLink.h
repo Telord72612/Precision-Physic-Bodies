@@ -31,6 +31,21 @@ namespace FsmpLink {
     // physics thread) matches dynamic SMP bone rigids by position (<1.5u)
     // and applies fsmpPushForce x displacement as a central force — inside
     // the API's sanctioned forces-only window. No FSMP-internal layout used.
+    // ── THE push-stage size, THE single source of truth (2026-07-30) ──────────────────
+    // Was three hand-synchronized literals (kMaxSensors, g_pubStage[14], TargetBuf::t[14] +
+    // the PublishTargets clamp) with comments begging "the three sizes must move in
+    // lock-step". Every other size in this seam now derives from this constant.
+    //
+    // 28, not 14: the stage carries the SAME-ACTOR MERGE of all garment rigs. M'rissi is
+    // the proven worst case — her foxtail is the one table that claims all 14 slots by
+    // itself (2026-07-17 user dial), so with a covered wig on the same actor the wig
+    // published NOTHING and her hair never reacted (user-reported 2026-07-30). 14 + 14
+    // covers a max-sensor tail plus a max-sensor wig, both in full. Per-RIG publish counts
+    // are unchanged (each table still publishes at most its own TuneOf sensors ≤ 14), so
+    // this does not touch the 19-chord-whip regression class; PreSink's per-step scan is
+    // O(bodies x targets) and only fills past 14 on a tail+wig actor.
+    inline constexpr int kMaxPushTargets = 28;
+
     struct PushTarget {
         float bonePosU[3];
         float dispU[3];

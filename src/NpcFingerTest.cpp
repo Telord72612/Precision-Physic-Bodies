@@ -574,7 +574,11 @@ namespace {
     // clamp in FsmpLink::PublishTargets — THREE sizes in lock-step. (8 -> 14 on 2026-07-17: the
     // foxtail's 10 grip chords collided but never drove the SMP bones — user: "not all capsules
     // were rigged to affect the XML bone".)
-    constexpr int kMaxSensors = 14;
+    // Single-truth: FsmpLink::kMaxPushTargets (28). Per-TABLE sensor counts stay <= 14,
+    // so each rig publishes what it always did; only the same-actor MERGE stage grew —
+    // the M'rissi tail+wig fix (her 14-sensor foxtail filled the old stage alone and
+    // her wig published nothing).
+    constexpr int kMaxSensors = FsmpLink::kMaxPushTargets;
     // `sensors` (2026-07-16) = how many of the table's LEADING chords publish FSMP push force; the
     // rest are grip-only (they collide, they don't drive the SMP sim). It lives HERE, per-table,
     // because it is a FEEL property: it was previously the global kFingerCount(4), which silently
@@ -1008,7 +1012,7 @@ namespace {
     float         g_pubBest  = FLT_MAX;
     std::uint32_t g_pubActor = 0;
     int g_pubN = 0;
-    FsmpLink::PushTarget g_pubStage[14]{};   // = kMaxSensors (lock-stepped)
+    FsmpLink::PushTarget g_pubStage[kMaxSensors]{};   // derives from FsmpLink::kMaxPushTargets
     std::uint64_t g_pubFrame = 0;
 
     std::atomic<std::uint32_t> g_pinnedId{ 0 };   // console `nfing` pin (0 = knob/nearest mode)

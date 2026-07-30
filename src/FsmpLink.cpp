@@ -36,9 +36,9 @@ namespace {
     // -- STAGE 2: double-buffered push targets (main thread writes, physics thread reads) --
     struct TargetBuf {
         int                   n = 0;
-        FsmpLink::PushTarget  t[14]{};   // 14 = NpcFingerTest kMaxSensors (2026-07-17: M'rissi's
-                                         // foxtail publishes ALL 14 chords) — three sizes move in
-                                         // lock-step: this, g_pubStage[], and the clamp below.
+        FsmpLink::PushTarget  t[FsmpLink::kMaxPushTargets]{};   // sized by the ONE constant in
+                                         // FsmpLink.h (28) — see its banner for why 28 and for the
+                                         // history of the hand-synchronized 14s this replaces.
         std::uint64_t         stampMs = 0;
     };
     // 4-deep rotation (2026-07-13 review: the multi-rig merge legitimately publishes
@@ -357,7 +357,7 @@ namespace FsmpLink {
     void PublishTargets(const PushTarget* t, int n)
     {
         if (n < 0) n = 0;
-        if (n > 14) n = 14;   // = TargetBuf::t[] capacity (lock-stepped with kMaxSensors)
+        if (n > kMaxPushTargets) n = kMaxPushTargets;   // = TargetBuf::t[] capacity (single truth)
         const int next = (g_tActive.load(std::memory_order_relaxed) + 1) & 3;
         TargetBuf& b = g_tbuf[next];
         b.n = n;

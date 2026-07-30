@@ -27,6 +27,60 @@
   <installSteps order="Explicit">
 
     <!-- ══════════════════════════════════════════════════════════════════════
+         Performance: SMP hair & tail rigs on/off.
+         The rigs are gated by ONE knob (npcFollower) in PPB_tuning.txt, so the
+         "off" option installs a tuning file that differs from the core one by
+         exactly that line. The variant is GENERATED from the canonical file at
+         package time (package_release.py) — never hand-edited — so the two can
+         not drift apart.
+         ══════════════════════════════════════════════════════════════════════ -->
+    <installStep name="Performance">
+      <optionalFileGroups order="Explicit">
+
+        <group name="SMP hair and tail collision" type="SelectExactlyOne">
+          <plugins order="Explicit">
+
+            <plugin name="On - full experience (recommended)">
+              <description>
+Hair and tails get collision capsules and react to your hands and weapons — on both
+Faster HDT-SMP and HDT-SMP Flex.
+
+Cost is bounded: only the 2 NPCs nearest you (within ~10 m) carry live rigs, and a
+closer NPC takes the slot from a farther one. A dense wig is 85-200 physics bodies,
+which is exactly why that budget exists.
+
+You can tune it later in PPB_tuning.txt: npcRigMaxActors (how many NPCs), npcRigRangeU
+(the range), npcFollower 0 (kill switch, takes effect within a second, no restart).
+              </description>
+              <files/>
+              <typeDescriptor><type name="Recommended"/></typeDescriptor>
+            </plugin>
+
+            <plugin name="Off - performance">
+              <description>
+No hair or tail rigs at all: NPC hair and tails will NOT react to your touch, and your
+hand passes through them. Everything else in PPB is unaffected (body capsules, joints,
+touch detection on the body, heel fix).
+
+Pick this on a machine that struggles in crowds. It installs the same PPB_tuning.txt
+with one line changed: npcFollower 0.
+
+You can change your mind any time by editing that line back to 1 — no reinstall needed,
+it takes effect within a second, even mid-game.
+              </description>
+              <files>
+                <folder source="20 Performance - no SMP garment rigs" destination="" priority="1"/>
+              </files>
+              <typeDescriptor><type name="Optional"/></typeDescriptor>
+            </plugin>
+
+          </plugins>
+        </group>
+
+      </optionalFileGroups>
+    </installStep>
+
+    <!-- ══════════════════════════════════════════════════════════════════════
          Sibling-mod compatibility — ONE option, and it writes a file that
          belongs to another mod, so it is opt-in and says plainly what it
          overwrites.

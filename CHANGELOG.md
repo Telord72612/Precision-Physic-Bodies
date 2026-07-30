@@ -56,6 +56,22 @@ to **107**. The full map ships as [`docs/capsule_api_names.md`](docs/capsule_api
 contact to a body part. Both are generated from the plugin's own table and verified against the
 shipped binary, so they cannot drift from the code.
 
+### Tail + wig on the same NPC: both now push
+
+The push targets travel through a per-actor staging buffer that held 14 slots. M'rissi's foxtail
+is the one table that legitimately claims all 14 by itself — so with a covered wig on the same
+actor, the wig collided but never pushed and her hair sat dead. The stage is now 28 slots
+(a max-sensor tail plus a max-sensor wig, both in full), and the three previously hand-
+synchronized copies of that size are now one shared constant (`FsmpLink::kMaxPushTargets`) so
+they can never drift again. Per-rig publish counts are unchanged.
+
+### FOMOD: hair and tail rigs are now an install-time choice
+
+A new first installer page, "Performance", offers SMP hair & tail collision **On (recommended)**
+or **Off**. Off installs a tuning file generated from the canonical one at package time,
+differing by exactly `npcFollower 0` — for machines without the headroom. Reversible any time by
+editing that one line (live, no restart).
+
 ### Fixes
 
 - **Runaway finger colliders.** They could follow a stale HIGGS hand anchor away from the hand —
