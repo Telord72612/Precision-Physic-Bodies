@@ -1676,4 +1676,16 @@ dgHeadGrabFix 1
 # PLANCK is what drives a ragdolled actor, so a grab may need it. WARNING: this is the setting whose
 # absence stopped PLANCK driving the clone (floating head / driven SMP hair). If those artifacts come
 # back, that IS the trade-off answer. Set 0 to revert.
-dgHeadPlanck 1
+dgHeadPlanck 0
+# MAPPING SESSION HUD (2026-07-29): with touchProbe on, an actual TOUCH (closer than
+# touchProbeHudU) pops 'PPB: <slot>[side] C<n> = <proposed name>' in your view. Confirm or
+# correct each label by voice; every shown line is also logged as TOUCHHUD for the record.
+touchProbeHud 1
+touchProbeHudU 1.0
+
+# PIVGUARD v2 (2026-07-29): PLANCK's pivot collapse (loosenRagdollConstraintPivots) stays
+# at its stock GLOBAL 1 — the band-aid non-PPB skeletons need — but is set to 0 for the
+# duration of a PPB-skeleton actor's own drive, AND the guard captures each ragdoll's baked
+# pivots on first sight and writes back any pivot found collapsed (~2 Hz). v1's stranded-pivot
+# failure is structurally impossible: we own the restore. 0 = off (PLANCK stock everywhere).
+planckLoosenOurs 1

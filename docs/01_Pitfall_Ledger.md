@@ -768,26 +768,118 @@ capsules or pure computation only (the ReTouch architecture rule, user-set, now 
 
 ---
 
-## Interop with other SKSE plugins — general lessons
+## Dismemberment / foreign-DLL era (2026-07-26/27) — see `14` for the full mechanisms
 
-(The mod-specific reverse-engineering that produced these has been kept out of the public repo.)
+**Hooking another mod's DLL**
+- `SKSE::Trampoline::write_branch` is for RE-POINTING AN EXISTING CALL SITE, not detouring a
+  function entry, and its rel32 jump **cannot reach a DLL loaded >2 GB away** — the user hit
+  "skse/Trampoline.cpp(168): displacement out of range" as a hard crash. Use a **14-byte absolute
+  jump** (`FF 25` + abs64), which has no range limit.
+- **Validate the prologue, and wildcard the stack-displacement byte.** `48 89 5C 24 ?? 55 56 57 41
+  54 41 55 41 56` — DF/NGD-Step02 use `0x20`, **NGD-Step01 uses `0x18`**. A rigid `memcmp` silently
+  refused to install and cost a whole test session (the log said "prologue mismatch", which is why
+  the guard must LOG and DISABLE rather than patch blindly).
+- Many Havok SDK setters are **not linked** into PPB (`setEnabled`, `setPosition`, `setMotionType`,
+  `setMass`). Bind the engine function by address (PLANCK's idiom:
+  `hkpConstraintInstance::setEnabled` @ `0xAC06A0`) or write the fields directly
+  (`const_cast<hkTransform&>(hk->getTransform()).setTranslation(...)`).
 
-- `SKSE::Trampoline::write_branch` re-points an EXISTING call site; its rel32 jump cannot reach a
-  DLL loaded >2 GB away. For a function-entry detour across DLLs use a 14-byte absolute jump
-  (`FF 25` + abs64), which has no range limit.
-- Always validate a prologue before patching, and treat the stack-displacement byte as a wildcard —
-  two functions with the same shape can differ there. On mismatch, LOG AND DISABLE; never patch anyway.
-- Many Havok SDK setters are not linked into a plugin build. Bind the engine function by address, or
-  write the fields directly through an accessible getter.
-- NEVER marshal through `SKSE::TaskInterface::AddTask` to escape a deadlock whose cause IS the task
-  queue lock. And never block another plugin's worker thread while calling that same plugin from the
-  main thread — that inverts the lock and stalls every handoff.
-- A hang is not a crash: no exception means no crash log. Capture the live process instead
-  (`rundll32 comsvcs.dll, MiniDump <pid> <file> full`) and read the thread stacks.
-- `TESDeathEvent` does not reliably fire its final (`dead=true`) stage — a feature gated on it may
-  never run once. Do not gate ragdoll work on `health <= 0` either: that is also true for bleedout,
-  essential and knocked-out actors that recover.
-- Before writing interop code against another mod, READ ITS INI AND API SURFACE — the switch you
-  need may already exist.
-- When a mod's own log shows the work happening, check whether YOUR system ran at all before
-  "fixing" it. An absent log line is evidence.
+**Threading**
+- **NEVER marshal via `SKSE::TaskInterface::AddTask` to escape a deadlock whose cause IS the task
+  lock.** The VR dismember freeze is exactly that: main thread holds the SKSE task lock while stuck
+  in the FSMP skinning pass; DF's workers block in `AddTask`. Marshaling through it blocks on the
+  same critical section.
+- **Never block a foreign mod's worker thread while calling that same mod's code from the main
+  thread.** Lock inversion: the blocked worker holds a DF-internal lock the main thread then needs.
+  Every handoff hit the 500 ms timeout and the user felt it as a stutter.
+- A hang is not a crash: **no exception ⇒ no crashlog**. Capture the live process instead —
+  `rundll32 comsvcs.dll, MiniDump <pid> <file> full`, then `icacls … /grant Everyone:(R)` (the dump
+  ACL blocks the store-app debugger). DF, NGD and PLANCK all ship PDBs.
+
+**Event assumptions**
+- **`TESDeathEvent` with `dead=true` NEVER FIRES in this setup** — only the dying stage
+  (`dead=false`). A feature gated on the final stage runs zero times. (4× `dead=false`, 0×
+  `dead=true` in one session.)
+- Do not gate ragdoll work on "health <= 0": it is also true for **bleedout / essential / knocked-out
+  NPCs that recover**, and combined with a permanent PLANCK-ignore it stripped their ragdolls
+  permanently ("the gate was applied to everyone"). Use real death events only.
+
+**Diagnosis discipline**
+- When a mod's own log shows the work happening (DF logged real severs ~16 ms *before* our death
+  event), check whether YOUR system ran at all before "fixing" it. Ours had never executed once.
+- Before blaming a sibling mod, strip your own code out and re-test: 4 dumps with PPB's rigs off and
+  its hooks disabled reproduced the freeze identically ⇒ **not PPB**. The user said so first.
+
+**Knob gating (2026-07-28)**
+- **Do not gate a CLASSIFICATION behind an ACTION's knob.** The severed-head *park* keys off
+  `isClone`/`stripAt`, but that classification sat inside `if (... && dgCloneStrip)`. When
+  `dgCloneStrip` was set to 0 after the shared-shape incident, the park became dead code —
+  zero `NFING PARK` lines while the user watched the joints orbit the head. Classify whenever ANY
+  consumer is enabled; let each action's own knob decide what runs.
+- Corollary for diagnosis: **an absent log line is evidence**. "No PARK lines" located this in
+  seconds; without the per-action logging it would have looked like a physics failure.
+
+## ★★ A VTABLE FOLLOWS THE BASE INTERFACE, NEVER THE DERIVED CLASS'S TEXTUAL ORDER (2026-07-29)
+Chasing a failing PLANCK settings call, I "fixed" our local IPlanckInterface001 declaration to
+match the DERIVED class in planck's pluginapi.h (which lists Get/SetSettingDouble between
+Deprecated2 and AddIgnoredActor). WRONG: those are overrides — the vtable layout is defined by
+the BASE interface in planckinterface001.h, which declares Get/SetSettingDouble at the END
+(slots 13/14). The original declaration had been correct all along; the "fix" broke every call
+for a day (settings calls landed on Remove/AddIgnoredActor; ignore calls landed on the
+AGGRESSION ignore lists). Also retract the same-day claim that "PLANCK-ignore was a silent
+no-op since 07-26" — it was working; only the 07-29 afternoon builds misdirected it.
+RULES: (1) when declaring a foreign interface locally, copy the BASE-interface declaration
+order, never a derived class's; (2) prove a vtable theory with a positive control before
+"fixing" it (call GetBuildNumber through the suspect layout and check the value) — a runtime
+probe would have falsified this in one launch; (3) diagnostic-first: the PIVGUARD first-fire
+diag (knob → skeleton → getOk/setOk) found in one launch what three theory rounds missed.
+
+## ★ NEVER REMOVE A BODY FROM THE WORLD WHILE A CONSTRAINT STILL REFERENCES IT (2026-07-28, CTD)
+`crash-2026-07-28-22-15-55`: `EXCEPTION_ACCESS_VIOLATION` at `SkyrimVR.exe+0ABB2B4
+cmp dword ptr [rcx+0xF8],0` with **RCX = 0**, **RDX = hkpRigidBody "NPC L Thigh [LThg]"** (base
+00048117 — the decap Redguard), **RSI = hkpConstraintInstance whose Entity[0] is that same body**,
+**RAX = hkpSimulationIsland\***. The severed-head park had removed the 17 satellite ragdoll bodies
+from the Havok world; the engine's constraint pass then walked a constraint whose entity had **no
+simulation island** and dereferenced null.
+- **DISABLING a constraint is NOT REMOVING it.** `hkpConstraintInstance::setEnabled(false)` stops it
+  solving; the instance still exists and still points at both entities. A body may only leave the
+  world once **nothing references it** — PPB's own marker/rig bodies are safe precisely because they
+  are standalone (no constraints), which is why `RemoveBody` had been safe everywhere else.
+- Aggravator: NGD's maintenance re-added the bodies every ~2 s, so remove→re-add churned for 7
+  minutes before hitting the bad window. **A removal that reports the same count every pass is not
+  removing — it is losing a race**, and a race like that is a CTD waiting for its moment.
+- The fix was to stop needing the removal at all (`bAdvancedNPCMaintenance = 0` — NGD's own switch)
+  and revert to keyframe+sleep, which never crashed. See `14` §4f/§4g.
+
+## ★ THE FEET-IN-THE-GROUND SHIP BUG (2026-07-29) — poseConform × loosenRagdollConstraintPivots=1
+First user-visible regression of the shipped mod, and it reached MALES. Two compounding errors:
+1. **poseConform is UNGATED** — its map is built by ragdoll-bone → "NPC …" node-NAME matching
+   (PPBHook.cpp pass 1/2), which succeeds on EVERY XP32 humanoid, male or female. "PPB only
+   touches mapped females" was true of CapFix/PivFix/rigs and FALSE of the conform. My log-census
+   "proof" that no male was touched sampled ids from the CHATTY systems; PCONF logs one map-built
+   line and occasional perf warnings, so its reach was invisible in an id census. **A per-actor
+   system that logs almost nothing is invisible to log-based audits — census the CODE GATES, not
+   the log volume.**
+2. **The whole calibration era ran under loosenRagdollConstraintPivots=0** (PPB's dev override).
+   Users run PLANCK's default **1**. Under 1, the conform sinks every conformed humanoid ~2u into
+   the ground (mechanism unresolved — pivot collapse and the conform fight over the same
+   equilibrium; PLANCK foot-IK expresses the result as sunken feet). We never saw it because our
+   machine never ran the shipping configuration. **Test the SHIPPING config, not the dev config —
+   retiring a dev override IS a behavior change and needs an in-game pass over the reference NPC.**
+Verified live both ways: loosen 0→1 sank Lydia 2u; `poseConform 0` (hot) snapped her back.
+HOTFIX: poseConform 0 in the shipped tuning (1.0.2). OPEN: root-cause the interaction, or retire
+the conform after measuring what it buys; if kept, gate it to PPB-driven actors only.
+
+## ⛔ PER-ACTOR SCOPING OF A SIBLING MOD'S FLAG MUST RESPECT ITS FULL CYCLE (2026-07-29, user-caught)
+`planckLoosenOurs` set PLANCK's `loosenRagdollConstraintPivots` to 0 around a PPB-skeleton actor's
+drive (restore-after-chain). LOOKED sound — the flag is consumed inside PLANCK's per-actor
+PreDriveToPoseHook. BUT the collapse is a CYCLE: save originals → collapse → (next frame) RESTORE
+originals — and the RESTORE is gated on the SAME flag. One frame collapsed under flag=1 (ragdoll
+build, load order, any pre-bracket window) + every later frame at flag=0 ⇒ the restore never runs
+⇒ pivots stranded at the collapsed snapshot ⇒ joints visibly off the XP32 nodes (Lydia, caught by
+eye; log signature: settled `medHavokArc` ~1.7% short of `nodeArc`, PIVRESCALE "correcting" a
+healthy NPC). RULE: before scoping another mod's setting per-actor, trace EVERY consumer of that
+setting through its full state cycle — a flag that gates both a mutation AND its own undo cannot
+be scoped by value alone. Feature REMOVED from the code entirely 2026-07-29 evening (not knobbed off — a footgun with a
+dormant switch is still a footgun). If ever revived: force-restore the pivots ourselves on
+scope-entry, per ragdoll instance, before the first scoped drive.

@@ -16,7 +16,9 @@
 
 #include "PivFix.h"
 #include "Tuning.h"
-#include "Interop.h"   // Interop::IsActorGrabbedByPlayer / HasHiggs — the grab gate (2026-07-07)
+#include <mutex>
+#include "Interop.h"
+#include "DismemberGuard.h"  // PlanckGet/SetSetting — the PivGuard flag bracket (2026-07-29)   // Interop::IsActorGrabbedByPlayer / HasHiggs — the grab gate (2026-07-07)
 
 // PPBHook.cpp's poseConformDump window epoch (0 = window closed) — gates the CLAVDUMP diagnostic.
 namespace ArmIK { std::uint32_t PoseConformDumpEpoch(); }
@@ -656,6 +658,155 @@ namespace ObjectHold {
         std::unordered_map<std::uint32_t, std::array<hkpConstraintInstance*, 17>> g_descaled;
     }
 
+
+    // ══ PIVGUARD (2026-07-29 v2 — the cycle-aware per-actor loosen split) ═══════════════════
+    // GOAL: PLANCK's loosenRagdollConstraintPivots stays 1 GLOBALLY (the band-aid every
+    // non-PPB skeleton needs), but PPB-skeleton actors run their drives under 0 — their
+    // baked joints must never be collapsed to the anim pose (user-measured: ankle +6u/-3u,
+    // shoulders 2u inward under the collapse).
+    // v1 failed because PLANCK's restore is gated on the SAME flag: one collapsed frame +
+    // scoped 0 forever = pivots stranded. v2 makes stranding impossible by OWNING the truth:
+    //  - capture the 17 constraint pivot pairs per RAGDOLL INSTANCE on first sight (a fresh
+    //    instance is baked-true by construction — the engine builds it from our NIF, and the
+    //    collapse can only happen inside drives, all of which pass through our bracket first);
+    //  - verify at ~2 Hz; any pivot that deviates gets the captured value written back (both
+    //    copies, the dual-write discipline). A stray collapse survives <500 ms, once.
+    //  - our own pivot writers (PIVRESCALE / descale) INVALIDATE the capture so the guard
+    //    never fights them; shoulders are excluded entirely (clavicle-follow owns them live).
+    namespace {
+        struct PivCap {
+            const void* ragdoll = nullptr;
+            bool  have[17] = {};
+            float a[17][4] = {}, b[17][4] = {};
+            std::uint64_t lastCheckMs = 0;
+            bool  announced = false;
+        };
+        std::unordered_map<std::uint32_t, PivCap> g_pivCap;
+        std::mutex g_pivCapMx;
+
+        bool PivIsOnPPBSkeleton(RE::Actor* actor)
+        {
+            auto* base = actor ? actor->GetActorBase() : nullptr;
+            auto* race = base ? base->GetRace() : nullptr;
+            if (!race) return false;
+            const auto  sex = base->IsFemale() ? RE::SEXES::kFemale : RE::SEXES::kMale;
+            const char* mdl = race->skeletonModels[sex].GetModel();
+            if (!mdl) return false;
+            return std::strstr(mdl, "\\PPB\\") != nullptr || std::strstr(mdl, "/PPB/") != nullptr;
+        }
+        std::uint64_t PivNowMs()
+        {
+            using namespace std::chrono;
+            return duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
+        }
+        thread_local bool   t_pgScoped  = false;
+        thread_local double t_pgRestore = 1.0;
+    }
+
+    bool PivGuardScopeActive()   { return t_pgScoped; }
+    double PivGuardRestoreValue(){ return t_pgRestore; }
+    void PivGuardClearScope()    { t_pgScoped = false; }
+    void PivGuardInvalidate(std::uint32_t id)
+    {
+        std::lock_guard<std::mutex> g(g_pivCapMx);
+        g_pivCap.erase(id);   // our own writer moved pivots — next drive re-captures the new truth
+    }
+    void PivGuardClearOnLoad()
+    {
+        std::lock_guard<std::mutex> g(g_pivCapMx);
+        g_pivCap.clear();
+        t_pgScoped = false;
+    }
+
+    void PivGuardOnPreDrive(RE::Actor* actor, const void* ragdollInstance)
+    {
+        // FIRST-FIRE DIAGNOSTIC (2026-07-29): the v2 field test failed SILENTLY — log the whole
+        // decision chain for the first few drives so the log names the dead stage.
+        static std::atomic<int> s_diagLeft{ 4 };
+        const bool diag = s_diagLeft.load(std::memory_order_relaxed) > 0;
+
+        if (!actor) return;
+        if (!ObjectHold::PlanckLoosenOursOn()) {
+            if (diag && s_diagLeft.fetch_sub(1) > 0)
+                logger::info("PIVGUARD diag {:08X}: KNOB OFF (planckLoosenOurs)", actor->GetFormID());
+            return;
+        }
+        if (!PivIsOnPPBSkeleton(actor)) {
+            if (diag && s_diagLeft.fetch_sub(1) > 0) {
+                auto* base = actor->GetActorBase();
+                auto* race = base ? base->GetRace() : nullptr;
+                const char* mdl = race ? race->skeletonModels[base->IsFemale() ? RE::SEXES::kFemale
+                                                                               : RE::SEXES::kMale].GetModel() : nullptr;
+                logger::info("PIVGUARD diag {:08X}: NOT PPB SKELETON — model='{}'",
+                             actor->GetFormID(), mdl ? mdl : "<null>");
+            }
+            return;
+        }
+
+        // 1) the flag bracket (Hooks.cpp restores right after the chained call returns)
+        double prev = 1.0;
+        const bool gotOk = DismemberGuard::PlanckGetSetting("loosenRagdollConstraintPivots", prev);
+        const bool setOk = gotOk && DismemberGuard::PlanckSetSetting("loosenRagdollConstraintPivots", 0.0);
+        if (diag && s_diagLeft.fetch_sub(1) > 0)
+            logger::info("PIVGUARD diag {:08X}: ppbSkel=YES getOk={} prev={:.0f} setOk={}",
+                         actor->GetFormID(), gotOk ? 1 : 0, prev, setOk ? 1 : 0);
+        if (setOk) {
+            t_pgRestore = prev;
+            t_pgScoped  = true;
+        } else {
+            return;   // PLANCK absent / API failed — nothing scoped
+        }
+
+        // 2) capture / verify at ~2 Hz per actor (joint lookup is 17 node walks — not per-frame)
+        const std::uint32_t id = actor->GetFormID();
+        PivCap* cp;
+        {
+            std::lock_guard<std::mutex> g(g_pivCapMx);
+            cp = &g_pivCap[id];
+        }
+        const std::uint64_t now = PivNowMs();
+        const bool fresh = (cp->ragdoll != ragdollInstance);
+        if (!fresh && now - cp->lastCheckMs < 500) return;
+        cp->lastCheckMs = now;
+        if (fresh) { *cp = PivCap{}; cp->ragdoll = ragdollInstance; cp->lastCheckMs = now; }
+
+        int healed = 0;
+        for (int j = 0; j < 17; ++j) {
+            if (j == 2 || j == 13) continue;                 // shoulders: clavicle-follow owns them
+            auto* reChild = PivFindBodyRE(actor, kDChild[j]);
+            auto* reOther = PivFindBodyRE(actor, kDOther[j]);
+            if (!reChild || !reOther) continue;
+            auto* child = reinterpret_cast<hkpEntity*>(reChild);
+            hkpConstraintInstance* ci = PivFindJoint(child, reinterpret_cast<hkpEntity*>(reOther));
+            if (!ci || !ci->getDataRw()) continue;
+            auto* atom = PivTransformsAtom(ci->getDataRw());
+            if (!atom) continue;
+            const hkVector4 ta = atom->m_transformA.getTranslation();
+            const hkVector4 tb = atom->m_transformB.getTranslation();
+            if (!cp->have[j]) {
+                for (int k = 0; k < 3; ++k) { cp->a[j][k] = ta(k); cp->b[j][k] = tb(k); }
+                cp->have[j] = true;
+                continue;
+            }
+            bool off = false;
+            for (int k = 0; k < 3; ++k)
+                if (std::fabs(ta(k) - cp->a[j][k]) > 0.0015f ||
+                    std::fabs(tb(k) - cp->b[j][k]) > 0.0015f) { off = true; break; }
+            if (off) {
+                hkVector4 ra; ra.set(cp->a[j][0], cp->a[j][1], cp->a[j][2], 0.f);
+                hkVector4 rb; rb.set(cp->b[j][0], cp->b[j][1], cp->b[j][2], 0.f);
+                atom->m_transformA.setTranslation(ra);
+                atom->m_transformB.setTranslation(rb);
+                ++healed;
+            }
+        }
+        if (healed && !cp->announced) {
+            cp->announced = true;
+            logger::info("PIVGUARD {:08X}: healed {} stranded pivot pair(s) back to captured baked "
+                         "values (collapse leak caught)", id, healed);
+        }
+    }
+
     void PivDescaleApply(RE::Actor* actor)
     {
         if (!actor || g_tune.pivDescale < 0.5f) return;
@@ -680,6 +831,7 @@ namespace ObjectHold {
             hkVector4 tb = atom->m_transformB.getTranslation();
             ta.mul4(inv);
             tb.mul4(inv);
+            PivGuardInvalidate(actor->GetFormID());                  // pivots moved by US -> recapture
             atom->m_transformA.setTranslation(ta);
             atom->m_transformB.setTranslation(tb);
             seen[j] = ci;
@@ -982,6 +1134,7 @@ namespace ObjectHold {
             hkVector4 tb = atom->m_transformB.getTranslation();
             ta.mul4(factor);                                         // ONE scalar, BOTH copies, in lock-step
             tb.mul4(factor);
+            PivGuardInvalidate(actor->GetFormID());                  // pivots moved by US -> recapture
             atom->m_transformA.setTranslation(ta);
             atom->m_transformB.setTranslation(tb);
             ++scaledNow;

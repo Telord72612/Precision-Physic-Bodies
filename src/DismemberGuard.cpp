@@ -34,6 +34,12 @@ namespace {
         virtual unsigned int GetBuildNumber() = 0;
         virtual bool Deprecated1(const std::string_view& name, double& out) = 0;
         virtual bool Deprecated2(const std::string& name, double val) = 0;
+        // ★★ 2026-07-29 CORRECTION: the vtable follows the BASE interface
+        // (planckinterface001.h), which declares Get/SetSettingDouble at the END (slots 13/14) —
+        // NOT pluginapi.h's derived textual order. The original decl here was RIGHT; the
+        // afternoon "fix" that moved them up to slots 4/5 broke BOTH the settings calls (landed
+        // on Remove/AddIgnoredActor) and the ignore calls (landed on the AGGRESSION lists).
+        // Overrides never reorder a vtable. Verified against the v0.8.0 tag (build 80000 live).
         virtual void AddIgnoredActor(RE::Actor* actor) = 0;
         virtual void RemoveIgnoredActor(RE::Actor* actor) = 0;
         virtual void AddAggressionIgnoredActor(RE::Actor* actor) = 0;
@@ -902,6 +908,17 @@ namespace {
 }
 
 namespace DismemberGuard {
+
+    // PLANCK runtime settings passthrough (used by the per-actor loosen scoping in Hooks.cpp).
+    bool PlanckGetSetting(const char* name, double& out)
+    {
+        return g_planck ? g_planck->GetSettingDouble(name, out) : false;
+    }
+    bool PlanckSetSetting(const char* name, double val)
+    {
+        return g_planck ? g_planck->SetSettingDouble(name, val) : false;
+    }
+
 
     void AcquirePlanck()
     {

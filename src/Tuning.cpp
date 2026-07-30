@@ -186,7 +186,7 @@ namespace ObjectHold {
                     PK_NOSNAP(dgDeferDf), PK_NOSNAP(dgHeadTrack),
                     PK_NOSNAP(dgDeathCut), PK_NOSNAP(dgDeathCutDelayS), PK_NOSNAP(dgDeathNodeTries),
                     PK_NOSNAP(dgHitLocated), PK_NOSNAP(dgHitMaxDistU),
-                    PK_NOSNAP(dgHeadSkel), PK_NOSNAP(dgHeadSkelHoldS), PK_NOSNAP(dgHeadPark), PK_NOSNAP(dgHeadStripHair), PK_NOSNAP(dgHeadGrabFix), PK_NOSNAP(dgHeadPlanck),
+                    PK_NOSNAP(dgHeadSkel), PK_NOSNAP(dgHeadSkelHoldS), PK_NOSNAP(dgHeadPark), PK_NOSNAP(dgHeadStripHair), PK_NOSNAP(dgHeadGrabFix), PK_NOSNAP(dgHeadPlanck), PK_NOSNAP(planckLoosenOurs), PK_NOSNAP(touchProbeHud), PK_NOSNAP(touchProbeHudU),
                     PK_NOSNAP(lmBrAYc), PK_NOSNAP(lmBrAYm), PK_NOSNAP(lmBrBYc), PK_NOSNAP(lmBrBYm),
                     PK_NOSNAP(lmBrAZc), PK_NOSNAP(lmBrAZm), PK_NOSNAP(lmBrBZc), PK_NOSNAP(lmBrBZm),
                     PK_NOSNAP(lmBrRc),  PK_NOSNAP(lmBrRm),  PK_NOSNAP(lmBrAX),
@@ -769,6 +769,9 @@ namespace ObjectHold {
     bool  DgHeadParkOn()        { return g_tune.dgHeadPark > 0.5f; }
     bool  DgHeadGrabFixOn()     { return g_tune.dgHeadGrabFix > 0.5f; }
     bool  DgHeadPlanckOn()      { return g_tune.dgHeadPlanck > 0.5f; }
+    bool  PlanckLoosenOursOn()  { return g_tune.planckLoosenOurs > 0.5f; }
+    bool  TouchProbeHudOn()     { return g_tune.touchProbeHud > 0.5f; }
+    float TouchProbeHudU()      { return g_tune.touchProbeHudU; }
     bool  DgHeadStripHairOn()   { return g_tune.dgHeadStripHair > 0.5f; }
     bool  GhostVizEnabled()     { return g_tune.ghostViz > 0.5f; }
     float GhostRangeU()         { return g_tune.ghostRangeU; }

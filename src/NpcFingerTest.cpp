@@ -1815,6 +1815,52 @@ namespace NpcFinger {
     //     whole point of Path B.
     // Visual markers refresh at ~4 Hz for the dial session (they lag a fast-moving body a beat;
     // the DETECTION never lags — it is recomputed from live transforms every frame).
+
+    // ── THE CAPSULE NAME TABLE (2026-07-29, Report 15 + capsule_body_part_map.json) ─────────
+    // Proposed body-part name per slot.child on the HUMAN female skeleton. GEO-classified names
+    // are the hypothesis the mapping HUD exists to confirm — the user touches, reads, corrects.
+    // nullptr = seed/duplicate (filtered; never shown).
+    static const char* ProposedPartName(int slot, int child)
+    {
+        switch (slot) {
+        case 0: { static const char* n[] = {"palm rod","thumb-side rod","pinky-side rod",nullptr,nullptr};
+                  return child < 5 ? n[child] : nullptr; }
+        case 1: { static const char* n[] = {"forearm (elbow half)","forearm (wrist half)"};
+                  return child < 2 ? n[child] : nullptr; }
+        case 2: { static const char* n[] = {"upper arm (shoulder half)","upper arm (elbow half)","deltoid / shoulder cap",nullptr};
+                  return child < 4 ? n[child] : nullptr; }
+        case 3: { static const char* n[] = {"cranium","upper lip","chin R","chin L","cheek R","cheek L",
+                  "cheekbone R","cheekbone L","nose","palate","throat wall","under-jaw (deep)",
+                  "temple/ear R","temple/ear L","back of head"};
+                  return child < 15 ? n[child] : nullptr; }          // C15..C22 = buried seeds
+        case 4: { static const char* n[] = {"waist ring","lower belly R","lower belly L","front waist band",
+                  "lower abdomen","lower back R","lower back L","flank R"};
+                  return child < 8 ? n[child] : nullptr; }
+        case 5: { static const char* n[] = {"belly / navel","belly side R","belly side L","midriff R",
+                  "midriff L","flank R","flank L"};
+                  return child < 7 ? n[child] : nullptr; }
+        case 6: { static const char* n[] = {"chest ring","lat R","lat L","front rib R","front rib L",
+                  "lower chest","trapezius R","trapezius L","collarbone R","collarbone L",
+                  "sternum / cleavage","BREAST R","BREAST L","shoulder cap R","shoulder cap L"};
+                  return child < 15 ? n[child] : nullptr; }
+        case 7: return child == 0 ? "neck / throat" : nullptr;
+        case 8: { static const char* n[] = {"thigh rod","upper thigh / groin","hip-glute fold","upper thigh",
+                  "mid thigh","lower thigh","knee"};
+                  return child < 7 ? n[child] : nullptr; }
+        case 9: { static const char* n[] = {"calf rod","upper calf","calf belly","shin (lower)","knee rear"};
+                  return child < 5 ? n[child] : nullptr; }
+        case 10:{ static const char* n[] = {"sole (inner)","sole (outer)","arch","ankle lock"};
+                  return child < 4 ? n[child] : nullptr; }
+        case 11:{ static const char* n[] = {"orifice ring (base)","orifice ring (mid)","orifice ring (upper)",
+                  "inner pelvis wall R","inner pelvis wall L","pubic mound","groin crease R","groin crease L",
+                  "front hip R","front hip L","rear centreline R","rear centreline L","upper glute R",
+                  "upper glute L","inner rail R","inner rail L","BUTT CHEEK R","BUTT CHEEK L",
+                  "hip R","hip L",nullptr};
+                  return child < 21 ? n[child] : nullptr; }
+        }
+        return nullptr;
+    }
+
     // TOUCHPROBE = the mapping tool: logs the nearest solid capsule to each fingertip at 2 Hz.
     namespace {
         struct GhostTouchState {
@@ -2060,22 +2106,43 @@ namespace NpcFinger {
             g_gt.lastProbe = fr;
             for (int h = 0; h < 2; ++h) {
                 if (!tipOk[h]) continue;
-                float bd = FLT_MAX; int bs = -1, bc = -1;
+                float bd = FLT_MAX; int bs = -1, bc = -1; bool bl = false;
                 for (int sl = 0; sl < 12; ++sl) {
                     const int nch  = GrabDiag::SlotLiveChildren(a, sl);
                     const int cmax = nch > 0 ? nch : 1;
-                    for (int c = 0; c < cmax; ++c) {
-                        if (!GrabDiag::ReadCapsuleWorldU(a, sl, nch > 0 ? c : 0, ca, cb, &cr)) continue;
-                        const float d = SegPointDistU(ca, cb, tip[h]) - cr;
-                        if (d < bd) { bd = d; bs = sl; bc = c; }
-                    }
+                    const int sides = GrabDiag::SlotHasLeftTwin(sl) ? 2 : 1;   // 2026-07-29: L twins probed too
+                    for (int sd = 0; sd < sides; ++sd)
+                        for (int c = 0; c < cmax; ++c) {
+                            if (!GrabDiag::ReadCapsuleWorldUSide(a, sl, sd == 1, nch > 0 ? c : 0, ca, cb, &cr)) continue;
+                            const float d = SegPointDistU(ca, cb, tip[h]) - cr;
+                            if (d < bd) { bd = d; bs = sl; bc = c; bl = (sd == 1); }
+                        }
                 }
                 if (bs >= 0 && bd < ObjectHold::TouchProbeRangeU()) {
                     const char* tag = "?";
-                    if (GrabDiag::ReadCapsuleWorldU(a, bs, bc, ca, cb, &cr))
+                    if (GrabDiag::ReadCapsuleWorldUSide(a, bs, bl, bc, ca, cb, &cr))
                         tag = ClassifySource(h, ca, cb, cr, nullptr);
-                    logger::info("TOUCHPROBE {}[{}] {}.C{} d={:.2f}u", h == 0 ? "R" : "L",
-                                 tag, GrabDiag::SlotLabel(bs), bc, bd);
+                    const char* sideTag = GrabDiag::SlotHasLeftTwin(bs) ? (bl ? "[L]" : "[R]") : "";
+                    logger::info("TOUCHPROBE {}[{}] {}{}.C{} d={:.2f}u", h == 0 ? "R" : "L",
+                                 tag, GrabDiag::SlotLabel(bs), sideTag, bc, bd);
+
+                    // ── MAPPING HUD (2026-07-29): the confirmation session. On actual TOUCH
+                    // (deep proximity), pop the slot.child + proposed name in the player's view.
+                    // "spine2 C13 - shoulder cap R" — the user confirms or corrects by voice.
+                    if (ObjectHold::TouchProbeHudOn() && bd < ObjectHold::TouchProbeHudU()) {
+                        static int  s_lastSlot = -1, s_lastChild = -1;
+                        static bool s_lastLeft = false;
+                        if (bs != s_lastSlot || bc != s_lastChild || bl != s_lastLeft) {
+                            s_lastSlot = bs; s_lastChild = bc; s_lastLeft = bl;
+                            const char* nm = ProposedPartName(bs, bc);
+                            char msg[160];
+                            std::snprintf(msg, sizeof msg, "PPB: %s%s C%d = %s  (%.1fu)",
+                                          GrabDiag::SlotLabel(bs), sideTag, bc,
+                                          nm ? nm : "?? (unnamed/seed)", bd);
+                            RE::SendHUDMessage::ShowHUDMessage(msg);   // in-view HUD line (VR)
+                            logger::info("TOUCHHUD {}", msg);
+                        }
+                    }
                 }
             }
             // ── OBJTOUCH (2026-07-25): what is the HELD OBJECT pressed against? Identity from

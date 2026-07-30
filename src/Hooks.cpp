@@ -1,6 +1,8 @@
 #include "PCH.h"
 #include "Hooks.h"
 #include "PPBHook.h"
+#include "DismemberGuard.h"
+#include "PivFix.h"     // PivGuard flag bracket (2026-07-29 v2)  // PlanckSetSetting — the loosen-scope restore (2026-07-29)
 #include "Diag.h"       // Diag::Armed / OnPhysicsStep — the physics-step timer sink
 
 #include <atomic>
@@ -181,6 +183,14 @@ namespace Hooks {
 
         if (s_chainedDriveToPose) {
             s_chainedDriveToPose(driver, deltaTime, context, generatorOutput);
+            // PivGuard flag bracket: the pre-drive set PLANCK's pivot-collapse flag to 0 for a
+            // PPB-skeleton actor; PLANCK consumed it inside the chained call. Restore the saved
+            // global NOW so every other actor sees stock behaviour.
+            if (ObjectHold::PivGuardScopeActive()) {
+                DismemberGuard::PlanckSetSetting("loosenRagdollConstraintPivots",
+                                                 ObjectHold::PivGuardRestoreValue());
+                ObjectHold::PivGuardClearScope();
+            }
         } else {
             // Should never happen — write_call returns the prior target.
             // If it's null, the site was unpatched and we have no original

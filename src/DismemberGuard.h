@@ -48,4 +48,7 @@ namespace DismemberGuard {
     void DrainQueuedCuts();
     // kPreLoadGame / kNewGame teardown: actor pointers/handles don't survive a load.
     void ClearOnLoad();
+    // PLANCK runtime settings (vtable-correct as of 2026-07-29). False if PLANCK absent.
+    bool PlanckGetSetting(const char* name, double& out);
+    bool PlanckSetSetting(const char* name, double val);
 }

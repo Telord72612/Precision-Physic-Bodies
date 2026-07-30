@@ -18,6 +18,9 @@ namespace GrabDiag {
     // World-space, Skyrim units, computed from the LIVE rigid bodies — so everything the
     // apply path wrote (ReScale, ReShape, the head channel) is already inside the answer.
     bool ReadCapsuleWorldU(RE::Actor* a, int slot, int child, float aOut[3], float bOut[3], float* rOut);
+    // Sided variant (left = the L-twin node); SlotHasLeftTwin says which slots have one.
+    bool ReadCapsuleWorldUSide(RE::Actor* a, int slot, bool left, int child, float aOut[3], float bOut[3], float* rOut);
+    bool SlotHasLeftTwin(int slot);
     bool SlotBodyPoseU(RE::Actor* a, int slot, float posOutU[3], float rotOut[9]);
     const char* SlotLabel(int slot);                 // "hand","forearm",... "com" (12 slots)
     int  SlotLiveChildren(RE::Actor* a, int slot);   // list child count; 0 = single capsule/none

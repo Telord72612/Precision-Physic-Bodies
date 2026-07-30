@@ -1,0 +1,509 @@
+{
+  "_meta": {
+    "skeleton": "skeleton_female.nif (human/elf/orc + draenei body)",
+    "built": "2026-07-29",
+    "units": "skyrim units, bone-local",
+    "axes": "torso/head: +Y front, +Z up, +-X lateral | limbs: +Z down the bone",
+    "confidence": "CODE = source-assigned, EYE = eye-confirmed in VR, GEO = classified from NIF geometry (not eye-verified)",
+    "note": "left limbs are X-mirrors with identical child layout; side comes from which slot was read"
+  },
+  "slots": {
+    "0": {
+      "label": "hand",
+      "children": {
+        "0": [
+          "hand_palm",
+          "EYE"
+        ],
+        "1": [
+          "hand_thumb_side",
+          "EYE"
+        ],
+        "2": [
+          "hand_pinky_side",
+          "EYE"
+        ],
+        "3": [
+          "_dup_of_C1",
+          "GEO"
+        ],
+        "4": [
+          "_dup_of_C1",
+          "GEO"
+        ]
+      }
+    },
+    "1": {
+      "label": "forearm",
+      "children": {
+        "0": [
+          "arm_forearm_elbow",
+          "GEO"
+        ],
+        "1": [
+          "arm_forearm_wrist",
+          "GEO"
+        ]
+      }
+    },
+    "2": {
+      "label": "upperarm",
+      "children": {
+        "0": [
+          "arm_upper_shoulder_half",
+          "CODE"
+        ],
+        "1": [
+          "arm_upper_elbow_half",
+          "GEO"
+        ],
+        "2": [
+          "shoulder_deltoid",
+          "GEO"
+        ],
+        "3": [
+          "_dup_span_of_C1",
+          "GEO"
+        ]
+      }
+    },
+    "3": {
+      "label": "head",
+      "children": {
+        "0": [
+          "head_cranium",
+          "GEO"
+        ],
+        "1": [
+          "head_lip_upper",
+          "EYE"
+        ],
+        "2": [
+          "head_chin_r",
+          "EYE"
+        ],
+        "3": [
+          "head_chin_l",
+          "EYE"
+        ],
+        "4": [
+          "head_cheek_r",
+          "EYE"
+        ],
+        "5": [
+          "head_cheek_l",
+          "EYE"
+        ],
+        "6": [
+          "head_cheekbone_r",
+          "EYE"
+        ],
+        "7": [
+          "head_cheekbone_l",
+          "EYE"
+        ],
+        "8": [
+          "head_nose",
+          "EYE"
+        ],
+        "9": [
+          "head_palate",
+          "EYE"
+        ],
+        "10": [
+          "head_throat_wall",
+          "EYE"
+        ],
+        "11": [
+          "head_underjaw_deep",
+          "GEO"
+        ],
+        "12": [
+          "head_temple_ear_r",
+          "EYE"
+        ],
+        "13": [
+          "head_temple_ear_l",
+          "EYE"
+        ],
+        "14": [
+          "head_occiput",
+          "GEO"
+        ],
+        "15": [
+          "_seed",
+          "CODE"
+        ],
+        "16": [
+          "_seed",
+          "CODE"
+        ],
+        "17": [
+          "_seed",
+          "CODE"
+        ],
+        "18": [
+          "_seed",
+          "CODE"
+        ],
+        "19": [
+          "_seed",
+          "CODE"
+        ],
+        "20": [
+          "_seed",
+          "CODE"
+        ],
+        "21": [
+          "_seed",
+          "CODE"
+        ],
+        "22": [
+          "_seed",
+          "CODE"
+        ]
+      }
+    },
+    "4": {
+      "label": "spine0",
+      "region": "waist",
+      "children": {
+        "0": [
+          "waist_ring",
+          "CODE"
+        ],
+        "1": [
+          "waist_lower_belly_r",
+          "GEO"
+        ],
+        "2": [
+          "waist_lower_belly_l",
+          "GEO"
+        ],
+        "3": [
+          "waist_front_band",
+          "GEO"
+        ],
+        "4": [
+          "waist_abdomen_lower",
+          "GEO"
+        ],
+        "5": [
+          "waist_back_r",
+          "GEO"
+        ],
+        "6": [
+          "waist_back_l",
+          "GEO"
+        ],
+        "7": [
+          "waist_flank_r",
+          "GEO"
+        ]
+      }
+    },
+    "5": {
+      "label": "spine1",
+      "region": "belly",
+      "children": {
+        "0": [
+          "belly_navel",
+          "CODE"
+        ],
+        "1": [
+          "belly_side_r",
+          "GEO"
+        ],
+        "2": [
+          "belly_side_l",
+          "GEO"
+        ],
+        "3": [
+          "belly_midriff_r",
+          "GEO"
+        ],
+        "4": [
+          "belly_midriff_l",
+          "GEO"
+        ],
+        "5": [
+          "belly_flank_r",
+          "GEO"
+        ],
+        "6": [
+          "belly_flank_l",
+          "GEO"
+        ]
+      }
+    },
+    "6": {
+      "label": "spine2",
+      "region": "chest",
+      "children": {
+        "0": [
+          "chest_ring",
+          "CODE"
+        ],
+        "1": [
+          "chest_lat_r",
+          "GEO"
+        ],
+        "2": [
+          "chest_lat_l",
+          "GEO"
+        ],
+        "3": [
+          "chest_rib_front_r",
+          "GEO"
+        ],
+        "4": [
+          "chest_rib_front_l",
+          "GEO"
+        ],
+        "5": [
+          "chest_lower_diaphragm",
+          "GEO"
+        ],
+        "6": [
+          "shoulder_trap_r",
+          "GEO"
+        ],
+        "7": [
+          "shoulder_trap_l",
+          "GEO"
+        ],
+        "8": [
+          "chest_collarbone_r",
+          "GEO"
+        ],
+        "9": [
+          "chest_collarbone_l",
+          "GEO"
+        ],
+        "10": [
+          "chest_sternum",
+          "GEO"
+        ],
+        "11": [
+          "chest_breast_r",
+          "CODE"
+        ],
+        "12": [
+          "chest_breast_l",
+          "CODE"
+        ],
+        "13": [
+          "shoulder_cap_r",
+          "GEO"
+        ],
+        "14": [
+          "shoulder_cap_l",
+          "GEO"
+        ]
+      }
+    },
+    "7": {
+      "label": "neck",
+      "children": {
+        "0": [
+          "neck_throat",
+          "CODE"
+        ]
+      }
+    },
+    "8": {
+      "label": "thigh",
+      "region": "thighs",
+      "children": {
+        "0": [
+          "leg_thigh_rod",
+          "CODE"
+        ],
+        "1": [
+          "leg_thigh_groin",
+          "GEO"
+        ],
+        "2": [
+          "leg_hip_glute_fold",
+          "GEO"
+        ],
+        "3": [
+          "leg_thigh_upper",
+          "GEO"
+        ],
+        "4": [
+          "leg_thigh_mid",
+          "GEO"
+        ],
+        "5": [
+          "leg_thigh_lower",
+          "GEO"
+        ],
+        "6": [
+          "knee",
+          "GEO"
+        ]
+      }
+    },
+    "9": {
+      "label": "calf",
+      "children": {
+        "0": [
+          "leg_calf_rod",
+          "CODE"
+        ],
+        "1": [
+          "leg_calf_upper",
+          "GEO"
+        ],
+        "2": [
+          "leg_calf_belly",
+          "GEO"
+        ],
+        "3": [
+          "leg_shin_lower",
+          "GEO"
+        ],
+        "4": [
+          "knee_rear",
+          "GEO"
+        ]
+      }
+    },
+    "10": {
+      "label": "foot",
+      "children": {
+        "0": [
+          "foot_sole_inner",
+          "EYE"
+        ],
+        "1": [
+          "foot_sole_outer",
+          "EYE"
+        ],
+        "2": [
+          "foot_arch",
+          "GEO"
+        ],
+        "3": [
+          "foot_ankle_lock",
+          "EYE"
+        ]
+      }
+    },
+    "11": {
+      "label": "com",
+      "region": "pelvis",
+      "children": {
+        "0": [
+          "pelvis_ring_base",
+          "CODE"
+        ],
+        "1": [
+          "pelvis_ring_mid",
+          "CODE"
+        ],
+        "2": [
+          "pelvis_ring_upper",
+          "CODE"
+        ],
+        "3": [
+          "pelvis_inner_wall_r",
+          "CODE"
+        ],
+        "4": [
+          "pelvis_inner_wall_l",
+          "CODE"
+        ],
+        "5": [
+          "pelvis_pubic_mound",
+          "GEO"
+        ],
+        "6": [
+          "pelvis_groin_r",
+          "GEO"
+        ],
+        "7": [
+          "pelvis_groin_l",
+          "GEO"
+        ],
+        "8": [
+          "pelvis_iliac_front_r",
+          "GEO"
+        ],
+        "9": [
+          "pelvis_iliac_front_l",
+          "GEO"
+        ],
+        "10": [
+          "pelvis_rear_centreline_r",
+          "GEO"
+        ],
+        "11": [
+          "pelvis_rear_centreline_l",
+          "GEO"
+        ],
+        "12": [
+          "pelvis_glute_upper_r",
+          "GEO"
+        ],
+        "13": [
+          "pelvis_glute_upper_l",
+          "GEO"
+        ],
+        "14": [
+          "pelvis_inner_rail_r",
+          "CODE"
+        ],
+        "15": [
+          "pelvis_inner_rail_l",
+          "CODE"
+        ],
+        "16": [
+          "pelvis_butt_r",
+          "CODE"
+        ],
+        "17": [
+          "pelvis_butt_l",
+          "CODE"
+        ],
+        "18": [
+          "pelvis_hip_r",
+          "GEO"
+        ],
+        "19": [
+          "pelvis_hip_l",
+          "GEO"
+        ],
+        "20": [
+          "_dup_of_C10",
+          "GEO"
+        ]
+      }
+    }
+  },
+  "filters": {
+    "seed_test": "skip when |A-B| < 0.1u AND r < 0.6u (buried horn/antler stock)",
+    "duplicates": [
+      "3.15-3.22 seeds",
+      "11.20 = 11.10",
+      "0.3 = 0.4 = 0.1",
+      "2.3 overlays 2.1"
+    ],
+    "never_radius_scaled": [
+      "11.0",
+      "11.1",
+      "11.2",
+      "11.3",
+      "11.4",
+      "11.14",
+      "11.15"
+    ]
+  },
+  "per_skeleton": {
+    "skeleton_female": "this map",
+    "skeleton_female_draenei": "same head layout (byte-copy); horns dialled into C15+",
+    "skeletonbeast_female_khajiit": "head has 17 children; C12/C13 = right EAR, C15/C16 = left EAR",
+    "skeletonbeast_female": "head 17; horns + dorsal ridge baked; spine child counts 10/9/17"
+  }
+}

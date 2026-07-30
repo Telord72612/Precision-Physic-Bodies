@@ -182,6 +182,7 @@ namespace ArmIK {
 
     static RE::Actor* GetActorFromDriver(RE::hkbRagdollDriver* driver);   // defined below
 
+
     // The COMPENSATION half (v4): the engine/PLANCK postPhysics maps the RAISED ragdoll back into the
     // output pose with the UNBIASED transform → the whole rendered body rose with the fix (in-VR 2026-07-02).
     // So after postPhysics has written the pose, subtract heelZ from the ROOT bone's model-space translation
@@ -434,6 +435,13 @@ namespace ArmIK {
             // (PLANCK writes the risen ragdoll into the nodes -> next target rises -> orbit).
             float           rootDelta[3]    = {};
             bool            rootDeltaValid  = false;
+            // ── PPB-SKELETON GATE (2026-07-29, the feet-in-ground ship bug) ──────────────
+            // The conform maps by BONE NAME, so it reached every XP32 humanoid — males and
+            // unmapped NPCs included. Conform is PPB's fit layer: it may only act on actors
+            // standing on a PPB skeleton. Resolved once per rebuild from the race's own-sex
+            // skeleton model (the same field the runtime skeleton map repoints).
+            bool            oursPPB    = false;
+            bool            oursLogged = false;
             // HEAD TRIM (2026-07-13, user design): after the root delta latches, sample the
             // head joint's pivot-vs-node Z (PivFix::PivHeadGapZ) ~1 Hz; the 10-sample MEDIAN
             // (Report 17A-26/27: a mean lets one scene-warp/stagger frame shift the trim),
@@ -648,7 +656,25 @@ namespace ArmIK {
                 ConfRebuild(c, driver, root);
                 rebuilt = true;
                 if (c.n == 0) return;   // unbuildable this fire (no skeleton/bodies yet) — retry next drive
+                // PPB-skeleton gate: recompute on every rebuild (race/skeleton can change on a
+                // 3D reload). Own-sex model path must be one of OURS ("\PPB\" folder).
+                c.oursPPB = false;
+                if (auto* base = actor->GetActorBase()) {
+                    if (auto* race = base->GetRace()) {
+                        const auto sex = base->IsFemale() ? RE::SEXES::kFemale : RE::SEXES::kMale;
+                        const char* mdl = race->skeletonModels[sex].GetModel();
+                        c.oursPPB = mdl && std::strstr(mdl, "\\PPB\\") != nullptr;
+                        if (!c.oursPPB && mdl)      // tolerate forward slashes in repointed paths
+                            c.oursPPB = std::strstr(mdl, "/PPB/") != nullptr;
+                    }
+                }
+                if (!c.oursPPB && !c.oursLogged) {
+                    c.oursLogged = true;
+                    logger::info("PCONF skip {:08X}: not on a PPB skeleton (male/unmapped race) — "
+                                 "conform will never touch this actor", id);
+                }
             }
+            if (!c.oursPPB) return;   // the gate: males + unmapped races are structurally unreachable
 
             // FURNITURE GATE (2026-07-13): never capture/trim while the ragdoll is
             // PLANCK-loosened (sit/lean/sleep/ragdoll — the "green" state); the stand-up
@@ -1200,6 +1226,11 @@ namespace ArmIK {
         // never fights a detached ragdoll. See DismemberGuard.h.
         DismemberGuard::Tick(actor);
         if (DismemberGuard::IsExcluded(actor)) return;
+
+        // PIVGUARD (2026-07-29 v2): per-actor PLANCK pivot-collapse scoping + stranded-pivot
+        // self-heal. Sets the flag 0 for THIS PPB-skeleton actor's drive; Hooks.cpp restores it
+        // right after the chain. See PivFix.cpp for the full design + the v1 postmortem.
+        ObjectHold::PivGuardOnPreDrive(actor, driver->ragdoll);
 
         // DIAGNOSTIC (2026-07-08, read-only): register the perf contact listener on this actor's Havok
         // world when `perf` is armed (idempotent per world, from the main thread outside the step), and

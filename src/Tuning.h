@@ -584,6 +584,11 @@ namespace ObjectHold {
         float dgHeadSkelHoldS  = 3.0f;  // max seconds to hold the swap while the head loads 3D
         float dgHeadStripHair  = 1.f;   // unequip hair-slot armor (SMP wigs) from a severed head —
                                         // wig strands intercept HIGGS's palm-triangle pick
+        float touchProbeHud    = 0.f;   // mapping session HUD: show slot.child + proposed name
+                                        // in-view on touch (needs touchProbe on)
+        float touchProbeHudU   = 1.0f;  // how close counts as a TOUCH for the HUD (units)
+        float planckLoosenOurs = 1.f;   // PivGuard v2: PLANCK pivot collapse 0 during PPB-skeleton
+                                        // drives (global stays stock 1), with stranded-pivot self-heal
         float dgHeadPlanck     = 0.f;   // 1 = do NOT PLANCK-ignore severed-head clones (grab test)
         float dgHeadGrabFix    = 1.f;   // clear the severed head's anchor ragdoll sub-layer so
                                         // HIGGS's hand can contact it (Report 09 §6)
@@ -977,6 +982,9 @@ namespace ObjectHold {
     bool     DgHeadParkOn();     // park head bodies at the anchor (dgHeadPark)
     bool     DgHeadGrabFixOn();  // clear head anchor sub-layer for HIGGS (dgHeadGrabFix)
     bool     DgHeadPlanckOn();   // leave head clones under PLANCK (dgHeadPlanck)
+    bool     PlanckLoosenOursOn();// PivGuard v2 master (planckLoosenOurs)
+    bool     TouchProbeHudOn();  // mapping HUD (touchProbeHud)
+    float    TouchProbeHudU();   // HUD touch distance (touchProbeHudU)
     bool     DgHeadStripHairOn();// unequip wigs from severed heads (dgHeadStripHair)
     bool     GhostVizEnabled();
     float    GhostRangeU();

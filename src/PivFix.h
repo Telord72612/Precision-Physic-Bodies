@@ -84,4 +84,15 @@ namespace ObjectHold {
     // Call per driven actor. No bind-relation table needed (a uniform scalar needs no per-joint math).
     void PivScaleCorrect(RE::Actor* actor);
     void PivReScaleClearAll();          // kPreLoadGame (scaled-instance pointers dangle across loads)
+
+    // ── PivGuard (2026-07-29 v2): per-actor loosenRagdollConstraintPivots scoping, cycle-aware.
+    // OnPreDrive sets PLANCK's flag to 0 for a PPB-skeleton actor's drive AND self-heals any
+    // stranded (collapsed) pivots from a per-instance capture. Hooks.cpp restores the flag
+    // right after the chained call using ScopeActive/RestoreValue/ClearScope.
+    void PivGuardOnPreDrive(RE::Actor* actor, const void* ragdollInstance);
+    bool PivGuardScopeActive();
+    double PivGuardRestoreValue();
+    void PivGuardClearScope();
+    void PivGuardInvalidate(std::uint32_t actorId);
+    void PivGuardClearOnLoad();
 }

@@ -945,6 +945,7 @@ static void OnSKSEMessage(SKSE::MessagingInterface::Message* msg)
         HandBox::ClearOnLoad();         // remove the hand boxes + drop slab baselines (HIGGS rebuilds its bodies)
         GrabDiag::CapFixClearOnLoad();  // FormID-keyed latches (measured effScale + identities) must not cross saves
         DismemberGuard::ClearOnLoad();  // actor handles + PLANCK-ignore bookkeeping don't survive a load
+        ObjectHold::PivGuardClearOnLoad();  // pivot captures are per ragdoll instance — none survive a load
         break;
 
     default:

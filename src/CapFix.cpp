@@ -2561,6 +2561,63 @@ namespace GrabDiag {
         }
         return true;
     }
+    // Sided body getter (2026-07-29, the mapping-HUD session): slot geometry for the LEFT twin.
+    // kSlotNodeL[slot] is null for center slots — callers skip those.
+    static RE::hkpRigidBody* SlotHkBodySide(RE::Actor* actor, int slot, bool left)
+    {
+        if (!actor || slot < 0 || slot > 11) return nullptr;
+        const char* nm = left ? kSlotNodeL[slot] : kSlotNode[slot];
+        if (!nm) return nullptr;
+        auto* hn = FindNode(actor, nm);
+        if (!hn) return nullptr;
+        auto* colObj = hn->collisionObject.get();
+        if (!colObj) return nullptr;
+        auto* body = static_cast<RE::bhkCollisionObject*>(colObj)->GetRigidBody();
+        return body ? body->GetRigidBody() : nullptr;
+    }
+    bool SlotHasLeftTwin(int slot) { return slot >= 0 && slot < 12 && kSlotNodeL[slot] != nullptr; }
+
+    bool ReadCapsuleWorldUSide(RE::Actor* actor, int slot, bool left, int child,
+                               float aOut[3], float bOut[3], float* rOut)
+    {
+        auto* hkp = SlotHkBodySide(actor, slot, left);
+        if (!hkp) return false;
+        auto* col = hkp->GetCollidableRW();
+        const RE::hkpShape* shape = col ? col->shape : nullptr;
+        if (!shape) return false;
+        const RE::hkpCapsuleShape* cap = nullptr;
+        if (shape->type == RE::hkpShapeType::kCapsule) {
+            if (child > 0) return false;
+            cap = static_cast<const RE::hkpCapsuleShape*>(shape);
+        } else if (shape->type == RE::hkpShapeType::kList) {
+            auto* list = static_cast<const RE::hkpListShape*>(shape);
+            if (child < 0 || child >= static_cast<int>(list->childInfo.size())) return false;
+            const RE::hkpShape* ch = list->childInfo[child].shape;
+            if (!ch || ch->type != RE::hkpShapeType::kCapsule) return false;
+            cap = static_cast<const RE::hkpCapsuleShape*>(ch);
+        } else return false;
+        // world pose straight off THIS body (SlotBodyPoseU is right-side-bound)
+        alignas(16) float t[4], c0[4], c1[4], c2[4];
+        const auto& ms = hkp->motion.motionState.transform;
+        _mm_store_ps(t,  ms.translation.quad);
+        _mm_store_ps(c0, ms.rotation.col0.quad);
+        _mm_store_ps(c1, ms.rotation.col1.quad);
+        _mm_store_ps(c2, ms.rotation.col2.quad);
+        float pos[3], R[9];
+        for (int i = 0; i < 3; ++i) pos[i] = t[i] * kHavokToSkyrim;
+        R[0]=c0[0]; R[1]=c1[0]; R[2]=c2[0];
+        R[3]=c0[1]; R[4]=c1[1]; R[5]=c2[1];
+        R[6]=c0[2]; R[7]=c1[2]; R[8]=c2[2];
+        alignas(16) float va[4], vb[4];
+        _mm_store_ps(va, cap->vertexA.quad);
+        _mm_store_ps(vb, cap->vertexB.quad);
+        for (int i = 0; i < 3; ++i) {
+            aOut[i] = pos[i] + (R[i*3+0]*va[0] + R[i*3+1]*va[1] + R[i*3+2]*va[2]) * kHavokToSkyrim;
+            bOut[i] = pos[i] + (R[i*3+0]*vb[0] + R[i*3+1]*vb[1] + R[i*3+2]*vb[2]) * kHavokToSkyrim;
+        }
+        if (rOut) *rOut = cap->radius * kHavokToSkyrim;
+        return true;
+    }
     bool ReadCapsuleWorldU(RE::Actor* actor, int slot, int child,
                            float aOut[3], float bOut[3], float* rOut)
     {

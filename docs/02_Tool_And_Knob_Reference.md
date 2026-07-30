@@ -179,26 +179,30 @@ frame on top of the baked NIF, so a knob value == the baked seed = identity (no 
   (captured Softbody neutrals), `meshMarkers` (eye-verification ghosts). OBody/SKEE morph reads and
   the slider fallback = **Report 23**.
 
-## Dismemberment / decapitation compat (`dg*`)
-
-PPB's compatibility layer for Dismembering Framework and Next-Gen Decapitations. Live-editable like
-every other knob.
+## Dismemberment / decapitation compat (`dg*`) — full mechanisms in **14**
+The DF/NGD/PLANCK layer. Live-editable like everything else; the two ⛔ knobs are abandoned
+approaches kept only so their default stays OFF.
 
 | knob | default | meaning |
 |---|---|---|
-| `dgEnable` / `dgLog` | 1 / 1 | master switch + per-action log lines |
-| `dgDeathCut` | 1 | once a death is confirmed, ask DF (through its own public API, on the main thread) to dismember. Requires DF's threaded hit processing to be off — see the FOMOD option. |
+| `dgEnable` / `dgLog` | 1 / 1 | master + per-action log lines |
+| `dgDeathCut` | 1 | PPB asks DF (public API, main thread) to dismember once death is confirmed — it replaces DF's own worker-thread death-confirm and **requires DF `bDeferredHitProcess = 0`** |
 | `dgDeathCutDelayS` | 0.20 | delay after death before asking |
-| `dgDeathNodeTries` | 1 | limb nodes offered per death |
-| `dgHitLocated` | 1 | prefer the limb nearest the killing blow |
-| `dgHitMaxDistU` | 0 | proximity gate for that choice (0 = off) |
+| `dgDeathNodeTries` | 1 | limb nodes offered per death (1 = DF's natural one-consideration feel) |
+| `dgHitLocated` | 1 | sever the limb nearest the killing blow (measured to the limb SPAN, not the joint origin) |
+| `dgHitMaxDistU` | 0 | accuracy gate re-creating DF's proximity radius. **0 = off**: the post-hit weapon-node position proved unreliable (85–632u readings) |
+| `dgHeadSkel` / `dgHeadSkelHoldS` | 1 / 3.0 | swap the race skeleton to `PPB\<skeleton>_head.nif` while a severed head loads its 3D, then restore (observed window ≈70 ms) |
+| `dgHeadPark` | 1 | park the head clone's other bodies ON the COM anchor + disable its constraints, so nothing orbits or drags the head |
+| `dgHeadTrack` | 1 | log head creation at NGD Step01/Step02 (research instrument) |
 | `dgGraceDeadS` | 15 | how long a fresh corpse stays PLANCK-ignored |
+| `dgCloneStrip` | **0** | ⛔ legacy runtime capsule collapse — **leave 0**, it mutates SHARED shapes (Pitfall Rule 0) |
+| `dgDeferDf` | **0** | ⛔ abandoned ProcessDismemberment hook — leave 0 (see 14 §4d) |
 
-A severed head produced by NGD is a full actor clone; PPB detects it through NGD's own API and
-excludes it from PPB's per-actor systems and from PLANCK, so nothing drives or reshapes it.
-
-⚠ If you use DF and do NOT apply the `bDeferredHitProcess = 0` override, set `dgDeathCut 0` or DF's
-own path and PPB's request can both fire.
+**Sibling-mod ini overlays PPB ships** (its MO2 priority 49 beats DF 164 / NGD 166 — the same trick
+as the HIGGS override): `SKSE/Plugins/DismemberingFramework.ini` with **`bDeferredHitProcess = 0`**
+(required — DF's worker thread is the VR freeze) and `NextGenDecapitations.ini` (verbosity;
+`fHeadMass`, `iScalesUpdateFrequencyFactor` live here too). ⚠ Delete these overlays if PPB ever stops
+shipping the `dg*` layer, or DF loses its death-confirm with nothing replacing it.
 
 ## Collision SOUND selectors
 `npcBodyMat` (the 18 body capsules) · `npcGarmentMat` (hair/tail/cloth rigs). Values:
@@ -207,3 +211,23 @@ own path and PPB's request can both fire.
 ⚠ Before changing a material, check WHAT is actually rigged: a 2026-07-27 "awful collision noise"
 turned out to be the auto-pinned **finger rig** (`npcFingerEnable` left at 1) teleporting ~40×/min on
 an idle NPC's hand — not the body material at all.
+
+## PivGuard — the per-actor PLANCK pivot-collapse split (2026-07-29, SHIPPING)
+PLANCK's `loosenRagdollConstraintPivots` collapses every ragdoll joint pivot to the anim pose each
+frame — the band-aid the 2011 skeletons need, and the thing that un-calibrates PPB's baked joints
+(ankle +6u/−3u, shoulders 2u inward, user-measured). PLANCK has NO per-actor settings, so PPB
+synthesizes one: the pre-drive hook wraps PLANCK's, sets the flag to 0 for a PPB-skeleton actor's
+own drive, restores it after the chain. A guard captures each fresh ragdoll's baked pivots
+(fresh = baked by construction) and writes back any pivot found collapsed (~2 Hz, shoulders
+excluded — clavicle-follow owns them; PIVRESCALE/descale invalidate the capture).
+
+| knob | default | meaning |
+|---|---|---|
+| `planckLoosenOurs` | 1 | the whole system; 0 = PLANCK stock everywhere |
+| `poseConform` | 1 | REQUIRED for planted feet: bodies land on the XP32 nodes, PLANCK's foot-IK plants the visible feet where the ragdoll feet are. Gated to PPB skeletons. |
+
+**The shipping trio** (verified together 2026-07-29): global loosen **1** (stock, no override
+file), `planckLoosenOurs 1`, `poseConform 1`. Receipts: `PIVGUARD diag … getOk=1 setOk=1`,
+zero heals, `PIVARC` node-vs-havok arc within 0.25%.
+⚠ vtable law when touching the PLANCK interface decl: copy the BASE interface order
+(planckinterface001.h) — Get/SetSettingDouble are slots 13/14 AT THE END. See ledger.
