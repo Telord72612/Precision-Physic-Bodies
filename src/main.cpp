@@ -4,7 +4,8 @@
 #include "PivFix.h"    // kPreLoadGame teardown: per-actor pivot state
 #include "Tuning.h"    // ObjectHold::InitHeelFixDefault / ToggleHeelFix
 #include "CapFix.h"    // CapFixConsole — the in-game hand-capsule editor
-#include "Natives.h"   // PPB_Native.SetStatuePose / SetHeelFix / ToggleHeelFix
+#include "Natives.h"
+#include "PpbApi.h"     // public touch API: plugin-message listener + load teardown   // PPB_Native.SetStatuePose / SetHeelFix / ToggleHeelFix
 #include "Interop.h"   // Interop::AcquireHiggs — the PivFix grab gate's HIGGS handshake
 #include "PerfSys.h"
 #include "FsmpLink.h"   // SMP engine plugin-interface handshake (stage 1, 2026-07-11)   // PerfSys::RegisterHiggs / ClearOnLoad — the collision perf system
@@ -948,6 +949,7 @@ static void OnSKSEMessage(SKSE::MessagingInterface::Message* msg)
         Diag::ClearOnLoad();            // drop the cached Havok world (rebuilt across a load) + any pending spike
         PerfSys::ClearOnLoad();         // wipe per-actor LOD state (fresh bodies reload from the NIF fully enabled)
         NpcFinger::ClearOnLoad();       // remove the finger-test capsules while the world is still alive, drop the pin
+        PpbApi::ClearOnLoad();          // drop live touch contacts (no End events across a load)
         HandBox::ClearOnLoad();         // remove the hand boxes + drop slab baselines (HIGGS rebuilds its bodies)
         GrabDiag::CapFixClearOnLoad();  // FormID-keyed latches (measured effScale + identities) must not cross saves
         DismemberGuard::ClearOnLoad();  // actor handles + PLANCK-ignore bookkeeping don't survive a load
@@ -974,6 +976,9 @@ SKSEPluginLoad(const SKSE::LoadInterface* skse)
     const auto msg = SKSE::GetMessagingInterface();
     if (msg) {
         msg->RegisterListener(OnSKSEMessage);
+        // Public touch API (PpbTouchAPI.h): answer kGetTouchInterface requests from ANY
+        // plugin — the HIGGS request/reply pattern, provider side. nullptr = all senders.
+        msg->RegisterListener(nullptr, PpbApi::OnPluginMessage);
     }
 
     // Papyrus bridge: PPB_Native.SetStatuePose (the A-pose statue spell backend) +

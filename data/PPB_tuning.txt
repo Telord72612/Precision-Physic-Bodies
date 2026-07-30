@@ -1163,6 +1163,23 @@ fsmpPushMult 1.0
 #   other HIGGS setting you tuned is left alone. Re-applied after each game load because HIGGS
 #   re-reads its ini. 0 = don't touch HIGGS at all.
 higgsPokeFix 1
+# ── PUBLIC TOUCH API (2026-07-30) ─────────────────────────────────────────────────
+# Contact reporting for other mods: WHO (touched NPC) / WHERE (named capsule) / BY WHO
+# (the player, this revision) / WITH WHAT (FINGER/PALM/FIST/HAND/GRAB/WEAPON/OBJECT) /
+# DURATION. Three channels: mod events (PPB_TouchStart / PPB_Touch / PPB_TouchEnd),
+# Papyrus natives (PPB_Touch.GetContact*), and the native interface (PpbTouchAPI.h).
+# Detection is pure geometry on PPB's own capsules — no physics cost.
+apiTouch 1
+apiHz 20
+apiTouchU 1.0
+apiExitPadU 0.75
+apiMaxActors 3
+apiRangeU 300
+apiFistTipPalmU 7
+apiEvents 1
+# apiLog: START/END receipt lines in PPB.log. ON for this dev session (first in-game
+# verification); the packager refuses to ship it on.
+apiLog 1
 npcRigRangeU 700
 npcRigRangeHystU 100
 npcRigMaxActors 2

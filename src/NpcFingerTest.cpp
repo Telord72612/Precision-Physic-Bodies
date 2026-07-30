@@ -57,6 +57,7 @@
 #include "HiggsInterface.h"  // GetHandRigidBody (the Defect-6 proximity gate)
 #include "PerfSys.h"         // PerfSys::NearestDrivenId / HiggsRegistered
 #include "FsmpLink.h"
+#include "PpbApi.h"
 #include "CapFix.h"          // GrabDiag::ReadCapsuleWorldU / SlotBodyPoseU — ReTouch geometry
 #include "HandBox.h"         // HandBox::TipWorldU — the player's pointing-finger box        // stage-2 push publish (tail mode: capsule displacement -> SMP force)
 #include "DismemberGuard.h"  // DrainQueuedCuts — DF off-thread cuts execute here (main thread)
@@ -2453,6 +2454,7 @@ namespace NpcFinger {
     void OnPreDrive(RE::Actor* actor, float deltaTime)
     {
         if (!actor) return;
+        PpbApi::NoteDriven(actor);   // touch-API roster (same-frame use only, consumed in OnFrame)
         // ReTouch: nearest-driven-actor election for the ghost-zone tracker (runs BEFORE the
         // idle early-return below — ghost zones are independent of the finger-test knobs).
         if (ObjectHold::GhostZonesEnabled()) {
@@ -2864,6 +2866,21 @@ namespace NpcFinger {
     // for the finger rig's EMA-smoothed curl factors. Main-thread only (both the integrator
     // in DriveRig and this reader run inside the same 0xB266AB pre-drive hook body). Returns
     // false for every actor that isn't carrying the live tbl-0 finger rig — the cheap path.
+    const char* PartName(int slot, int child) { return ProposedPartName(slot, child); }
+
+    bool WeaponPointU(bool left, float outU[3])
+    {
+        auto* hig = Interop::GetHiggs();
+        if (!hig) return false;
+        hkpRigidBody* wb = HkOf(hig->GetWeaponRigidBody(left));
+        if (!wb || !IsLikelyPointer(wb)) return false;
+        const hkVector4& wp = wb->getPosition();
+        outU[0] = wp(0) * kHavokToSkyrim;
+        outU[1] = wp(1) * kHavokToSkyrim;
+        outU[2] = wp(2) * kHavokToSkyrim;
+        return true;
+    }
+
     bool GetFingerCurl(std::uint32_t actorId, float out[4])
     {
         for (int k = 0; k < kMaxRigs; ++k) {

@@ -111,6 +111,9 @@ namespace ObjectHold {
                     // the always-on garment-rig master switch — read live per frame.
                     PK_NOSNAP(fsmpPushMult), PK_NOSNAP(npcFollower), PK_NOSNAP(fsmpFlexCompat),
                     PK_NOSNAP(npcRigRangeU), PK_NOSNAP(npcRigRangeHystU), PK_NOSNAP(npcRigMaxActors),
+                    PK_NOSNAP(apiTouch), PK_NOSNAP(apiHz), PK_NOSNAP(apiTouchU), PK_NOSNAP(apiExitPadU),
+                    PK_NOSNAP(apiMaxActors), PK_NOSNAP(apiRangeU), PK_NOSNAP(apiFistTipPalmU),
+                    PK_NOSNAP(apiEvents), PK_NOSNAP(apiLog),
                     PK_NOSNAP(higgsPokeFix),
                     PK_NOSNAP(npcFingerTipU), PK_NOSNAP(npcFingerMassKg), PK_NOSNAP(npcGarmentMassKg), PK_NOSNAP(npcTailMassKg), PK_NOSNAP(npcSilentVelMS), PK_NOSNAP(npcGarmentMat), PK_NOSNAP(npcFingerAlpha),
                     PK_NOSNAP(npcFingerCurlGain), PK_NOSNAP(npcFingerCurlDecay), PK_NOSNAP(npcFingerCurlMax), PK_NOSNAP(npcFingerCurlMode), PK_NOSNAP(npcFingerCurlLagGate),
@@ -717,6 +720,15 @@ namespace ObjectHold {
     // Garment-rig budget (2026-07-30). 0 disables each limit; negatives are clamped away so a
     // typo can never mean "range zero = no rigs at all".
     float HiggsPokeFix()        { return g_tune.higgsPokeFix; }
+    bool  ApiTouchEnabled()     { return g_tune.apiTouch > 0.5f; }
+    float ApiHz()               { return g_tune.apiHz < 1.f ? 1.f : (g_tune.apiHz > 90.f ? 90.f : g_tune.apiHz); }
+    float ApiTouchU()           { return g_tune.apiTouchU < 0.05f ? 0.05f : g_tune.apiTouchU; }
+    float ApiExitPadU()         { return g_tune.apiExitPadU < 0.f ? 0.f : g_tune.apiExitPadU; }
+    int   ApiMaxActors()        { const int n = (int)(g_tune.apiMaxActors + 0.5f); return n < 1 ? 1 : (n > 8 ? 8 : n); }
+    float ApiRangeU()           { return g_tune.apiRangeU < 0.f ? 0.f : g_tune.apiRangeU; }
+    float ApiFistTipPalmU()     { return g_tune.apiFistTipPalmU < 0.f ? 0.f : g_tune.apiFistTipPalmU; }
+    bool  ApiEventsEnabled()    { return g_tune.apiEvents > 0.5f; }
+    bool  ApiLogEnabled()       { return g_tune.apiLog > 0.5f; }
     float NpcRigRangeU()        { return g_tune.npcRigRangeU     < 0.f ? 0.f : g_tune.npcRigRangeU; }
     float NpcRigRangeHystU()    { return g_tune.npcRigRangeHystU < 0.f ? 0.f : g_tune.npcRigRangeHystU; }
     int   NpcRigMaxActors()     { const int n = (int)(g_tune.npcRigMaxActors + 0.5f); return n < 0 ? 0 : n; }

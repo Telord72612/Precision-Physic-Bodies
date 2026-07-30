@@ -1,6 +1,7 @@
 #include "Natives.h"
 #include "PPBHook.h"   // ArmIK::SetStatuePose
 #include "Tuning.h"    // ObjectHold::SetHeelFix / ToggleHeelFix
+#include "PpbApi.h"    // PPB_Touch natives (the public touch API)
 
 namespace logger = SKSE::log;
 
@@ -42,6 +43,7 @@ namespace PapyrusNatives {
         vm->RegisterFunction("ToggleHeelFix", kClassName, ToggleHeelFix);
         vm->RegisterFunction("SetHeelFix",    kClassName, SetHeelFix);
         logger::info("Papyrus natives registered: {}.SetStatuePose / ToggleHeelFix / SetHeelFix.", kClassName);
+        PpbApi::RegisterNatives(vm);   // PPB_Touch.GetContact* (the public touch API)
         return true;
     }
 }

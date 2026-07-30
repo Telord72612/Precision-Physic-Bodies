@@ -5,7 +5,8 @@
 #include "HiggsInterface.h"
 #include "NpcFingerTest.h" // NpcFinger::FilterDecision/OnFrame — spliced into FilterCB + the frame lambda
 #include "HandBox.h"
-#include "FsmpLink.h"       // HandBox::FilterDecision/OnFrame/RegisterHiggs — same splice points
+#include "FsmpLink.h"
+#include "PpbApi.h"       // HandBox::FilterDecision/OnFrame/RegisterHiggs — same splice points
 
 #include <atomic>
 #include <iterator>
@@ -258,6 +259,7 @@ namespace PerfSys {
             PerfSys::OnFrame();
             NpcFinger::OnFrame();   // finger-rig frame counter + stale/retarget/knob-off destroys
             FsmpLink::OnFrame();    // SMP-link deferred logging (stage 1)
+            PpbApi::OnFrame();      // touch API tick: scan, contact table, events, snapshot
             HandBox::OnFrame();     // frame counter + deferred telemetry (2026-07-10 lag fix: the
                                     // pose snapshot moved into HandBox's first PrePhysicsStep fire)
         });

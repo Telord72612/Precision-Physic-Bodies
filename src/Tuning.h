@@ -436,6 +436,18 @@ namespace ObjectHold {
         // HIGGS's OWN settings API (their higgs_vr.ini is never touched), re-applied on each
         // game load because HIGGS re-reads its ini. 0 = leave HIGGS entirely alone.
         float higgsPokeFix     = 1.f;
+        // ── PUBLIC TOUCH API (2026-07-30, PpbApi.cpp / PpbTouchAPI.h) ────────────────────
+        // Player-as-toucher contact reporting: mod events (PPB_TouchStart/Touch/TouchEnd),
+        // Papyrus natives (PPB_Touch.GetContact*), and the native IPpbTouchInterface1.
+        float apiTouch         = 1.f;    // master switch for the contact engine
+        float apiHz            = 20.f;   // tick + event rate per second (user: 20+, not 4)
+        float apiTouchU        = 1.0f;   // surface distance that counts as CONTACT (game units)
+        float apiExitPadU      = 0.75f;  // hysteresis: existing contact survives out to touch+pad
+        float apiMaxActors     = 3.f;    // nearest driven actors scanned per tick
+        float apiRangeU        = 300.f;  // roster range (matches the ghost tracker's reach)
+        float apiFistTipPalmU  = 7.f;    // index-tip-to-palm distance below which the hand = FIST
+        float apiEvents        = 1.f;    // 1 = fire the Papyrus mod events (natives always work)
+        float apiLog           = 0.f;    // 1 = log START/END lines (debug; ships off)
         float npcRigRangeU     = 700.f;  // ~10 m (game unit ≈ 1.43 cm)
         float npcRigRangeHystU = 100.f;  // extra slack before a range destroy (anti-thrash)
         float npcRigMaxActors  = 2.f;    // the "two closest" budget
@@ -990,6 +1002,15 @@ namespace ObjectHold {
     float    EarlyReadKnob(const char* key, float fallback);
     bool     NpcFollowerEnabled();      // master switch for the always-on garment rigs (> 0.5)
     float    HiggsPokeFix();            // 1 = force HIGGS's finger-close anim off so poking works
+    bool     ApiTouchEnabled();         // touch-API master (apiTouch)
+    float    ApiHz();                   // touch-API tick rate (clamped 1..90)
+    float    ApiTouchU();               // contact distance
+    float    ApiExitPadU();             // contact-exit hysteresis pad
+    int      ApiMaxActors();            // actors scanned per tick (min 1)
+    float    ApiRangeU();               // roster range
+    float    ApiFistTipPalmU();         // fist-detection tip-to-palm distance
+    bool     ApiEventsEnabled();        // mod-event emission
+    bool     ApiLogEnabled();           // debug START/END logging
     float    NpcRigRangeU();            // garment-rig create/keep range in game units (0 = unlimited)
     float    NpcRigRangeHystU();        // extra slack before a range destroy (anti-thrash)
     int      NpcRigMaxActors();         // how many ACTORS may hold garment rigs (0 = unlimited)

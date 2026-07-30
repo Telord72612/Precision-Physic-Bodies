@@ -35,6 +35,7 @@ add_library(PPB SHARED
     src/Tuning.cpp      # PPB_tuning.txt: tune struct, parser, 1 Hz poll, heel-fix flag
     src/Natives.cpp     # PPB_Native.SetStatuePose / SetHeelFix / ToggleHeelFix
     src/Interop.cpp     # HIGGS interface handshake + IsActorGrabbedByPlayer (PivFix grab gate)
+    src/PpbApi.cpp      # public touch API: contact engine + messaging interface + PPB_Touch natives
     src/DismemberGuard.cpp # 2026-07-26 DF/NGD ↔ PLANCK guard: death-grace ignore + head-clone exclusion
 
     src/Probe.cpp       # `probe` console command: read-only actor physics/animation state dump

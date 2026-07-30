@@ -50,6 +50,14 @@ namespace NpcFinger {
     // ONLY (the 0xB266AB pre-drive seam — same thread that runs the integrator).
     bool GetFingerCurl(std::uint32_t actorId, float out[4]);
 
+    // ── PPB TOUCH API exports (2026-07-30) ──────────────────────────────────────────────
+    // PartName: the shipped body-part name for (slot, child) on the human-female reference
+    // map — wraps the file-local ProposedPartName table. nullptr = unnamed/race-specific.
+    const char* PartName(int slot, int child);
+    // WeaponPointU: world position (game units) of HIGGS's wielded-weapon collision body
+    // for that hand. false = no weapon body (nothing wielded / HIGGS absent).
+    bool WeaponPointU(bool left, float outU[3]);
+
     // MESH-BAND MARKERS (2026-07-18, Route B calibration): up to 7 visible GHOST capsules at
     // the girth-defining vertices so the user verifies band placement by eye. Part-29 layer-56
     // words — FilterDecision ignores every pair; keyframe-still via zero gravity + tiny mass.
