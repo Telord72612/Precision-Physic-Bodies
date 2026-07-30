@@ -42,7 +42,7 @@ namespace GrabDiag {
     // the wave-2 torso bake gives COM 21 children (spine0/1/2 get 11 each), so the old `n > 8` plausibility
     // gate would have silently SKIPPED the whole COM list — mains included. 24 leaves headroom and stays
     // far below Havok's own caps (hkpListShape::kMaxChildrenForSPUMidPhase = 252).
-    static constexpr int kMaxListChildren = 24;
+    static constexpr int kMaxListChildren = 34;   // 2026-07-29: COM grew to 32 (pelvis sensors)
 
     // ---- slot tables (file-scope: the gen sweep, the list path and the L mirror all use them) ----
     static constexpr const char* kSlotNode[12] = {

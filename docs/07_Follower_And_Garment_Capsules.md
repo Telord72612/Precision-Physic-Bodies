@@ -1031,3 +1031,168 @@ tails, ears, horns) — reuse it verbatim.
 - **AWAITING IN-VR OBSERVATION**: does a poked finger capsule ride the bone rigidly (drag the hand/
   skeleton), bend, or just get pushed? That result decides whether NPC finger/hair/tail collision is
   worth building out — same experiment class as the SMP-vs-Havok hair question above.
+
+---
+
+# SMP FLEX SUPPORT (2026-07-29) â€” the interface-1 compat path
+
+## 1. What was actually broken, and what was not
+
+A user report ("PPB is wrong for me", log analysed in doc 09) surfaced this line:
+
+```
+FSMPLINK: MSG_STARTUP from 'hdtSMP64' â€” interface 1.0.0, bullet 3.24.0
+          (compiled against interface 2.0.0, bullet 3.24.0)
+FSMPLINK: interface major mismatch â€” link stays OFF
+```
+
+That engine is **HDT-SMP Flex** (OgreWorks, Nexus 101564 *"HDT-SMP Flex for SkyrimVR"*, `hdtSMP64.dll`
+with a **capital SMP**, 8.0.17-Alpha). Faster HDT-SMP 4.0.1 is `hdtsmp64.dll` (lowercase) and
+announces interface 2.0.0. PPB registers both sender spellings, so the handshake *arrives* â€” and is
+then discarded one gate later.
+
+**Scope of the breakage, measured â€” this matters because it is much narrower than it looks:**
+
+| PPB feature on SMP Flex | before the fix | why |
+|---|---|---|
+| hair/tail follower **capsules exist and collide** | WORKING | `FsmpLink::Connected()` has **zero callers**; `NpcFingerTest.cpp` never consults the link. Rigs are engine Havok bodies, created and driven regardless. |
+| **touch detection** (ReTouch, VRTouchEvents, finger curl) | WORKING | pure geometry on bodies PPB owns |
+| **SMP push** â€” strands actually reacting | DEAD | needs `applyCentralForce` on the SMP bone's `btRigidBody`, reachable only through the PreStep listener |
+
+So Flex users had hair and tails that felt solid to the hand but never *moved*. Do not describe
+this as "PPB doesn't work on Flex"; it is exactly one layer.
+
+## 2. Why the native SMP-XML route CANNOT fix hair (and why ppbHands.xml still matters)
+
+PPB ships an SMP-native hand collider, `SKSE/Plugins/hdtSkinnedMeshConfigs/ppbHands.xml`, wired in
+through PPB's `defaultBBPs.xml` override (`<map shape="Hands" .../>` + `"HIMBO - Hands"`). PPB wins
+that conflict â€” priority 49 vs SOFTBODY 612 / CBBE 3BA 616 â€” and it is **confirmed live**:
+`hdtSMP64.log` shows `Created bone NPC L Finger40 [LF40] added to body HIMBO - Hands`.
+
+This path is **engine-agnostic**: both engines' DLLs contain `hdtSkinnedMeshConfigs` and
+`defaultBBPs.xml`, so per-mesh rig XML is portable. Tails therefore get *native* SMP collision on
+Flex with no plugin interface at all â€” `ppbHands.xml` declares `<tag>ppbhand</tag>` plus
+`<can-collide-with-tag>Tail</can-collide-with-tag>`.
+
+**Extending that whitelist to hair looks obvious and does not work.** Per the FSMP wiki
+(*Collision filtering â€” who may hit whom*): defining any `can-collide-with-*` makes collisions
+**exclusive** to that list, the other shape **must** carry a matching `<tag>`, and
+`<shared>private</shared>` means *"only within the same mesh"* while `public` means *"collide
+anywhere, including other skeletons"*.
+
+Measured across the whole 2,092-mod install:
+
+| tag | files | scope |
+|---|---|---|
+| `hair` | **216 files**, 569 occurrences | **`<shared>public</shared>` in ZERO of them** |
+| `XingHair` | 283 occurrences | â€” |
+| `Tail` | 122 occurrences | fluffy-tail configs declare **no** `<shared>` and **no** whitelist, so they accept anything |
+
+Hair strands are **universally `private`** and additionally use exclusive whitelists naming their
+own in-file virtual colliders (`Body`, `Head`, `VirtualHeadHair`, `VirtualHands`, ...). Two
+independent blockers, both living in **other mods' read-only XML**. We cannot fix hair from our side
+â€” and that is precisely *why* PPB pushes hair by injecting forces into the bone's `btRigidBody`
+instead: force injection bypasses SMP's collision filtering entirely.
+
+> Corollary worth remembering: a hair mod that ships its own `VirtualHands` collider already has
+> hand-to-hair collision natively, on any engine, with no help from PPB.
+
+## 3. The ABI difference â€” one line, and it is fatal
+
+`diff` of upstream v1 to v2 (`DaymareOn/hdtSMP64`, bump commit `5a5cb88504cb` "Initial commonlibsse
+support", 2024-09-03) is **exactly three semantic changes**: dropped `#include "IEventListener.h"`,
+the listener aliases swapped, and the version constant. **No method was appended, none reordered.**
+
+| | v1 (Flex) | v2 (FSMP 4.0.1) |
+|---|---|---|
+| `PluginInterface` vtable | dtor, `getVersionInfo`, `addListener(Pre)`, `removeListener(Pre)`, `addListener(Post)`, `removeListener(Post)` | **identical, same order** |
+| `PreStepEvent` / `PostStepEvent` | `{ const btAlignedObjectArray<btCollisionObject*>& objects; float timeStep{0.f}; }` | **identical, 16 bytes** |
+| `BULLET_VERSION` | `{3,24,0}` | `{3,24,0}` |
+| `MSG_STARTUP` | 0 | 0 |
+| **listener base** | `hdt::IEventListener<T>` â€” **no destructor at all**, so `onEvent(const T&)` is **SLOT 0** | `RE::BSTEventSink<T>` â€” dtor slot 0, `ProcessEvent` slot 1 |
+
+**So handing a v1 engine a `BSTEventSink`-derived object makes the engine call our DESTRUCTOR once
+per physics step**, on the TBB worker with the world lock held. The hard major gate was never
+paranoia â€” it was the only thing standing between Flex users and that. **Never "loosen" a version
+gate; add a correctly-shaped path behind it.**
+
+## 4. The fix
+
+`src/fsmp/PluginAPI_v1.h` transcribes the v1 interface into namespace `hdtv1` so both live in one
+TU. `FsmpLink.cpp` factors the two sink bodies into ABI-neutral free functions
+(`CensusStep(objects, timeStep)` / `PushStep(objects)`) which **both** the v2 `BSTEventSink` sinks
+and the new v1 `IEventListener` sinks call â€” one implementation, no duplicated force maths, no way
+for the engines to drift. `OnEngineMessage` now tiers: `major == 2` gets the v2 sinks; `major == 1`
+re-types the *same* pointer as `hdtv1::PluginInterface*` (legitimate: identical vtable, so only the
+argument type changes, not the slot called) and attaches the v1 sinks; anything else is rejected as
+before. **The bullet gate stays hard for both** â€” and Flex passes it at 3.24.0.
+
+Knob `fsmpFlexCompat`, default **1**.
+
+### The knob-timing trap this exposed (second instance in one day)
+
+`MSG_STARTUP` arrives at the engine's **kPostPostLoad**, but `PPB_tuning.txt` is only ever parsed by
+`CapFixPollFile` from the pre-drive hook installed at **kDataLoaded**. So at accept time every knob
+still holds its compiled default and `fsmpFlexCompat 0` would have been **silently ignored** â€”
+exactly the class of bug that made `handBoxRebuildFrac`'s "0" mean 2 % (doc 09). Fixed with
+`ObjectHold::EarlyReadKnob(key, fallback)`: reads one key straight off the same `kTunePaths`,
+mutates no state, does not disturb the poller's mtime. **Any knob consulted before kDataLoaded must
+use it.**
+
+## 5. Evidence â€” four independent confirmations
+
+1. **Upstream source**, verbatim: `alandtse/hdtSMP64` (the Skyrim **VR** fork lineage) â€”
+   `INTERFACE_VERSION{1,0,0}`, `BULLET_VERSION{3,24,0}`, and `IEventListener.h`'s
+   `virtual void onEvent(const Event&) = 0;` with no destructor.
+2. **Flex's own shipped PDB** (`mods/HDT-SMP Flex/SKSE/Plugins/hdtSMP64.pdb`, 36 MB):
+   `?addListener@PluginInterfaceImpl@hdt@@UEAAXPEAV?$IEventListener@UPreStepEvent@hdt@@@2@@Z`
+   (and the Post twin, plus both `removeListener`s and `getVersionInfo`) â€” same five virtuals,
+   parameterised on `IEventListener<T>`. `hdt::SkyrimPhysicsWorld::onEvent` and
+   `hdt::ActorManager::onEvent` exist; **`ProcessEvent` appears only as unrelated Skyrim engine
+   hooks**; and there is **no `IEventListener` destructor symbol** â€” verified against a working
+   positive control (`??1?$IEventDispatcher@UPreStepEvent@hdt@@@hdt@@UEAA@XZ` *is* present).
+3. **Flex's DLL bytes**: offset `0x2A3CB8` holds `01 00 00 00 ... 03 00 00 00 18 00 00 00` =
+   interface 1.0.0 / bullet 3.24.0, preceded by the `hdt::g_pluginInterface` vptr. The FSMP 4.0.1
+   DLL has `02 00 00 00 ... 03 00 00 00 18 00 00 00` at `0x391C78`. Structural corroboration:
+   Flex's `g_pluginInterface` spans ~416 bytes (2x `EventDispatcherImpl` with `recursive_mutex` plus
+   `unordered_set`) versus FSMP's ~208 (2x `RE::BSTEventSource`).
+4. **A live runtime log**: `interface 1.0.0, bullet 3.24.0` from sender `hdtSMP64` â€” the header's
+   constants, observed in the wild.
+
+Also settled along the way: **SKSE matches listener sender names case-INSENSITIVELY**
+(`_stricmp` in `PluginManager::LookupHandleFromName`), so the dual `hdtsmp64` / `hdtSMP64`
+registration is belt-and-braces rather than strictly necessary. And `27b-io/hdtSMP64` is a *second*
+live interface-1.0.0 fork (pushed 2026-06-08, ships a VR binary), so this path is not Flex-only.
+
+## 6. NOT YET PROVEN IN GAME â€” what to look for
+
+Flex is installed on the dev machine but **disabled** (`modlist.txt:1789 -HDT-SMP Flex`; the active
+engine is `+Faster HDT-SMP` at 1787). The user ran Flex until ~2026-06-06 (`FlexUtil.log`) and
+migrated to FSMP 4.0.1 on 2026-07-05. **The v1 path has therefore never executed.** To verify,
+swap the two mods in MO2 and check `PPB.log` for, in order:
+
+```
+FSMPLINK: MSG_STARTUP from 'hdtSMP64' â€” interface 1.0.0, bullet 3.24.0
+FSMPLINK: ACCEPTED (interface 1 COMPAT â€” HDT-SMP Flex) â€” v1-shaped onEvent listeners attached
+FSMPLINK LIVE: first PostStep observed from 'hdtSMP64' (interface 1) â€” N collision objects
+FSMPLINK heartbeat: ... push forces applied total.
+```
+
+If **ACCEPTED** appears but **LIVE** never does, the listeners are not being called â€” set
+`fsmpFlexCompat 0` and re-investigate before trusting anything downstream. A rising
+`push forces applied` count is the proof that hair/tail push is actually live.
+
+## 7. Two shipping-hygiene items found in the same sweep
+
+* **`SKSE/Plugins/hdtSkinnedMeshConfigs/configs.xml` is dead weight.** FSMP 4.x reads
+  `configs.json` plus `userConfigs.json` (its binary contains **no** `configs.xml` string at all)
+  and Flex reads `configs.ini`. PPB's file serves neither engine and is silently ignored â€”
+  confirmed by the runtime log disagreeing with every value in it. It should be deleted; a future
+  engine that *did* read it would have PPB clobbering the user's SMP tuning.
+* **PPB's `userConfigs.json` is being overridden** by `D:\Games\My Skyrim\overwrite\SKSE\Plugins\
+  hdtSkinnedMeshConfigs\userConfigs.json` (2026-07-12) â€” MO2's `overwrite` outranks every mod. So
+  PPB's requested `disable1stPersonViewPhysics true`, `maximumActiveSkeletons 10`, `budgetMs 4.0`
+  are all inert on this machine. Decide deliberately: fold PPB's values into the overwrite file, or
+  stop shipping engine settings at all (recommended â€” an asset mod overriding a physics engine's
+  global tuning is a conflict waiting to happen).
+

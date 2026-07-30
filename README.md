@@ -8,6 +8,10 @@ that fit the actual body mesh, both refitted live at runtime.**
 ![status](https://img.shields.io/badge/status-beta-orange)
 ![platform](https://img.shields.io/badge/platform-Skyrim%20VR-blue)
 ![plugin](https://img.shields.io/badge/SKSE-VR-green)
+![version](https://img.shields.io/badge/version-1.3.0-blue)
+
+**Latest: 1.3.0** — HDT-SMP Flex support, contact-ranked push, garment-rig budget, HIGGS poke fix,
+and the runaway-finger fix. See [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
@@ -133,7 +137,17 @@ The capsule tracks its SMP bone inertly until something that can move it makes c
 or weapon), then pushes that bone's gravity toward its own displacement. Applied to **KS Hairdos SMP**
 and **Vanilla Hair Remake SMP**; all HDT SMP tails; M'rissi's Fluffy tail.
 
-Capped at the **8 nearest NPCs** with live rigs, following the player.
+**Both SMP engines are supported** (1.3.0) — Faster HDT-SMP *and* HDT-SMP Flex. They announce
+different plugin-interface versions and rename physics bones differently (`hdtSSEPhysics_AutoRename_
+Armor_XXXXXXXX <name>` vs `hdtA_XXXXXXXX_<name>`); PPB speaks both. On Flex before 1.3.0 no tail or
+wig bound at all.
+
+Which chords push is decided by **where your hand is**, not by their order in the table — so touching
+the tip of a long tail or wig moves it, not just the root.
+
+Live rigs are budgeted to the **nearest 2 NPCs within ~10 m** (`npcRigMaxActors` / `npcRigRangeU`);
+a nearer NPC takes the slot from a farther one. A dense wig is 85–200 independent dynamic bodies
+driven every frame, so this is the main performance dial.
 
 ### Proximity sensing ("orifices")
 
@@ -200,6 +214,11 @@ PPB shortens HIGGS's hand slab to roughly half its length so it reads as a palm,
 two narrow ones on the index finger, two larger spanning middle/ring/pinky. They follow your fingers
 and close into a fist. They ride the **third-person finger bones** — the hands you actually see —
 rather than the raw controller pose.
+
+HIGGS plays a finger-*close* animation whenever your hand nears a grabbable object, which curls the
+hand and defeats those colliders — the most common "poking does nothing" report. Since 1.3.0 PPB
+turns that off through **HIGGS's own settings API**, so your `higgs_vr.ini` is never modified and
+every other HIGGS setting you tuned is left alone. Knob `higgsPokeFix` if you would rather it didn't.
 
 ### Collision sound
 Because Havok was only ever meant for knockdowns, a capsule striking *anything* plays "body hitting

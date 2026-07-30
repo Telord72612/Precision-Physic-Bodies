@@ -22,6 +22,7 @@
 // (btCollisionObject, btAlignedObjectArray) bind to the real definitions.
 #include <BulletDynamics/Dynamics/btRigidBody.h>
 #include "fsmp/PluginAPI.h"
+#include "fsmp/PluginAPI_v1.h"   // HDT-SMP Flex (interface 1.0.0) — see that header's banner
 
 #include <chrono>
 
@@ -54,6 +55,7 @@ namespace {
 
     hdt::PluginInterface*      g_iface{ nullptr };
     std::atomic<bool>          g_accepted{ false };
+    std::atomic<int>           g_ifaceMajor{ 0 };   // 2 = Faster HDT-SMP, 1 = SMP Flex compat
     std::atomic<std::uint64_t> g_steps{ 0 };
     std::atomic<int>           g_lastCount{ -1 };
     std::atomic<std::uint32_t> g_lastDtBits{ 0 };
@@ -62,19 +64,35 @@ namespace {
     // Deferred-log flags (set anywhere, consumed by OnFrame on the main thread)
     std::atomic<bool> g_logFirstStep{ false };
 
+    // ── ABI-NEUTRAL STEP BODIES (2026-07-29, SMP Flex support) ──────────────────
+    // The interface-1 and interface-2 event STRUCTS are byte-identical; only the
+    // listener base class differs (see fsmp/PluginAPI_v1.h). So the actual work
+    // lives in these two free functions, taking the unpacked fields, and BOTH the
+    // v2 BSTEventSink sinks and the v1 IEventListener sinks call straight into
+    // them. One implementation, no duplicated force maths, no way for the two
+    // engines to drift apart.
+    using ObjArray = btAlignedObjectArray<btCollisionObject*>;
+
+    void CensusStep(const ObjArray& objects, float timeStep)
+    {
+        // ⚠ TBB worker thread, engine world lock held: atomics only.
+        const int n = objects.size();
+        if (n >= 0 && n < 1000000) g_lastCount.store(n, std::memory_order_relaxed);
+        std::uint32_t bits;
+        std::memcpy(&bits, &timeStep, 4);
+        g_lastDtBits.store(bits, std::memory_order_relaxed);
+        if (g_steps.fetch_add(1, std::memory_order_relaxed) == 0)
+            g_logFirstStep.store(true, std::memory_order_relaxed);
+    }
+
+    void PushStep(const ObjArray& objects);   // defined below, after the knob reads
+
     struct PostSink : RE::BSTEventSink<hdt::PostStepEvent> {
         RE::BSEventNotifyControl ProcessEvent(const hdt::PostStepEvent* e,
                                               RE::BSTEventSource<hdt::PostStepEvent>*) override
         {
-            // ⚠ TBB worker thread, engine world lock held: atomics only.
-            if (e) {
-                const int n = e->objects.size();
-                if (n >= 0 && n < 1000000) g_lastCount.store(n, std::memory_order_relaxed);
-                std::uint32_t bits;
-                std::memcpy(&bits, &e->timeStep, 4);
-                g_lastDtBits.store(bits, std::memory_order_relaxed);
-            }
-            if (g_steps.fetch_add(1, std::memory_order_relaxed) == 0)
+            if (e) CensusStep(e->objects, e->timeStep);
+            else if (g_steps.fetch_add(1, std::memory_order_relaxed) == 0)
                 g_logFirstStep.store(true, std::memory_order_relaxed);
             return RE::BSEventNotifyControl::kContinue;
         }
@@ -89,11 +107,20 @@ namespace {
         RE::BSEventNotifyControl ProcessEvent(const hdt::PreStepEvent* e,
                                               RE::BSTEventSource<hdt::PreStepEvent>*) override
         {
+            if (e) PushStep(e->objects);
+            return RE::BSEventNotifyControl::kContinue;
+        }
+    };
+    PreSink g_preSink;
+
+    void PushStep(const ObjArray& objects)
+    {
+        {
             // TBB worker thread, engine world lock held: atomics only, NO logging.
-            if (!e || !ObjectHold::FsmpPushEnabled()) return RE::BSEventNotifyControl::kContinue;
+            if (!ObjectHold::FsmpPushEnabled()) return;
             const TargetBuf& buf = g_tbuf[g_tActive.load(std::memory_order_acquire)];
-            if (buf.n <= 0) return RE::BSEventNotifyControl::kContinue;
-            if (NowMs() - buf.stampMs > 250) return RE::BSEventNotifyControl::kContinue;   // stale rig
+            if (buf.n <= 0) return;
+            if (NowMs() - buf.stampMs > 250) return;   // stale rig
 
             // 2026-07-13 per-target feel: gain/clamp come from each PushTarget (the
             // publisher's per-table TuneOf numbers); fsmpPushMult is a GLOBAL multiplier
@@ -102,9 +129,9 @@ namespace {
             const float minDisp = ObjectHold::FsmpPushMinDispU();
             constexpr float kMatchU2 = 1.5f * 1.5f;
 
-            const int n = e->objects.size();
+            const int n = objects.size();
             for (int i = 0; i < n; ++i) {
-                btCollisionObject* o = e->objects[i];
+                btCollisionObject* o = objects[i];
                 if (!o || o->isStaticOrKinematicObject()) continue;
                 btRigidBody* rb = btRigidBody::upcast(o);
                 if (!rb) continue;
@@ -156,10 +183,22 @@ namespace {
                     break;
                 }
             }
-            return RE::BSEventNotifyControl::kContinue;
         }
+    }
+
+    // ── INTERFACE-1 SINKS (SMP Flex) ────────────────────────────────────────────
+    // Same bodies, v1 ABI. `onEvent` is vtable SLOT 0 because hdtv1::IEventListener
+    // has no virtual destructor — do NOT declare a destructor or any other virtual
+    // in these structs, and do not reorder. They are file-static and never deleted,
+    // so the missing virtual dtor is correct, not an oversight.
+    struct PostSinkV1 : hdtv1::IEventListener<hdtv1::PostStepEvent> {
+        void onEvent(const hdtv1::PostStepEvent& e) override { CensusStep(e.objects, e.timeStep); }
     };
-    PreSink g_preSink;
+    struct PreSinkV1 : hdtv1::IEventListener<hdtv1::PreStepEvent> {
+        void onEvent(const hdtv1::PreStepEvent& e) override { PushStep(e.objects); }
+    };
+    PostSinkV1 g_postSinkV1;
+    PreSinkV1  g_preSinkV1;
 
     // SEH-isolated version read: no C++ objects in this frame (SEH + unwinding
     // don't mix), returns false instead of crashing on a hostile/foreign vtable.
@@ -199,9 +238,29 @@ namespace {
                      hdt::PluginInterface::BULLET_VERSION.minor,
                      hdt::PluginInterface::BULLET_VERSION.patch);
 
-        if (vi.interfaceVersion.major != hdt::PluginInterface::INTERFACE_VERSION.major) {
-            logger::warn("FSMPLINK: interface major mismatch — link stays OFF (stage-2 forces "
-                         "would be unsafe against this engine).");
+        // ── INTERFACE TIER (2026-07-29): exact v2, or the v1 compat path for SMP Flex ──
+        // The major gate must NEVER be merely loosened: v1 and v2 differ in the LISTENER
+        // base class, so attaching a v2-shaped BSTEventSink to a v1 engine would have the
+        // engine call our destructor once per physics step (fsmp/PluginAPI_v1.h explains
+        // in full). The safe answer is a separate v1-shaped listener, below.
+        const int major = vi.interfaceVersion.major;
+        const bool exactV2 = (major == hdt::PluginInterface::INTERFACE_VERSION.major);
+        const bool compatV1 = (major == hdtv1::PluginInterface::INTERFACE_VERSION.major);
+        if (!exactV2 && !compatV1) {
+            logger::warn("FSMPLINK: interface major {} is neither 2 (Faster HDT-SMP) nor 1 "
+                         "(HDT-SMP Flex) — link stays OFF. PPB has no listener ABI for this "
+                         "engine; forces and even the census would ride an unknown vtable.",
+                         major);
+            return;
+        }
+        // ⚠ Read the knob EARLY, off disk. This runs at the engine's kPostPostLoad, long
+        // before the pre-drive hook (kDataLoaded) has ever polled PPB_tuning.txt, so
+        // ObjectHold::FsmpFlexCompat() would still hold the compiled default here and the
+        // user's "fsmpFlexCompat 0" would be silently ignored.
+        if (compatV1 && ObjectHold::EarlyReadKnob("fsmpFlexCompat", 1.f) < 0.5f) {
+            logger::warn("FSMPLINK: interface 1.x engine detected ('{}') but fsmpFlexCompat is 0 "
+                         "— link stays OFF by request. Set fsmpFlexCompat 1 in PPB_tuning.txt to "
+                         "enable the SMP Flex path.", from);
             return;
         }
         // BULLET ABI GATE (Report 17A-31): both sinks touch btRigidBody/btCollisionObject
@@ -224,11 +283,31 @@ namespace {
 
         std::snprintf(g_sender, sizeof(g_sender), "%s", from);
         g_iface = iface;
-        iface->addListener(static_cast<hdt::IPostStepListener*>(&g_postSink));
-        iface->addListener(static_cast<hdt::IPreStepListener*>(&g_preSink));
-        g_accepted.store(true, std::memory_order_release);
-        logger::info("FSMPLINK: ACCEPTED — PostStep census + PreStep force listeners attached "
-                     "(stage 2; forces gated on fsmpPush).");
+        if (exactV2) {
+            iface->addListener(static_cast<hdt::IPostStepListener*>(&g_postSink));
+            iface->addListener(static_cast<hdt::IPreStepListener*>(&g_preSink));
+            g_ifaceMajor.store(2, std::memory_order_relaxed);
+            g_accepted.store(true, std::memory_order_release);
+            logger::info("FSMPLINK: ACCEPTED (interface 2 — Faster HDT-SMP) — PostStep census + "
+                         "PreStep force listeners attached (stage 2; forces gated on fsmpPush).");
+        } else {
+            // The PluginInterface vtable is identical across v1/v2 (same 6 slots, same
+            // declaration order — verified against upstream source AND Flex's shipped PDB),
+            // so re-typing the SAME pointer is legitimate: it changes only the ARGUMENT type
+            // we pass, not which slot we call.
+            auto* v1 = reinterpret_cast<hdtv1::PluginInterface*>(msg->data);
+            v1->addListener(static_cast<hdtv1::IPostStepListener*>(&g_postSinkV1));
+            v1->addListener(static_cast<hdtv1::IPreStepListener*>(&g_preSinkV1));
+            g_ifaceMajor.store(1, std::memory_order_relaxed);
+            g_accepted.store(true, std::memory_order_release);
+            logger::info("FSMPLINK: ACCEPTED (interface 1 COMPAT — HDT-SMP Flex) — v1-shaped "
+                         "onEvent listeners attached. Bullet matches at {}.{}.x so the census "
+                         "reads and applyCentralForce are ABI-identical to the v2 path; only the "
+                         "listener vtable differs. Watch for 'FSMPLINK LIVE' next — if it never "
+                         "appears, the listeners are not being called and fsmpFlexCompat should "
+                         "go to 0.",
+                         vi.bulletVersion.major, vi.bulletVersion.minor);
+        }
     }
 
 }  // namespace
@@ -253,9 +332,11 @@ namespace FsmpLink {
             float dt;
             std::uint32_t bits = g_lastDtBits.load(std::memory_order_relaxed);
             std::memcpy(&dt, &bits, 4);
-            logger::info("FSMPLINK LIVE: first PostStep observed from '{}' — {} collision objects, "
-                         "dt={:.4f}s. Handshake + event flow + threading PROVEN on this engine.",
-                         g_sender, g_lastCount.load(std::memory_order_relaxed), dt);
+            logger::info("FSMPLINK LIVE: first PostStep observed from '{}' (interface {}) — {} "
+                         "collision objects, dt={:.4f}s. Handshake + event flow + threading "
+                         "PROVEN on this engine.",
+                         g_sender, g_ifaceMajor.load(std::memory_order_relaxed),
+                         g_lastCount.load(std::memory_order_relaxed), dt);
         }
         // 60 s heartbeat while connected (dev receipt; cheap)
         static std::uint64_t s_lastSteps = 0;

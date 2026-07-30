@@ -894,6 +894,7 @@ static void OnSKSEMessage(SKSE::MessagingInterface::Message* msg)
         // Diagnostic (2026-07-08): the physics-step timer. Chains ON TOP of HIGGS at 0xDFB722 with a
         // mandatory p[0]!=0xE8 self-abort — feeds Diag's step ms only while `perf` is armed. Read-only.
         Hooks::InstallPhysicsStepHook();
+        Interop::ApplyHiggsPokeFix("kDataLoaded");   // hand stays OPEN near grabbables (knob higgsPokeFix)
         RegisterConsoleCommands();  // 'HeelFix' / 'hf' + 'CapFix' / 'capfix' + 'statue' + 'probe' + 'perf' + 'capdis' + 'nfing' + 'jtrack'
         // RUNTIME SKELETON MAP (2026-07-17): repoint race female skeletons + load per-NPC capsule
         // overrides from PPB_skeletons.txt. Runs at kDataLoaded — every plugin's record winners are
@@ -919,10 +920,15 @@ static void OnSKSEMessage(SKSE::MessagingInterface::Message* msg)
         // DF/NGD headers acquire their APIs at kPostLoadGame/kNewGame — retry here so IsHead()
         // detection is live even if the APIs weren't ready at kDataLoaded. Idempotent.
         DismemberGuard::AcquireDfNgd();
+        // Re-assert the HIGGS poke fix: HIGGS re-reads higgs_vr.ini on a settings reload, which
+        // would silently restore the finger-close anim mid-session and make poking stop working
+        // after a load. Idempotent — no-ops (and stays silent) when the value is already ours.
+        Interop::ApplyHiggsPokeFix("kPostLoadGame");
         break;
 
     case SKSE::MessagingInterface::kNewGame:
         DismemberGuard::AcquireDfNgd();   // same API retry on a fresh game
+        Interop::ApplyHiggsPokeFix("kNewGame");
         // 2026-07-13 review LOW: New Game does NOT fire kPreLoadGame, so without this the
         // FormID-keyed latches from a save played earlier this session survive into the
         // new game — a persistent/recycled FormID then wears the previous save's measured

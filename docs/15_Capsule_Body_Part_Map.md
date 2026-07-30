@@ -9,7 +9,27 @@ the dial-session records.
 
 Companion docs: `13` (ReTouch — how touch is detected), `04` (ReShape — which children get
 shape-fitted), `06` (FleshFit — how they were dialled), VRTouchEvents `13` (the consumer contract).
-Machine-readable form: `capsule_body_part_map.json` beside this file.
+
+> ## ⚠ THE SOURCE OF TRUTH IS NOT THIS FILE
+>
+> **2026-07-29.** The authoritative record for the API is now generated, not written:
+>
+> | file | what it is |
+> |---|---|
+> | `ProposedPartName()` in `NpcFingerTest.cpp` | **the source of truth** — the shipped table |
+> | `capsule_api_names.md` | flat human table, generated |
+> | `capsule_body_part_map.json` | machine record, generated (`schema ppb.capsule-name-map/2`) |
+> | `tools/ppb-scratch/gen_capsule_name_record.py` | the generator |
+>
+> The generator *parses* the C++ switch and then **cross-checks every name against the strings
+> actually present in the shipped `PPB.dll`**, aborting if the record claims a name the binary
+> doesn't contain. So the record cannot silently drift from the code. **Do not hand-edit the
+> generated files** — change the code table and re-run the generator.
+>
+> Current: **107 named** across **113** table entries in **12** slots (**6** buried seeds).
+>
+> This file (`15`) remains the *narrative* — the axes, the confidence tags, the reasoning behind
+> each label. Read it to understand; read the generated record to integrate.
 
 ---
 
@@ -58,7 +78,14 @@ The most finely mapped region: the mouth gate lives here, and most of it is EYE-
 | `C11` | 0.88 | **under-jaw / deep throat** | GEO |
 | `C12` / `C13` | 1.21 | **temple / ear side** (R/L) — *these are the EAR capsules on beast heads* | EYE |
 | `C14` | 3.30 | **back of head / occiput** | GEO |
-| `C15..C22` | 0.50 | ⛔ **degenerate seeds** (A=B=origin, buried) — horn/antler/ear stock, **never touchable** | CODE |
+| `C15..C22` | 0.50 | **buried seeds ON HUMAN ONLY** — see §9.2, corrected 2026-07-29 | CODE |
+
+> ⚠ **The `C15..C22` row above was wrong twice** and is corrected here. (a) They are **not
+> degenerate** — `A≠B`: the spec is `p1=(0,0,0) p2=(0,0,2u) r=0.5u`, deliberately, because `A==B`
+> is the invisible-capsule trap. (b) They are **not seeds on every race**: the head was never
+> index-padded, so argonian/khajiit have only **17** head children (C15/C16 = horn-spine / ears)
+> and draenei has 23 with **C15..C22 all real** (horns + ears). Only human has 8 seeds there.
+> Never resolve a head index above C14 to a human name.
 
 **Mouth gate uses:** ENTER = C9 **and** C4 **and** C5 within 2.2u; DEEP = both chins (C2/C3)
 < 2.5u **and** palate (C9) < 5.0u.
@@ -101,7 +128,7 @@ The densest slot, and the one with genuine care required: the **orifice ring mus
 | `C14` / `C15` | 0.50 | **inner pelvis upper rail** (R/L) ⚠ never scaled | CODE |
 | `C16` / `C17` | 4.00 | **BUTT CHEEK** (R/L) ★ | CODE |
 | `C18` / `C19` | 3.50 | **HIP** (R/L) | GEO |
-| `C20` | 1.00 | ⛔ **duplicate of C10** (identical coordinates) — spare seed | GEO |
+| `C20` | 1.00 | **rear centreline R (twin)** — byte-exact duplicate of `C10`. **LIVE, not a seed** (§9.1); named 2026-07-29 so the API can't report it as unknown | GEO |
 
 ★ C16/C17 take the butt shape measure (3D translation + radius, per-NPC).
 
@@ -166,7 +193,7 @@ The API should use raw child indices and ignore the knob naming.
 | `main` | 1.00 | **palm / hand centre rod** | EYE |
 | `C1` | 1.00 | **thumb-side rod** | EYE |
 | `C2` | 1.00 | **pinky-side rod** | EYE |
-| `C3`, `C4` | 1.00 | ⛔ **duplicates of C1** (identical coordinates) — unused seeds | GEO |
+| `C3`, `C4` | 1.00 | **palm centre** — user-confirmed: they sit with the palm at the centre of the hand (they share C1's baked coordinates, so they are NOT reportable as distinct rods, but they are not dead either) | EYE |
 
 ---
 
@@ -254,3 +281,130 @@ leg_thigh_mid_r     leg_calf_belly_l   foot_sole_r        knee_r
 
 Keep the raw `slot.child` alongside the name in every event — the name is for the LLM and the
 user, the coordinate is for code, and a rename must never break a consumer.
+
+---
+
+## 12. ★ THE 2026-07-29 EXTENSION — 15 new capsules on all four skeletons
+
+User directive: the map was missing back/shoulder-blade coverage and all internal pelvic anatomy.
+Added with `tools/ppb-scratch/extend_pelvis_back_sensors.py` (pynifly `add_shape`, backup +
+verify-by-reload + collateral check; the proven `extend_head_seeds8.py` pattern).
+
+| slot | before | after | new anatomy |
+|---|---|---|---|
+| COM (11) | 21 | **32** | `C21` clitoris · `C22/C23` entrance outer/inner · `C24/C25` cervix front/back · `C26/C27` uterus lower/upper · `C28/C29` anus outer/inner · `C30/C31` rectum lower/upper |
+| spine1 (5) | 7 (Argonian 9) | **11** | `C9/C10` = BACK (R/L) |
+| spine2 (6) | 15 (Argonian 17) | **19** | `C17/C18` = SHOULDER BLADE (R/L) |
+
+### ⚠ Why the shorter skeletons got FILLER seeds (the index-alignment law)
+The Argonian NIF already used **spine1 C7/C8** and **spine2 C15/C16** for its dorsal RIDGE. Appending
+naively would have made `capSpine1C7` mean *back* on a human and *ridge* on an Argonian — the exact
+trap the head C15/C16 ear/horn knobs created (README). So the new anatomy was placed **above the
+Argonian maximum**, and the shorter NIFs carry buried filler at those indices.
+**LAW: when adding a child to one skeleton, add to ALL of them so a knob index means ONE anatomy
+everywhere. Pad rather than offset.** All four NIFs now read COM 32 / spine1 11 / spine2 19.
+
+### The five coupled DLL edits (the ledger's four, plus the ceiling)
+Growing knob-addressable children is never one edit:
+1. `CapFix.cpp` **`kMaxListChildren` 24 → 34** ← the ceiling; COM at 32 would have been silently clipped
+2. `Tuning.h` array sizes: `spine1C[10]→[12]`, `spine2C[16]→[20]`, `comC[20]→[32]`
+3. `Tuning.cpp` `kArrays` counts: `capSpine1C 12`, `capSpine2C 20`, `capComC 32`
+4. `Tuning.cpp` `CapFixChildKnobs`: spine1 `9→11`, spine2 `17→19`, com `21→32`
+5. `Tuning.cpp` `CapFixChildSlot`'s `ChildPtr` bounds: `12` / `20` / `32`
+Miss #5 and the loop reaches the child but the value-fetcher rejects it — fingerprint is a
+`BEFORE` debug line with no matching `APPLIED`.
+
+### Seed convention (unchanged, proven)
+`p1=(0,0,0) p2=(0,0,2u) r=0.5u`, material cloned from a live sibling. Never `A==B` (the
+degenerate-invisible trap). All 15 ship **`Enable 0`** — nothing changes in game until dialled.
+
+### Dial state (update as the session proceeds)
+Dialled on **Lydia** (the neutral reference; COM barely varies between NPCs, so her values carry to
+all four skeletons). COM frame confirmed twice over: **+Y = FORWARD** (pubic mound C5 at Y+2.67),
+**−Y = REAR** (butt cheeks C16/C17 at Y−6.8), **+Z = up**.
+
+**DIALLING COMPLETE 2026-07-29** — eye-confirmed in VR by the user ("It's perfect"), all
+`Enable 1`. Values below are the live `PPB_tuning.txt` contents, read back from the deployed file:
+
+| child | anatomy | status | values (COM frame, units) |
+|---|---|---|---|
+| `com.C21` | clitoris | **EYE** | A=(0.0, 2.0, 2.3) B=(0.0, 2.4, 4.3) r=0.5 |
+| `com.C22/C23` | vaginal opening R/L | **EYE** | A=(±2.0, 1.0, 2.0) B=(±2.0, −2.0, 2.0) r=0.3 |
+| `com.C24/C25` | cervix R/L | **EYE** | A=(±2.0, 0.6, 4.8) B=(±2.0, −2.4, 4.8) r=0.3 |
+| `com.C26/C27` | uterus R/L | **EYE** | A=(±1.5, 0.6, 7.8) B=(±1.5, −2.4, 7.8) r=0.3 |
+| `com.C28/C29` | anus R/L | **EYE** | A=(±2.0, −4.2, 3.2) B=(±2.0, −7.2, 4.0) r=0.3 |
+| `com.C30/C31` | rectum R/L | **EYE** | A=(±2.0, −3.7, 8.2) B=(±2.0, −6.7, 9.0) r=0.3 |
+| `spine1.C9` | back (lower) | **EYE** | Y=5.485 r=6.033 (main belly moved to Y=6.485, both r−0.5) |
+| `spine2.C17` | back (upper) | **EYE** | Y=1.338 r=6.099 (main chest at Y=2.338, both r−0.5) |
+| `spine1.C10`, `spine2.C18` | unmirrored twins | **buried seed** | only one back capsule each was wanted |
+
+The front/back split on spine1/spine2 works at **0.5u separation** because ReTouch resolves the
+nearest capsule *surface*, not centre — the user was right and my initial 3u proposal was wrong.
+Shrinking the radius further would have cost real chest collision volume for nothing.
+
+### ⚠ Open risk before these go live (Report 08)
+COM going 21 → 32 children escalates the **contact-point cliff**: Havok stages ≤256 contact points
+per BODY PAIR, and two actors' COMs overlapping now presents far more child pairs than the 441 that
+were already flagged as unresolved. It costs nothing while they are buried seeds. The architecturally
+correct answer is that **internal sensors should not collide at all** — ReTouch detection is pure
+geometry (doc 13), so these can be collision-disabled (`hkpListShape::disableChild`, ledger) and add
+ZERO pairs while still being readable. Decide before enabling many at once; keep radii small.
+
+---
+
+## 9. Three API traps found by verifying the record (2026-07-29)
+
+Generating the record forced a cross-check against the NIFs and the code, which caught three
+things that would each have been a live bug in a shipped API. Scripts:
+`tools/ppb-scratch/classify_unnamed_children.py`, `dump_child_counts.py`, `dump_slot_geometry.py`.
+
+### 9.1 Two capsules were LIVE but unnamed on all four skeletons
+
+`nullptr` in the name table was being read as "buried seed". It isn't — it just means *unnamed*.
+Classifying every unnamed index against the known seed spec (`p1=(0,0,0) p2=(0,0,2u) r=0.5u`)
+found two that are real, touchable geometry on **every** skeleton:
+
+| address | actual geometry | verdict |
+|---|---|---|
+| `upperarm.C3` | p1=(1.80,0.00,11.20) p2=(1.10,0.50,20.20) r=2.20 | co-located twin of `C1` (elbow half), only thinner (r 2.60→2.20) |
+| `com.C20` | p1=(0.01,−7.33,6.63) p2=(−2.50,−7.34,4.63) r=1.00 | **byte-exact duplicate of `C10`** (rear centreline R) |
+
+Both are now named (`upper arm (elbow half, inner twin)`, `rear centreline R (twin)`). The same
+pattern explains hand `C3/C4`, which the user identified by eye as sitting at the palm centre —
+also now named rather than left to report as unknown.
+
+> **Rule:** before shipping a name table, classify every `nullptr` against the seed spec. A
+> live capsule that resolves to "unknown" is an API hole, and the table alone cannot tell you
+> which `nullptr`s are seeds.
+
+### 9.2 Index alignment holds ONLY inside the named range
+
+The extension script padded spine1/spine2/COM so one index means one anatomy everywhere — and
+that worked. But the **head was never padded**, and slot 4 differs too:
+
+| slot | human | argonian | khajiit | draenei | what diverges |
+|---|---|---|---|---|---|
+| 3 head | 23 | **17** | **17** | 23 | argonian C15/C16 = horn/spine · khajiit C15/C16 = ears · draenei C15..C22 = horns + ears · human C15..C22 = seeds |
+| 4 spine0 | 8 | **10** | 8 | 8 | argonian C8/C9 = dorsal ridge, exist nowhere else |
+| 5 spine1 | 11 | 11 | 11 | 11 | C7/C8 = seeds on human, argonian dorsal **RIDGE** |
+| 6 spine2 | 19 | 19 | 19 | 19 | C15/C16 = seeds on human, argonian dorsal **RIDGE** |
+
+Names stop at C14 (head), C7 (spine0), C6+C9 (spine1), C14+C17 (spine2) — i.e. exactly below every
+divergence — so **the named range is safe on all four**. That is not luck; it is why those indices
+are unnamed. A consumer must never resolve an unnamed index to a human name.
+
+### 9.3 `neck` is a single capsule, not a list
+
+Slot 7 is a `bhkCapsuleShape` on all four skeletons — **0 list children**. `neck / throat` is
+addressed as child 0 purely by convention. Code that assumes every slot is a `bhkListShape` and
+iterates `children` will silently find nothing on the neck.
+
+### 9.4 Positions are NOT in the NIF
+
+Every dialled capsule — all 11 COM sensors and both back capsules — still sits at the buried seed
+spec **in the NIF**. The dial values live only as `cap*` knobs in `PPB_tuning.txt` and are applied
+at runtime by CapFix. Confirmed by reading both: `dump_slot_geometry.py` shows C21..C31 at
+`(0,0,0)→(0,0,2) r=0.5`, while the tuning file holds the real values.
+
+> **Rule:** an API must read capsule positions from the **live Havok body**, never from the NIF.
+> The NIF is base geometry; the shipped shape is NIF + knobs + ReScale + ReShape + per-NPC fit.

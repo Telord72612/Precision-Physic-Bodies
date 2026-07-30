@@ -407,6 +407,38 @@ namespace ObjectHold {
         float fsmpPushMult     = 1.f;    // GLOBAL multiplier (clamped 0-10) on the per-table push
                                          // gain AND clamp (TuneOf in NpcFingerTest.cpp) — one dial
                                          // scales every garment's push feel proportionally
+        // fsmpFlexCompat (2026-07-29): accept an interface-1.x SMP engine — i.e. HDT-SMP Flex
+        // (OgreWorks, "hdtSMP64.dll", 8.0.x) — using v1-shaped onEvent listeners instead of the
+        // v2 BSTEventSink ones. Everything else about the two interfaces is identical: same
+        // PluginInterface vtable, same event structs, same Bullet 3.24. Without this, a Flex
+        // user gets hair/tail CAPSULES (they never depended on the link) but NO SMP push, so
+        // strands do not react. See src/fsmp/PluginAPI_v1.h for the ABI proof.
+        // ⚠ Not yet exercised in game (Flex is installed but disabled in the dev profile). The
+        // receipt is an "FSMPLINK LIVE ... (interface 1)" line; set to 0 if Flex misbehaves.
+        float fsmpFlexCompat   = 1.f;    // 1 = support SMP Flex, 0 = reject interface 1 as before
+        // ── GARMENT-RIG BUDGET (2026-07-30) ──────────────────────────────────────────────
+        // A wig rig is not cheap: every chord is an INDEPENDENT dynamic Havok body with its
+        // own broadphase entry, deactivation disabled (they never sleep), and a per-frame
+        // main-thread applyHardKeyFrame. Generated hair tables run 160-200 chords on 8 of the
+        // 239 wigs, and kMaxRigs is 8 — i.e. an unbounded worst case of ~1600 driven bodies.
+        // Before this there was NO distance limit at all: any ragdoll-driven actor could take
+        // a slot. And since only the NEAREST actor ever publishes push, a distant NPC's wig
+        // was paying full body cost for exactly zero push benefit.
+        //   npcRigRangeU     0 = no limit. Garment rigs are not created beyond this, and are
+        //                    destroyed (reason "range") once past range + npcRigRangeHystU.
+        //   npcRigMaxActors  0 = no limit (capped by kMaxRigs 8 regardless). How many ACTORS
+        //                    may hold garment rigs at once; a nearer candidate EVICTS the
+        //                    farthest current holder rather than being refused.
+        // Both are live knobs — they only gate rig lifecycle, never feel.
+        // higgsPokeFix (2026-07-30): HIGGS plays a finger-CLOSE animation near any grabbable,
+        // which curls the hand and defeats PPB's finger colliders — the most common "poking
+        // does nothing" report. 1 = set HIGGS's SelectedCloseFingerAnimMaxHandSpeed to -1 via
+        // HIGGS's OWN settings API (their higgs_vr.ini is never touched), re-applied on each
+        // game load because HIGGS re-reads its ini. 0 = leave HIGGS entirely alone.
+        float higgsPokeFix     = 1.f;
+        float npcRigRangeU     = 700.f;  // ~10 m (game unit ≈ 1.43 cm)
+        float npcRigRangeHystU = 100.f;  // extra slack before a range destroy (anti-thrash)
+        float npcRigMaxActors  = 2.f;    // the "two closest" budget
         float npcFollower      = 1.f;    // master switch for the always-on garment rigs: auto-probe
                                          // every driven NPC for tables 1-3 (tail/foxtail/wig; dress
                                          // RETIRED 2026-07-13); 0 destroys all auto-probed garment rigs
@@ -645,7 +677,9 @@ namespace ObjectHold {
         float mouthRampIn  = 5.f;     // phoneme units/sec opening
         float mouthRampOut = 3.f;     // closing
         float mouthFingerBox = 1.f;   // which HandBox box is the pointing fingertip (0..3)
-        float touchProbe   = 1.f;     // TOUCHPROBE mapping logs (nearest capsule per fingertip)
+        float touchProbe   = 0.f;     // TOUCHPROBE mapping logs (nearest capsule per fingertip).
+                                      // SHIPS OFF: it is a capsule-dialling aid that logs every 45
+                                      // frames, so a user with no tuning file would get log spam.
         float touchProbeRangeU = 3.f; // only log when closer than this
         // ══ UV ReShape (2026-07-23) — THE shape system. Replaces the girth/slider generation ══
         // Master switch. The old bodyScale/meshShape pair is GONE: one measurement source (UV
@@ -765,7 +799,14 @@ namespace ObjectHold {
         float npcFingerSnapU   = 20.f;   // gap above this -> hard setPosition/setRotation teleport, game units
         float npcFingerMaxVel  = 8.f;    // m/s cap on the implied drive velocity; above -> teleport branch
         float npcFingerGravity = 0.f;    // m_gravityFactor at creation (keep 0; the drive overwrites velocity anyway)
-        float npcFingerLog     = 1.f;    // 1 Hz NFING TRACK/REACT telemetry to PPB.log
+        // npcFingerLog: 1 Hz NFING TRACK/REACT telemetry to PPB.log — ONE LINE PER CHORD.
+        // SHIPS OFF (2026-07-29→30): the cost scales with chord count, which was fine when a
+        // rig meant 4-7 tail chords but is not now that generated HAIR tables reach 85 chords
+        // (kMaxChords is 200). Measured on a real session: 6692 TRACK lines in 117 s =
+        // 57 lines/sec, a 954 KB log in 9 minutes, all formatted by spdlog on the main thread.
+        // Flip to 1 for a dialing/telemetry session, then back. Same lesson as touchProbe: a
+        // diagnostic's code default IS a shipping default.
+        float npcFingerLog     = 0.f;
         float logVerbose       = 0.f;    // PERF (2026-07-13 log demotion): 0 = per-slot CapFix
                                          // geometry lines (BEFORE/APPLIED/MIRROR-L/AUTOFIT) are
                                          // debug-level and invisible; 1 = spdlog level drops to
@@ -815,6 +856,18 @@ namespace ObjectHold {
         float handBoxSlabHalfT = 0.0100f;// 3-finger slab half-thickness, metres (same floor)
         float handBoxPad       = 0.0010f;// slab cross-section padding, metres
         float handBoxSubLayer  = 4.f;    // ragdoll sub-layer; 4 = SkipBoth (adjacency-skips HIGGS's hand 3 / 5)
+        float handBoxRebuildFrac = 0.50f; // hand-scale drift that forces a rig REBUILD. **0 = NEVER
+                                        // rebuild on scale** (see HandBoxRebuildFrac()).
+                                        // 2026-07-29, raised 0.15 -> 0.50 from measured logs: the
+                                        // author's own session drifted 14.26% from the built-at
+                                        // scale (range 0.8264..0.9639) — 0.15 left only 0.74pp of
+                                        // margin. A third user's log peaked at 8.57%. The rebuild
+                                        // is VESTIGIAL anyway: geometry is re-solved live every
+                                        // snapshot, and beast form is handled by a separate path
+                                        // (handBoxBeast -> DestroyHand("off")), so nothing actually
+                                        // needs this. It survives only as a safety net.
+        float handBoxLeashU    = 30.f;   // max units a hand box (or its HIGGS anchor) may sit from
+                                        // the skeleton hand node before it is snapped home; 0 = off
         float handBoxMaxVel    = 25.f;   // m/s; above this -> teleport (setPosition) instead of the keyframe ride
         float handBoxBeast     = 0.f;    // 0 = no boxes (and no slab writes) on beast skeletons
         float handBoxDump      = 0.f;    // edge-triggered (0 -> 1) one-shot diagnostic dump to PPB.log; set back to 0 to re-arm
@@ -856,7 +909,10 @@ namespace ObjectHold {
         // antler dial sessions drive them live behind a sculpt gate (Yvanni: bake into her draenei
         // NIF after; Auri: transcribe into her npcCap lines — the seeds must stay buried for the
         // shared human NIF). Four coupled edits done in lock-step per the Ledger.
-        CapChild spine0C[10]{}, spine1C[10]{}, spine2C[16]{}, headC[22]{}, comC[20]{};
+        // 2026-07-29: spine1 10->12 (C9/C10 back), spine2 16->20 (C17/C18 shoulder blade),
+        // comC 20->32 (C21..C31 = the 11 pelvis sensors). All four skeletons carry the same
+        // counts so one knob index means one anatomy everywhere.
+        CapChild spine0C[10]{}, spine1C[12]{}, spine2C[20]{}, headC[22]{}, comC[32]{};
     };
     extern GrabTune g_tune;           // the live tune instance — overwritten by the hot-reload
 
@@ -928,7 +984,15 @@ namespace ObjectHold {
     float    FsmpPushMaxForce();        // LEGACY — declared but unused by the per-target push path
     float    FsmpPushMinDispU();
     float    FsmpPushMult();            // global multiplier on the per-table (TuneOf) gain+clamp, clamped 0-10
+    // Reads ONE key straight off PPB_tuning.txt, for code that runs BEFORE the pre-drive
+    // hook (installed at kDataLoaded) has ever polled the file — e.g. FsmpLink's SMP
+    // handshake at kPostPostLoad. Mutates no state; does not disturb the poller's mtime.
+    float    EarlyReadKnob(const char* key, float fallback);
     bool     NpcFollowerEnabled();      // master switch for the always-on garment rigs (> 0.5)
+    float    HiggsPokeFix();            // 1 = force HIGGS's finger-close anim off so poking works
+    float    NpcRigRangeU();            // garment-rig create/keep range in game units (0 = unlimited)
+    float    NpcRigRangeHystU();        // extra slack before a range destroy (anti-thrash)
+    int      NpcRigMaxActors();         // how many ACTORS may hold garment rigs (0 = unlimited)
     float    NpcFingerTipU();
     float    NpcFingerMassKg();         // floored at 0.01 kg (a 0-mass dynamic body is a solver hazard)
     float    NpcGarmentMassKg();        // light garment-capsule mass, floored at 0.01 kg
@@ -1093,6 +1157,8 @@ namespace ObjectHold {
     float    HandBoxPad();
     unsigned HandBoxSubLayer();         // sanitized: 2/3/5/6 (HIGGS's own parts) remap to 4
     float    HandBoxMaxVel();
+    float    HandBoxLeashU();
+    float    HandBoxRebuildFrac();
     bool     HandBoxBeast();
     float    HandBoxDump();             // raw value; HandBox edge-detects the 0 -> 1 transition
     // ── per-box LIVE DIALS (2026-07-10) — offsets clamped ±10u, plate halves 0.05..5u (-1=solved), tilt ±180 ──

@@ -231,3 +231,17 @@ file), `planckLoosenOurs 1`, `poseConform 1`. Receipts: `PIVGUARD diag … getOk
 zero heals, `PIVARC` node-vs-havok arc within 0.25%.
 ⚠ vtable law when touching the PLANCK interface decl: copy the BASE interface order
 (planckinterface001.h) — Get/SetSettingDouble are slots 13/14 AT THE END. See ledger.
+
+## Hand-box safety knobs (2026-07-29 — the runaway-collider fixes, doc 09)
+
+| knob | default | meaning |
+|---|---|---|
+| `handBoxLeashU` | 30 | max units a hand box **or its HIGGS anchor** may sit from the skeleton hand node before it is snapped home / the anchor is rejected. Catches "followed a wrong anchor perfectly", which the velocity clamp structurally cannot. 0 = off. |
+| `handBoxRebuildFrac` | 0.15 | hand-scale drift that forces a rig REBUILD. Was hardcoded 0.01 and caused 60 rebuilds/session on ordinary jitter; geometry is live-solved so only a real form change needs one. Clamped to a 0.02 floor. |
+| `handBoxMaxVel` | 25 | m/s; the pre-existing HIGGS-style velocity clamp (teleport + re-keyframe on a spike). |
+
+## New capsule knobs (2026-07-29 extension, doc 15)
+`capComC21..C31` (11 pelvis sensors), `capSpine1C9/C10` (back R/L), `capSpine2C17/C18` (shoulder
+blade R/L) — all `Enable 0` buried seeds until dialled. Present at the SAME index on all four
+skeletons. ⚠ `capSpine1C9/C10` previously held stale values 25u behind the body; reset to seeds.
+Bounds now: spine1 11, spine2 19, com 32, `kMaxListChildren` 34.

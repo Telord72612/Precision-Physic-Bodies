@@ -525,6 +525,23 @@ namespace {
     struct HairTable { const char* sig; const FingerPair* pairs; int n; int sensors; };
 #include "PpbHairTablesAll.inc"
     constexpr int kHairBase = 1000;   // hair table numbers live at kHairBase + [0, kHairCount)
+
+    // ── BUILD-TIME BOUND CHECK (2026-07-30) ──────────────────────────────────────────────
+    // Every per-rig array is kMaxChords-sized (bodies[]/a[]/c[]/target[], and the sensor pick
+    // set added with contact-ranked sensors), so a generated table carrying more chords than
+    // that overflows ALL of them at once, silently. The largest table today is KS_Glow_3H_06
+    // at exactly 200 = kMaxChords — i.e. we are sitting ON the limit with zero headroom, one
+    // table regeneration away from a stack smash. Make that a build failure, not a runtime
+    // corruption to be diagnosed from a crash log.
+    constexpr int MaxGeneratedHairChords() {
+        int m = 0;
+        for (int i = 0; i < kHairCount; ++i)
+            if (kHairTables[i].n > m) m = kHairTables[i].n;
+        return m;
+    }
+    static_assert(MaxGeneratedHairChords() <= kMaxChords,
+                  "a generated hair table exceeds kMaxChords — raise kMaxChords (EVERY per-rig "
+                  "array scales with it) or regenerate the tables with a lower cap");
     // DRESS mode (DX Necromancer 3BA robes) — RETIRED 2026-07-13 (user directive "remove
     // the capsule on her clothes … back like the original"). The lower skirt chords hung at
     // the ankles/boots; a near-massless (0.05kg garment) dynamic body there, grabbed by
@@ -712,11 +729,48 @@ namespace {
     // so plain GetObjectByName misses them; SKELETON-carried bones keep plain names.
     // Match = exact OR ends-with-' <orig>'. First hit wins (multiple armors carrying
     // the same bone name = independent instances; fine for the test rig).
+    // ── ENGINE-AGNOSTIC BONE-NAME UN-RENAMER (2026-07-29, the SMP Flex tail/hair fix) ─────
+    // Every SMP engine renames armor-carried physics bones at the skeleton merge, and they
+    // DO NOT agree on the scheme. Returns a pointer INTO nm at the original bone name.
+    //
+    //   Faster HDT-SMP : "hdtSSEPhysics_AutoRename_Armor_XXXXXXXX <orig>"   separator = SPACE
+    //                    (also ..._Head_XXXXXXXX)
+    //   HDT-SMP Flex   : "hdtA_XXXXXXXX_<orig>"  /  "hdtH_XXXXXXXX_<orig>" separator = UNDERSCORE
+    //
+    // Flex's format strings are literally `hdtA_%08X_` and `hdtH_%08X_` in its DLL (A=Armor,
+    // H=Head), and its binary contains NO "AutoRename" string at all — so the old
+    // ends-with-" <orig>" rule missed EVERY renamed bone under Flex. Measured consequence:
+    // a Khajiit's live tail bones were present and simulating as
+    // 'hdtA_1CF71480_HDTS TailBone09.003' and all four tail tables silently failed to
+    // resolve, so no rig was ever created (and the same for every hair table).
+    //
+    // The Flex branch demands EXACTLY 8 hex digits then '_', so it cannot false-positive on
+    // an ordinary bone that merely contains an underscore.
+    inline const char* PlainBoneName(const char* nm) {
+        if (!nm || !*nm) return nm;
+        if (const char* ar = std::strstr(nm, "AutoRename_"))        // FSMP
+            if (const char* sp = std::strchr(ar, ' '); sp && sp[1]) return sp + 1;
+        if (nm[0] == 'h' && nm[1] == 'd' && nm[2] == 't' &&         // Flex
+            (nm[3] == 'A' || nm[3] == 'H') && nm[4] == '_') {
+            const char* p = nm + 5;
+            int n = 0;
+            while (n < 8 && ((p[n] >= '0' && p[n] <= '9') || (p[n] >= 'A' && p[n] <= 'F') ||
+                             (p[n] >= 'a' && p[n] <= 'f'))) ++n;
+            if (n == 8 && p[8] == '_' && p[9]) return p + 9;
+        }
+        return nm;
+    }
+
     RE::NiAVObject* FindBoneSuffix(RE::NiAVObject* obj, const char* target, int tlen, int depth = 0) {
         if (!obj || depth > 40) return nullptr;
         if (const char* nm = obj->name.c_str(); nm && *nm) {
+            // Compare the UN-RENAMED name: covers plain skeleton bones and both engines'
+            // merge prefixes in one exact compare.
+            const char* plain = PlainBoneName(nm);
+            const int plen = (int)std::strlen(plain);
+            if (plen == tlen && std::memcmp(plain, target, (size_t)tlen) == 0) return obj;
+            // Retained fallback for any UNKNOWN renamer that uses a space separator.
             const int nlen = (int)std::strlen(nm);
-            if (nlen == tlen && std::memcmp(nm, target, (size_t)tlen) == 0) return obj;
             if (nlen > tlen && nm[nlen - tlen - 1] == ' ' &&
                 std::memcmp(nm + nlen - tlen, target, (size_t)tlen) == 0) return obj;
         }
@@ -774,14 +828,18 @@ namespace {
         if (!obj || mr.remaining == 0 || depth > 40) return;
         if (const char* nm = obj->name.c_str(); nm && *nm) {
             const int nlen = (int)std::strlen(nm);
+            // Un-rename ONCE per node, not once per target (this walk is the hot path — the
+            // wig alone probes 30 names). Engine-agnostic: see PlainBoneName.
+            const char* plain = PlainBoneName(nm);
+            const int plen = (plain == nm) ? nlen : (int)std::strlen(plain);
             for (int i = 0; i < mr.n; ++i) {
                 if (*mr.out[i]) continue;                     // first hit wins (matches FindBoneSuffix)
                 const int tl = mr.tlen[i];
-                if (nlen == tl) {
-                    if (std::memcmp(nm, mr.target[i], (size_t)tl) == 0) { *mr.out[i] = obj; --mr.remaining; }
+                if (plen == tl && std::memcmp(plain, mr.target[i], (size_t)tl) == 0) {
+                    *mr.out[i] = obj; --mr.remaining;
                 } else if (nlen > tl && nm[nlen - tl - 1] == ' ' &&
                            std::memcmp(nm + nlen - tl, mr.target[i], (size_t)tl) == 0) {
-                    *mr.out[i] = obj; --mr.remaining;
+                    *mr.out[i] = obj; --mr.remaining;         // unknown space-separated renamer
                 }
             }
         }
@@ -899,6 +957,16 @@ namespace {
         RE::NiPointer<RE::bhkWorld> heldWorld;
         std::uint32_t group   = 0;           // owning NPC's collision group (from her R-hand body filter word)
         std::uint64_t lastSeenFrame = 0;
+        // Squared player distance in GAME UNITS, refreshed every DriveRig. Used by the
+        // garment-rig budget for the range destroy and to pick the farthest holder to evict.
+        // ⚠ BOTH FIELDS MUST DEFAULT TO ZERO. FingerRig has no other non-zero initializer, so
+        // g_rigs[kMaxRigs] lives in .bss and costs NOTHING in the image. A first attempt used
+        // `float lastD2 = FLT_MAX` as the "never driven" sentinel — one non-zero default moved
+        // the whole array (8 rigs x FingerBody bodies[200]) into .data and grew the DLL by
+        // 1.28 MB (1,870,336 -> 3,154,944), all of it literal FLT_MAX-and-zero bytes on disk
+        // and dirty pages at load. The validity flag keeps the sentinel without the cost.
+        float         lastD2  = 0.f;     // meaningful only while d2Valid
+        bool          d2Valid = false;   // false until this rig's first DriveRig
         int           missFrames = 0;        // consecutive DriveRig nodesMissing frames (unequip detector)
         std::chrono::steady_clock::time_point lastTrack{};   // per-rig 1 Hz TRACK throttle (a shared
                                              // static would let the first-driven rig starve the rest)
@@ -1226,6 +1294,18 @@ namespace {
     // world in hand). The caller owns table selection (legacy mode mapping, auto-
     // probe, finger) and guarantees `slot` is free; rig.mode stays 0 here — the
     // LEGACY OVERRIDE caller stamps it after a successful create. ──────────────
+    // Squared player distance in GAME UNITS. Lives in the anonymous namespace because BOTH
+    // TryCreate (birth stamp) and the garment-rig budget in namespace NpcFinger call it.
+    float GarmentPlayerD2(RE::Actor* actor)
+    {
+        if (auto* pl = RE::PlayerCharacter::GetSingleton()) {
+            const RE::NiPoint3 pp = pl->GetPosition(), ap = actor->GetPosition();
+            const float dx = ap.x - pp.x, dy = ap.y - pp.y, dz = ap.z - pp.z;
+            return dx * dx + dy * dy + dz * dz;
+        }
+        return FLT_MAX;
+    }
+
     void TryCreate(RE::Actor* actor, int tbl, int slot)
     {
         // Preconditions (spec §2 + review Defects 5/6). Layer 56 and the filter
@@ -1365,6 +1445,13 @@ namespace {
         rig.heldWorld = RE::NiPointer<RE::bhkWorld>(worldPtr);   // STRONG ref — keeps the world alive for teardown
         rig.group    = group;
         rig.lastSeenFrame = g_frame.load(std::memory_order_relaxed);
+        // Stamp the player distance AT BIRTH. Creation happens after this OnPreDrive's per-slot
+        // drive loop, so without this a new rig would carry d2Valid == false until the actor's
+        // NEXT frame — and the budget's farthest-holder scan would see an "unknown" holder.
+        // Adversarial review 2026-07-30 showed that window let a rig born this frame be evicted
+        // by any in-range actor, even a FARTHER one, before it ever drove.
+        rig.lastD2  = GarmentPlayerD2(actor);
+        rig.d2Valid = true;
 
         auto* base = actor->GetActorBase();
         // chordU list covers EVERY chord this rig built (was hardcoded [0..3]; 07-15 post-mortem).
@@ -1398,6 +1485,18 @@ namespace {
             return;
         }
         rig.missFrames = 0;
+        // Player distance, refreshed for EVERY rig every driven frame. Deliberately NOT folded
+        // into the publish election below: that block is gated on `tune.sensors > 0`, and ~60 of
+        // the 239 generated hair tables declare sensors 0 (touch-only, like tbl 5). Computing it
+        // there would leave those rigs pinned at FLT_MAX and the range sweep would destroy them
+        // on their first frame.
+        if (auto* plD = RE::PlayerCharacter::GetSingleton()) {
+            const RE::NiPoint3 pp = plD->GetPosition();
+            const RE::NiPoint3 ap = actor->GetPosition();
+            const float dx = ap.x - pp.x, dy = ap.y - pp.y, dz = ap.z - pp.z;
+            rig.lastD2 = dx * dx + dy * dy + dz * dz;
+            rig.d2Valid = true;
+        }
         const ChordTable tb = PairTable(rig.tbl);
         const FingerPair* pairs = tb.pairs;
         const TableTune tune = TuneOf(rig.tbl);      // per-table push gain/clamp for the sensors
@@ -1434,6 +1533,62 @@ namespace {
                         gateR2[nGate] = 70.f * 70.f;
                         ++nGate;
                     }
+                }
+            }
+        }
+
+        // ── SENSOR SELECTION BY CONTACT, NOT BY TABLE INDEX (2026-07-30) ──────────────────
+        // Was: the publishable set is the FIRST TuneOf(tbl).sensors chords — a static prefix
+        // of the AUTHORING order, which is root-first. On a 200-chord wig that meant chords
+        // 14..199 could never push no matter where the player actually touched, and the same
+        // on any long chain. Measured: 8 of the 239 generated hair tables carry 160-200 chords
+        // against a 14-sensor cap (~7%).
+        //
+        // The COUNT is deliberately unchanged — each table's `sensors` is a dialed quantity AND
+        // the cost bound (FsmpLink's PreSink is O(bodies x targets) per physics step, and the
+        // 19-chord whip regression proved that RAISING the count is dangerous). Only WHICH
+        // chords fill those slots changes: the ones nearest a gate point (hand / wielded weapon)
+        // win. Everything downstream is untouched — same cap, same per-chord proximity gate,
+        // same contact-verified deviation latch, same force maths.
+        //
+        // With no gate point in range the legacy prefix is kept verbatim: nothing can be gated
+        // that frame anyway (every dispU would publish as zero), so this both preserves the
+        // old publish-buffer freshness exactly and costs zero ranking work on the common frame.
+        bool sensorPick[kMaxChords];
+        {
+            const int cap = tune.sensors < kMaxSensors ? tune.sensors : kMaxSensors;
+            for (int i = 0; i < tb.n && i < kMaxChords; ++i) sensorPick[i] = false;
+            if (rig.tailMode && cap > 0) {
+                if (nGate == 0 || cap >= tb.n) {
+                    for (int i = 0; i < tb.n && i < cap; ++i) sensorPick[i] = true;   // legacy prefix
+                } else {
+                    // Rank by distance from each chord's HOST BONE to the nearest gate point.
+                    // Ranking uses the raw bone position; the GATE TEST inside the loop is left
+                    // exactly as it was (fur-line anchor tA), so a selected chord behaves
+                    // identically to before — only its eligibility changed.
+                    float bestD[kMaxSensors]; int bestI[kMaxSensors]; int nb = 0;
+                    for (int i = 0; i < tb.n; ++i) {
+                        if (!nodes.a[i]) continue;
+                        const RE::NiPoint3& p = nodes.a[i]->world.translate;
+                        float d2 = FLT_MAX;
+                        for (int g = 0; g < nGate; ++g) {
+                            const float dx = p.x - gateP[g][0], dy = p.y - gateP[g][1],
+                                        dz = p.z - gateP[g][2];
+                            const float t = dx * dx + dy * dy + dz * dz;
+                            if (t < d2) d2 = t;
+                        }
+                        // insertion into an ascending top-`cap` list (cap <= 14 — trivial)
+                        if (nb < cap) {
+                            int k = nb++;
+                            while (k > 0 && bestD[k - 1] > d2) { bestD[k] = bestD[k - 1]; bestI[k] = bestI[k - 1]; --k; }
+                            bestD[k] = d2; bestI[k] = i;
+                        } else if (d2 < bestD[nb - 1]) {
+                            int k = nb - 1;
+                            while (k > 0 && bestD[k - 1] > d2) { bestD[k] = bestD[k - 1]; bestI[k] = bestI[k - 1]; --k; }
+                            bestD[k] = d2; bestI[k] = i;
+                        }
+                    }
+                    for (int k = 0; k < nb; ++k) sensorPick[bestI[k]] = true;
                 }
             }
         }
@@ -1592,7 +1747,7 @@ namespace {
             // STAGE-2 PUSH SENSOR (tail mode): the capsule displacement off its chord
             // host = the push imparted by whatever HIGGS-side object is in contact.
             // Published every frame; FsmpLink deadzones + stales it.
-            if (rig.tailMode && i < tune.sensors && nPush < kMaxSensors) {
+            if (rig.tailMode && i < kMaxChords && sensorPick[i] && nPush < kMaxSensors) {
                 bool gated = false;
                 for (int g = 0; g < nGate; ++g) {
                     const float ddx = tA.x - gateP[g][0], ddy = tA.y - gateP[g][1], ddz = tA.z - gateP[g][2];
@@ -1723,13 +1878,7 @@ namespace {
             // sensors==0 rigs (tbl 5, touch-only) are EXCLUDED from the election
             // (review 2026-07-17): a sensor-less winner publishes nothing, the buffer
             // goes stale, and every pushing actor's force dies while it stays nearest.
-            float d2 = FLT_MAX;
-            if (auto* pl = RE::PlayerCharacter::GetSingleton()) {
-                const RE::NiPoint3 pp = pl->GetPosition();
-                const RE::NiPoint3 ap = actor->GetPosition();
-                const float dx = ap.x - pp.x, dy = ap.y - pp.y, dz = ap.z - pp.z;
-                d2 = dx * dx + dy * dy + dz * dz;
-            }
+            const float d2 = rig.lastD2;   // computed once per drive above (all rig types)
             const std::uint64_t fr = g_frame.load(std::memory_order_relaxed);
             if (g_pubFrame != fr) { g_pubFrame = fr; g_pubBest = FLT_MAX; g_pubActor = 0; g_pubN = 0; }
             // 2026-07-13 review: same-actor garment rigs MERGE their sensors (up to
@@ -1823,11 +1972,17 @@ namespace NpcFinger {
     static const char* ProposedPartName(int slot, int child)
     {
         switch (slot) {
-        case 0: { static const char* n[] = {"palm rod","thumb-side rod","pinky-side rod",nullptr,nullptr};
+        // C3/C4 are NOT seeds — user-confirmed 2026-07-29: both sit at the CENTRE of the palm,
+        // co-located with the palm rod. Named so the API never reports a live capsule as unnamed.
+        case 0: { static const char* n[] = {"palm rod","thumb-side rod","pinky-side rod",
+                  "palm centre (1)","palm centre (2)"};
                   return child < 5 ? n[child] : nullptr; }
         case 1: { static const char* n[] = {"forearm (elbow half)","forearm (wrist half)"};
                   return child < 2 ? n[child] : nullptr; }
-        case 2: { static const char* n[] = {"upper arm (shoulder half)","upper arm (elbow half)","deltoid / shoulder cap",nullptr};
+        // C3 is LIVE on all four skeletons (not a seed): a thinner twin co-located with C1
+        // (same endpoints, r 2.20 vs 2.60). Named so the API never reports it as unknown.
+        case 2: { static const char* n[] = {"upper arm (shoulder half)","upper arm (elbow half)",
+                  "deltoid / shoulder cap","upper arm (elbow half, inner twin)"};
                   return child < 4 ? n[child] : nullptr; }
         case 3: { static const char* n[] = {"cranium","upper lip","chin R","chin L","cheek R","cheek L",
                   "cheekbone R","cheekbone L","nose","palate","throat wall","under-jaw (deep)",
@@ -1836,13 +1991,14 @@ namespace NpcFinger {
         case 4: { static const char* n[] = {"waist ring","lower belly R","lower belly L","front waist band",
                   "lower abdomen","lower back R","lower back L","flank R"};
                   return child < 8 ? n[child] : nullptr; }
-        case 5: { static const char* n[] = {"belly / navel","belly side R","belly side L","midriff R",
-                  "midriff L","flank R","flank L"};
-                  return child < 7 ? n[child] : nullptr; }
+        case 5: { static const char* n[] = {"belly / navel (FRONT)","belly side R","belly side L","midriff R",
+                  "midriff L","flank R","flank L",nullptr,nullptr,"BACK (lower)",nullptr};
+                  return child < 11 ? n[child] : nullptr; }
         case 6: { static const char* n[] = {"chest ring","lat R","lat L","front rib R","front rib L",
                   "lower chest","trapezius R","trapezius L","collarbone R","collarbone L",
-                  "sternum / cleavage","BREAST R","BREAST L","shoulder cap R","shoulder cap L"};
-                  return child < 15 ? n[child] : nullptr; }
+                  "sternum / cleavage","BREAST R","BREAST L","shoulder cap R","shoulder cap L",
+                  nullptr,nullptr,"BACK (upper)",nullptr};
+                  return child < 19 ? n[child] : nullptr; }
         case 7: return child == 0 ? "neck / throat" : nullptr;
         case 8: { static const char* n[] = {"thigh rod","upper thigh / groin","hip-glute fold","upper thigh",
                   "mid thigh","lower thigh","knee"};
@@ -1855,8 +2011,16 @@ namespace NpcFinger {
                   "inner pelvis wall R","inner pelvis wall L","pubic mound","groin crease R","groin crease L",
                   "front hip R","front hip L","rear centreline R","rear centreline L","upper glute R",
                   "upper glute L","inner rail R","inner rail L","BUTT CHEEK R","BUTT CHEEK L",
-                  "hip R","hip L",nullptr};
-                  return child < 21 ? n[child] : nullptr; }
+                  "hip R","hip L",
+                  // C20 is LIVE on all four skeletons: a byte-exact duplicate of C10.
+                  "rear centreline R (twin)",
+                  "CLITORIS",
+                  "vaginal opening R","vaginal opening L",
+                  "cervix R","cervix L",
+                  "uterus R","uterus L",
+                  "anus R","anus L",
+                  "rectum R","rectum L"};
+                  return child < 32 ? n[child] : nullptr; }
         }
         return nullptr;
     }
@@ -2198,9 +2362,10 @@ namespace NpcFinger {
     int FindHairDFS(RE::NiAVObject* obj, RE::NiAVObject* root, int* sigHits, int depth = 0) {
         if (!obj || depth > 40) return -1;
         if (const char* nm = obj->name.c_str(); nm && *nm) {
-            const char* plain = nm;                                   // strip "…AutoRename_…XXXXXXXX <orig>"
-            if (const char* ar = std::strstr(nm, "AutoRename_"))
-                if (const char* sp = std::strchr(ar, ' '); sp && sp[1]) plain = sp + 1;
+            // Engine-agnostic un-rename (FSMP's "AutoRename_…XXXXXXXX <orig>" AND Flex's
+            // "hdtA_XXXXXXXX_<orig>"): without the Flex branch every wig signature bone
+            // missed under Flex and no hair table could ever bind. See PlainBoneName.
+            const char* plain = PlainBoneName(nm);
             auto it = HairSigMap().find(std::string_view(plain));
             if (it != HairSigMap().end()) {
                 if (sigHits) *sigHits += (int)it->second.size();
@@ -2214,6 +2379,72 @@ namespace NpcFinger {
         return -1;
     }
     inline int FindHairTable(RE::NiAVObject* root, int* sigHits = nullptr) { return FindHairDFS(root, root, sigHits); }
+
+    // ── GARMENT-RIG BUDGET (2026-07-30, knobs npcRigRangeU / npcRigMaxActors) ────────────
+    // Split deliberately into a PURE predicate and a COMMITTING acquire.
+    //
+    // ⚠ The first version was one function used as the auto-probe branch gate, and it evicted
+    // as a SIDE EFFECT of being asked. OnPreDrive runs for EVERY driven actor EVERY frame, and
+    // the probe behind the gate usually creates NOTHING (it is throttled, and most NPCs match
+    // no table — that is what the HAIRSCAN "no bind" receipt records). So a plain guard with no
+    // hair or tail at all would destroy a real 200-chord wig rig it could never use, the victim
+    // would rebuild ~200 frames later, and the guard would kill it again — a permanent
+    // create/destroy cycle. DestroyRig frees nothing (never-free convention), so each cycle
+    // leaked the whole rig. Found by adversarial review 2026-07-30 before it ever shipped.
+    //
+    // RULE: never let a query mutate lifecycle. Range gates the probe (pure); the budget is
+    // acquired only once a table has actually resolved and we are about to TryCreate.
+    // PURE. Cheap enough to gate the per-frame probe with.
+    bool GarmentInRange(RE::Actor* actor)
+    {
+        const float range = ObjectHold::NpcRigRangeU();
+        if (range <= 0.f) return true;                  // 0 = unlimited
+        return GarmentPlayerD2(actor) <= range * range;
+    }
+
+    // COMMITTING: may evict. Call ONLY immediately before a TryCreate that will definitely run.
+    bool GarmentBudgetAcquire(RE::Actor* actor, std::uint32_t id)
+    {
+        if (!GarmentInRange(actor)) return false;
+        const int maxA = ObjectHold::NpcRigMaxActors();
+        if (maxA <= 0) return true;                     // 0 = unlimited (kMaxRigs still caps)
+        const float d2 = GarmentPlayerD2(actor);
+
+        std::uint32_t holders[kMaxRigs]; int nH = 0;
+        for (int k = 0; k < kMaxRigs; ++k) {
+            const auto& r = g_rigs[k];
+            if (!r.live || r.tbl == 0) continue;        // finger rig is not on this budget
+            if (r.actorId == id) return true;           // same actor, 2nd table (tail+wig) — free
+            bool seen = false;
+            for (int h = 0; h < nH; ++h) if (holders[h] == r.actorId) { seen = true; break; }
+            if (!seen && nH < kMaxRigs) holders[nH++] = r.actorId;
+        }
+        if (nH < maxA) return true;
+
+        // Farthest holder among those with a known distance. TryCreate stamps lastD2/d2Valid at
+        // birth, so "unknown" should be unreachable — if it ever happens we REFUSE rather than
+        // evict blind. (The first version treated unknown as "farthest, evict freely, skip the
+        // hysteresis", which made a rig born this frame the preferred victim of any in-range
+        // actor — even one FARTHER away. Second review finding, same root cause: don't guess.)
+        std::uint32_t worstId = 0; float worstD2 = -1.f;
+        for (int h = 0; h < nH; ++h) {
+            float hd2 = -1.f;
+            for (int k = 0; k < kMaxRigs; ++k) {
+                const auto& r = g_rigs[k];
+                if (!r.live || r.tbl == 0 || r.actorId != holders[h] || !r.d2Valid) continue;
+                if (r.lastD2 > hd2) hd2 = r.lastD2;
+            }
+            if (hd2 >= 0.f && hd2 > worstD2) { worstD2 = hd2; worstId = holders[h]; }
+        }
+        if (worstId == 0) return false;                 // no comparable holder — do not evict
+
+        const float hyst = ObjectHold::NpcRigRangeHystU();
+        if (std::sqrt(worstD2) - std::sqrt(d2) <= hyst) return false;   // not CLEARLY nearer
+        for (int k = 0; k < kMaxRigs; ++k)
+            if (g_rigs[k].live && g_rigs[k].tbl != 0 && g_rigs[k].actorId == worstId)
+                DestroyRig(k, "budget");
+        return true;
+    }
 
     void OnPreDrive(RE::Actor* actor, float deltaTime)
     {
@@ -2345,7 +2576,7 @@ namespace NpcFinger {
                     }
                 }
             }
-        } else if (ObjectHold::NpcFollowerEnabled()) {
+        } else if (ObjectHold::NpcFollowerEnabled() && GarmentInRange(actor)) {
             // ── AUTO-PROBE (2026-07-13, knob npcFollower; PERF fix audit rank 2):
             // ONE table resolve per probe tick, per-actor phase-seeded on first sight.
             // The cursor walks tables 1→3 at a 40-frame gap, then rests a full cycle
@@ -2457,7 +2688,10 @@ namespace NpcFinger {
                     // }
                     if (tbl != 0) {
                         FingerNodes nodes = ResolveNodes(root3d, tbl);
-                        if (nodes.all) TryCreate(actor, tbl, freeSlot);
+                        // Budget is acquired HERE — the table resolved, so this create is real.
+                        // Evicting from the branch gate above would destroy a live rig on behalf
+                        // of an actor that turns out to create nothing (see GarmentBudgetAcquire).
+                        if (nodes.all && GarmentBudgetAcquire(actor, id)) TryCreate(actor, tbl, freeSlot);
                     }
                     if (ps.cursor > kProbeSteps) { ps.cursor = 1; ps.next = frame + 200 + (id % 80); }
                     else                ps.next = frame + 40;
@@ -2566,6 +2800,26 @@ namespace NpcFinger {
             } else {
                 // AUTO-PROBED garment rig: npcFollower 0 sweeps all of them.
                 if (!follower) { DestroyRig(slot, "follower"); continue; }
+            }
+
+            // ── GARMENT-RIG RANGE SWEEP (2026-07-30) ──────────────────────────────────────
+            // AUTO-PROBED garment rigs only — tbl != 0 AND mode == 0.
+            //  * tbl == 0 (finger rig) is already single-target via the pin/nearest election;
+            //    gating it here would fight that.
+            //  * mode != 0 is a LEGACY OVERRIDE rig (npcTailTest), created deliberately on the
+            //    pinned-else-nearest actor by a path that has NO range gate. Sweeping it here
+            //    while its creator ignores range is a guaranteed per-frame create/destroy loop,
+            //    and every destroy leaks the rig (never-free convention). Either both ends gate
+            //    or neither does; an explicitly requested test rig should obey the knob, not a
+            //    distance budget meant for the ambient auto-probe population.
+            //    (Adversarial review 2026-07-30 — two independent reviewers found this.)
+            // Hysteresis keeps an actor hovering exactly at the boundary from thrashing.
+            if (rig.tbl != 0 && rig.mode == 0) {
+                const float range = ObjectHold::NpcRigRangeU();
+                if (range > 0.f && rig.d2Valid) {
+                    const float out = range + ObjectHold::NpcRigRangeHystU();
+                    if (rig.lastD2 > out * out) { DestroyRig(slot, "range"); continue; }
+                }
             }
 
             // stale sweep: the actor left the driven set (the PerfSys F5 idiom)

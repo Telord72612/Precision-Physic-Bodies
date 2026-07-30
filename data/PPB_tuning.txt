@@ -207,20 +207,20 @@ capSpine0BZ 10.238
 capSpine0R 4.401
 capSpine1Enable 1
 capSpine1AX 0.0
-capSpine1AY 5.985
+capSpine1AY 6.485
 capSpine1AZ 7.56
 capSpine1BX 0.0
-capSpine1BY 5.985
+capSpine1BY 6.485
 capSpine1BZ 11.13
-capSpine1R 6.533
+capSpine1R 6.033
 capSpine2Enable 1
 capSpine2AX 3.675
-capSpine2AY 1.838
+capSpine2AY 2.338
 capSpine2AZ 15.015
 capSpine2BX -3.675
-capSpine2BY 1.838
+capSpine2BY 2.338
 capSpine2BZ 15.015
-capSpine2R 6.599
+capSpine2R 6.099
 capNeckEnable 1
 capNeckAX 0.0
 capNeckAY 1.155
@@ -550,22 +550,26 @@ capSpine1C8BX 0.0
 capSpine1C8BY 0.0
 capSpine1C8BZ 2.0
 capSpine1C8R 0.495
-capSpine1C9Enable 1.0
+# spine1 C9/C10 = BACK (R/L) — 2026-07-29. ⚠ These keys ALREADY EXISTED with stale
+# values 25u behind the body from an old session; they were inert only because the
+# apply loop stopped at C8. Raising the bound would have made them live. Reset to the
+# buried seed here — dial from zero.
+capSpine1C9Enable 1
 capSpine1C9AX 0.0
-capSpine1C9AY -25.515
-capSpine1C9AZ 9.134
+capSpine1C9AY 5.485
+capSpine1C9AZ 7.56
 capSpine1C9BX 0.0
-capSpine1C9BY -25.515
-capSpine1C9BZ 10.184
-capSpine1C9R 0.218
-capSpine1C10Enable 1.0
+capSpine1C9BY 5.485
+capSpine1C9BZ 11.13
+capSpine1C9R 6.033
+capSpine1C10Enable 0
 capSpine1C10AX 0.0
-capSpine1C10AY -25.515
-capSpine1C10AZ 9.224
+capSpine1C10AY 0.0
+capSpine1C10AZ 0.0
 capSpine1C10BX 0.0
-capSpine1C10BY -25.515
-capSpine1C10BZ 10.274
-capSpine1C10R 0.218
+capSpine1C10BY 0.0
+capSpine1C10BZ 2.0
+capSpine1C10R 0.5
 capSpine2C1Enable 1
 capSpine2C1AX 4.725
 capSpine2C1AY 2.625
@@ -1024,7 +1028,10 @@ npcFingerFollow 0.8
 npcFingerR 0.5
 npcFingerTipU 0.65
 npcFingerCount 4
-npcFingerLog 1
+# npcFingerLog: 1 Hz NFING TRACK/REACT telemetry — ONE LINE PER CHORD, so the cost scales
+#   with chord count. An 85-chord wig produced 57 lines/sec and a 954 KB log in 9 minutes.
+#   Ships OFF; flip to 1 for a telemetry session ("does it track": p95 gap < ~0.5u, 0 teleports).
+npcFingerLog 0
 # logVerbose 1 = per-slot CapFix geometry lines (BEFORE/APPLIED/MIRROR-L/AUTOFIT) back in PPB.log (dial sessions)
 logVerbose 1
 handBoxEnable 1
@@ -1073,6 +1080,22 @@ higgsSlabHalfX 0.045
 higgsSlabHalfY 0.015
 higgsSlabHalfZ 0.0405
 handBoxSlabLenFrac 0.75
+# --- runaway-finger fix (2026-07-29, from a user's PPB.log) --------------------
+# handBoxLeashU: max distance in GAME UNITS the HIGGS hand anchor may sit from the
+#   wand node before we reject it as stale and drop the follower rig. A freed/orphaned
+#   HIGGS body keeps its last position, so the finger colliders were being dragged to
+#   a fixed point in the cell and left "stuck somewhere". 0 disables the leash.
+handBoxLeashU 30
+# handBoxRebuildFrac: fractional player-scale change required to rebuild the hand rig.
+#   The old code tore down and recreated the rig on ~1% scale drift (60 destroy/create
+#   per session) — dead weight since the 07-10 live re-solve rewrite.
+#   **0 = never rebuild on scale.** Any positive value is floored at 0.02.
+#   0.50 chosen from MEASURED logs, not guessed: this machine drifted 14.26% from the
+#   built-at scale in one 25-min session (range 0.8264..0.9639), and a third user's log
+#   peaked at 8.57%. The first 0.15 attempt left only 0.74pp of margin here. The rebuild
+#   is vestigial (geometry re-solves live; beast form uses handBoxBeast), so a wide
+#   threshold costs nothing and a narrow one costs collider flicker.
+handBoxRebuildFrac 0.50
 # jtrackNow: diagnostic joint-vs-node dump (flip 0->1 to re-fire). Off for normal play.
 jtrackNow 0
 # refCapNow: flip to 1 WHILE STANDING NEXT TO LYDIA to read her exact scale-1 reference spans
@@ -1118,6 +1141,41 @@ fsmpPushMaxForce 32000
 fsmpPushMinDispU 0.15
 npcFollower 1
 fsmpPushMult 1.0
+# ── GARMENT-RIG BUDGET (2026-07-30) ───────────────────────────────────────────────
+# A wig chord is an INDEPENDENT dynamic Havok body: own broadphase entry, never sleeps,
+# keyframed every frame on the main thread. 8 of the 239 generated hair tables carry
+# 160-200 chords, and up to 8 rigs can be live — an unbounded ~1600-body worst case.
+# Before this there was NO distance limit at all: any ragdoll-driven actor could take a
+# slot, and since only the NEAREST actor ever publishes push, a distant NPC's wig paid
+# full body cost for zero push benefit.
+#   npcRigRangeU     create/keep range in game units (1u ~ 1.43 cm; 700 ~ 10 m). 0 = unlimited.
+#   npcRigRangeHystU slack before a range destroy, and the margin a nearer actor must beat
+#                    to EVICT a current holder (anti-thrash — a destroy leaks 16 shapes).
+#   npcRigMaxActors  how many ACTORS may hold garment rigs at once. 0 = unlimited.
+#                    A nearer actor evicts the farthest holder, so this means "the N CLOSEST".
+#                    Tail+wig on the SAME actor is exempt (counts as one actor).
+# These gate rig LIFECYCLE only — they never change feel. The finger rig is not affected
+# (it is already single-target via the pin/nearest election).
+# higgsPokeFix (2026-07-30): HIGGS plays a finger-CLOSE animation whenever your hand is near
+#   a grabbable object, which curls the hand and defeats PPB's finger colliders — the most
+#   common "poking does nothing" report. 1 = set HIGGS's SelectedCloseFingerAnimMaxHandSpeed
+#   to -1 through HIGGS's OWN settings API, so your higgs_vr.ini is never touched and every
+#   other HIGGS setting you tuned is left alone. Re-applied after each game load because HIGGS
+#   re-reads its ini. 0 = don't touch HIGGS at all.
+higgsPokeFix 1
+npcRigRangeU 700
+npcRigRangeHystU 100
+npcRigMaxActors 2
+# fsmpFlexCompat (2026-07-29): accept HDT-SMP Flex (OgreWorks "hdtSMP64.dll", 8.0.x),
+#   which announces SMP plugin interface 1.0.0 while Faster HDT-SMP announces 2.0.0.
+#   The two interfaces are identical except for the LISTENER base class, so PPB now
+#   hands a v1 engine a v1-shaped onEvent listener instead of refusing the link.
+#   Without this, a Flex user still gets hair/tail capsules and touch detection (those
+#   never depended on the SMP link) but NO push — strands do not react to a hand.
+#   Receipt in PPB.log: "FSMPLINK: ACCEPTED (interface 1 COMPAT — HDT-SMP Flex)"
+#   followed by "FSMPLINK LIVE ... (interface 1)". If the LIVE line never appears the
+#   listeners are not being called; set this to 0. Read EARLY, straight off this file.
+fsmpFlexCompat 1
 fsmpMassScale 1
 # ── HAIR/garment collision SOUND (2026-07-26): the capsules are ALREADY GRASS (npcGarmentMat 3 =
 # soft rustle; verified stamped at create). The noise is the servo re-injecting velocity while your
@@ -1539,7 +1597,9 @@ mouthDeepPalU 5.0
 mouthRampIn 5
 mouthRampOut 3
 mouthFingerBox 1
-touchProbe 1
+# touchProbe: capsule-DIALLING aid. Logs the nearest capsule to each fingertip every 45
+# frames. Ships OFF. Flip to 1 (with touchProbeHud 1) to re-enter a mapping session.
+touchProbe 0
 touchProbeRangeU 3.0
 lmGainThigh 1.0
 lmGainArm 1.0
@@ -1680,7 +1740,8 @@ dgHeadPlanck 0
 # MAPPING SESSION HUD (2026-07-29): with touchProbe on, an actual TOUCH (closer than
 # touchProbeHudU) pops 'PPB: <slot>[side] C<n> = <proposed name>' in your view. Confirm or
 # correct each label by voice; every shown line is also logged as TOUCHHUD for the record.
-touchProbeHud 1
+# Ships OFF (mapping is complete — all 122 capsules are named, Report 15). Needs touchProbe 1.
+touchProbeHud 0
 touchProbeHudU 1.0
 
 # PIVGUARD v2 (2026-07-29): PLANCK's pivot collapse (loosenRagdollConstraintPivots) stays
@@ -1689,3 +1750,150 @@ touchProbeHudU 1.0
 # pivots on first sight and writes back any pivot found collapsed (~2 Hz). v1's stranded-pivot
 # failure is structurally impossible: we own the restore. 0 = off (PLANCK stock everywhere).
 planckLoosenOurs 1
+
+# ══ PELVIS SENSOR CAPSULES (2026-07-29) — COM C21..C31 ═══════════════════════════════════
+# Internal proximity sensors, dialled with the trf/collision visualizer. All start DISABLED
+# and buried (0,0,0)->(0,0,2u) r0.5u at the COM origin — nothing changes in game until each
+# one is enabled and positioned. Present on ALL FOUR skeletons at the SAME index, so a knob
+# means one anatomy everywhere (human, Argonian, Khajiit, Draenei).
+# Dial on Lydia (the neutral reference); COM barely varies between NPCs, so her values carry.
+# ⚠ These are SENSORS, not collision surfaces — keep radii small. See the contact-pair note
+#   in Report 08 before enabling many of them at once.
+
+# C21 = CLITORIS — EYE-CONFIRMED on Lydia 2026-07-29
+capComC21Enable 1
+capComC21AX 0.0
+capComC21AY 2.0
+capComC21AZ 2.3
+capComC21BX 0.0
+capComC21BY 2.4
+capComC21BZ 4.3
+capComC21R 0.5
+
+# C22 = VAGINAL OPENING right side — EYE-CONFIRMED 2026-07-29
+capComC22Enable 1
+capComC22AX 2.0
+capComC22AY 1.0
+capComC22AZ 2.0
+capComC22BX 2.0
+capComC22BY -2.0
+capComC22BZ 2.0
+capComC22R 0.3
+
+# C23 = VAGINAL OPENING left side (X-mirror of C22)
+capComC23Enable 1
+capComC23AX -2.0
+capComC23AY 1.0
+capComC23AZ 2.0
+capComC23BX -2.0
+capComC23BY -2.0
+capComC23BZ 2.0
+capComC23R 0.3
+
+# C24 = CERVIX right side — EYE-CONFIRMED 2026-07-29
+capComC24Enable 1
+capComC24AX 2.0
+capComC24AY 0.6
+capComC24AZ 4.8
+capComC24BX 2.0
+capComC24BY -2.4
+capComC24BZ 4.8
+capComC24R 0.3
+
+# C25 = CERVIX left side (X-mirror of C24); the cervix OPENING is between C24/C25
+capComC25Enable 1
+capComC25AX -2.0
+capComC25AY 0.6
+capComC25AZ 4.8
+capComC25BX -2.0
+capComC25BY -2.4
+capComC25BZ 4.8
+capComC25R 0.3
+
+# C26 = UTERUS right side — EYE-CONFIRMED 2026-07-29
+capComC26Enable 1
+capComC26AX 1.5
+capComC26AY 0.6
+capComC26AZ 7.8
+capComC26BX 1.5
+capComC26BY -2.4
+capComC26BZ 7.8
+capComC26R 0.3
+
+# C27 = UTERUS left side (X-mirror of C26); the uterus is between C26/C27
+capComC27Enable 1
+capComC27AX -1.5
+capComC27AY 0.6
+capComC27AZ 7.8
+capComC27BX -1.5
+capComC27BY -2.4
+capComC27BZ 7.8
+capComC27R 0.3
+
+# C28 = ANUS right side — EYE-CONFIRMED 2026-07-29
+capComC28Enable 1
+capComC28AX 2.0
+capComC28AY -4.2
+capComC28AZ 3.2
+capComC28BX 2.0
+capComC28BY -7.2
+capComC28BZ 4.0
+capComC28R 0.3
+
+# C29 = ANUS left side (X-mirror of C28); the anal OPENING is between C28/C29
+capComC29Enable 1
+capComC29AX -2.0
+capComC29AY -4.2
+capComC29AZ 3.2
+capComC29BX -2.0
+capComC29BY -7.2
+capComC29BZ 4.0
+capComC29R 0.3
+
+# C30 = RECTUM right side — EYE-CONFIRMED 2026-07-29
+capComC30Enable 1
+capComC30AX 2.0
+capComC30AY -3.7
+capComC30AZ 8.2
+capComC30BX 2.0
+capComC30BY -6.7
+capComC30BZ 9.0
+capComC30R 0.3
+
+# C31 = RECTUM left side (X-mirror of C30)
+capComC31Enable 1
+capComC31AX -2.0
+capComC31AY -3.7
+capComC31AZ 8.2
+capComC31BX -2.0
+capComC31BY -6.7
+capComC31BZ 9.0
+capComC31R 0.3
+
+# ══ BACK + SHOULDER BLADE (2026-07-29) ═══════════════════════════════════════════════════
+# spine1 C9/C10 = BACK (R/L) · spine2 C17/C18 = SHOULDER BLADE (R/L).
+# Placed ABOVE the Argonian ridge indices (spine1 C7/C8, spine2 C15/C16) so one knob index
+# means one anatomy on every skeleton — the shorter NIFs carry buried filler at C7/C8/C15/C16.
+# Same buried seed defaults; enable + dial per capsule.
+
+
+
+# Spine2 C17 = SHOULDER BLADE R
+capSpine2C17Enable 1
+capSpine2C17AX 3.675
+capSpine2C17AY 1.338
+capSpine2C17AZ 15.015
+capSpine2C17BX -3.675
+capSpine2C17BY 1.338
+capSpine2C17BZ 15.015
+capSpine2C17R 6.099
+
+# Spine2 C18 = SHOULDER BLADE L
+capSpine2C18Enable 0
+capSpine2C18AX 0.0
+capSpine2C18AY 0.0
+capSpine2C18AZ 0.0
+capSpine2C18BX 0.0
+capSpine2C18BY 0.0
+capSpine2C18BZ 2.0
+capSpine2C18R 0.5

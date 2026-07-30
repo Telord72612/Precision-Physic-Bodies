@@ -455,7 +455,44 @@ namespace {
             const float* hp = g_snap.pos[hand][kHand];
             const float* hr = g_snap.rot[hand][kHand];
             hkpRigidBody* hb = (mode == 2 && h) ? HkOfValidated(h->GetHandRigidBody(hand == 1)) : nullptr;
-            if (!hb) {                                   // modes 0/1, or HIGGS body absent
+            // ── LEASH, PART 1 (2026-07-29): REJECT A RUNAWAY ANCHOR ─────────────────────────
+            // Mode 2 rides HIGGS's hand body. If that body is ever stale/displaced (hand
+            // disabled, two-handing, beast recreation, a tracking glitch), our boxes would
+            // follow it PERFECTLY to the wrong place — and because the target moves smoothly
+            // the velocity clamp in KeyframeAll never fires, so they'd stay wrong forever.
+            // That is the "collision far away" report. Ground truth is the skeleton hand node,
+            // which is always valid: if the anchor is further than the leash from it, drop to
+            // the node for this frame.
+            if (hb) {
+                const hkVector4& t = hb->getPosition();
+                const float dx = t(0) * kHavokToSkyrim - hp[0];
+                const float dy = t(1) * kHavokToSkyrim - hp[1];
+                const float dz = t(2) * kHavokToSkyrim - hp[2];
+                const float leash = ObjectHold::HandBoxLeashU();
+                if (leash > 0.f && (dx*dx + dy*dy + dz*dz) > leash * leash) {
+                    // Log the first 3 in full, then a running TOTAL every 256. Without the total
+                    // a capped log cannot distinguish "fired 6 times" (a real glitch, fixed) from
+                    // "fires every frame" (a false positive silently degrading mode 2 to mode 0).
+                    static std::uint32_t s_warned[2] = { 0, 0 };
+                    static std::uint64_t s_total[2]  = { 0, 0 };
+                    ++s_total[hand];
+                    if (s_warned[hand] < 3) {
+                        ++s_warned[hand];
+                        logger::info("HBOX leash: {} HIGGS hand anchor is {:.1f}u from the hand node "
+                                     "(> {:.0f}u) — falling back to the skeleton node this frame",
+                                     hand == 1 ? "L" : "R",
+                                     std::sqrt(dx*dx + dy*dy + dz*dz), leash);
+                    } else if ((s_total[hand] & 0xFF) == 0) {
+                        logger::info("HBOX leash: {} anchor rejected {} times so far (latest {:.1f}u) "
+                                     "— a HIGH count here means the leash is firing routinely, not "
+                                     "catching a one-off glitch",
+                                     hand == 1 ? "L" : "R", s_total[hand],
+                                     std::sqrt(dx*dx + dy*dy + dz*dz));
+                    }
+                    hb = nullptr;                        // treat exactly like "HIGGS body absent"
+                }
+            }
+            if (!hb) {                                   // modes 0/1, or HIGGS body absent/rejected
                 std::memcpy(e.pos, hp, sizeof(e.pos));
                 std::memcpy(e.rot, hr, sizeof(e.rot));
                 g_rel[hand].init = false;                // re-init the relation on return
@@ -1027,8 +1064,19 @@ namespace {
                     DestroyHand(hand, authWorld, "worldChange");
                 } else if (!want) {
                     DestroyHand(hand, authWorld, "off");           // knob/beast/snapshot loss — full rollback
-                } else if (std::fabs(g_snap.scale[hand] - rig.scaleAtCreate) > 0.01f * rig.scaleAtCreate) {
-                    DestroyHand(hand, authWorld, "scaleChange");   // re-solve geometry on the recreate
+                } else if (std::fabs(g_snap.scale[hand] - rig.scaleAtCreate)
+                           > ObjectHold::HandBoxRebuildFrac() * rig.scaleAtCreate) {
+                    // ⚠ 2026-07-29: this used to fire at 1% and was OBSOLETE — since the
+                    // 07-10 rewrite, anchors, tilt, length AND half-extents are all re-solved
+                    // LIVE every consumed snapshot (see SolveGeometry's header), so a scale
+                    // drift needs no teardown at all. A user log showed 60 destroy/create
+                    // cycles in one session on ordinary hand-scale jitter (0.8005..0.8755).
+                    // Every recreate re-derives the filter word from HIGGS's hand body and
+                    // starts collision-OFF for 100 ms, so the churn both flickered the
+                    // colliders and gave a stale anchor repeated chances to be sampled —
+                    // the "finger collision stuck somewhere" report. Threshold is now a knob
+                    // defaulting to 15%, which only a real form change (beast/werewolf) hits.
+                    DestroyHand(hand, authWorld, "scaleChange");
                 }
             }
             if (!rig.live && want)
@@ -1157,7 +1205,42 @@ namespace {
                 const hkVector4& av = hk->getAngularVelocity();
                 const bool linSpike = lv(0) * lv(0) + lv(1) * lv(1) + lv(2) * lv(2) > maxVel * maxVel;
                 const bool angSpike = av(0) * av(0) + av(1) * av(1) + av(2) * av(2) > maxVel * maxVel;
-                if (linSpike || angSpike) {
+                // ── LEASH, PART 2 (2026-07-29): POSITION check, not just velocity ───────────
+                // HIGGS's own clamp (physics.cpp ApplyHardKeyframeVelocityClamped) triggers on
+                // VELOCITY only — it catches "can't keep up", never "ended up somewhere else and
+                // stopped". A body displaced and left sitting there has zero velocity and would
+                // never be recovered. Ground truth = the skeleton hand node.
+                bool posLeash = false;
+                {
+                    const float leash = ObjectHold::HandBoxLeashU();
+                    if (leash > 0.f) {
+                        const float* hp = g_snap.pos[hand][kHand];
+                        const hkVector4& bp = hk->getPosition();
+                        const float dx = bp(0) * kHavokToSkyrim - hp[0];
+                        const float dy = bp(1) * kHavokToSkyrim - hp[1];
+                        const float dz = bp(2) * kHavokToSkyrim - hp[2];
+                        if (dx*dx + dy*dy + dz*dz > leash * leash) {
+                            posLeash = true;
+                            static std::uint32_t s_snapLog[2] = { 0, 0 };
+                            static std::uint64_t s_snapTot[2] = { 0, 0 };
+                            ++s_snapTot[hand];
+                            if (s_snapLog[hand] < 3) {
+                                ++s_snapLog[hand];
+                                logger::info("HBOX leash: {} box {} was {:.1f}u from the hand node "
+                                             "(> {:.0f}u) — snapped home",
+                                             hand == 1 ? "L" : "R", b,
+                                             std::sqrt(dx*dx + dy*dy + dz*dz), leash);
+                            } else if ((s_snapTot[hand] & 0xFF) == 0) {
+                                logger::info("HBOX leash: {} boxes snapped home {} times so far "
+                                             "(latest {:.1f}u) — a HIGH count means the boxes are "
+                                             "being displaced repeatedly, not once",
+                                             hand == 1 ? "L" : "R", s_snapTot[hand],
+                                             std::sqrt(dx*dx + dy*dy + dz*dz));
+                            }
+                        }
+                    }
+                }
+                if (linSpike || angSpike || posLeash) {
                     {
                         WorldWriteLock lock(authWorld);
                         fn_setPosition()(static_cast<hkpEntity*>(hk), pos);

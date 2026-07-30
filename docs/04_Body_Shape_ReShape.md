@@ -545,3 +545,69 @@ an API twice, and every exit speaks). All catalogued in 01_Pitfall_Ledger.
 Knobs: `lmNeutNoseChin 5.161` · `lmGainHead 1.0` (+ the tuning-file head block).
 Status: **every ReShape channel is now UV-landmark-driven and closed.**
 
+
+---
+
+## BODY-MOD COVERAGE: which bodies do the UV landmarks actually address? (2026-07-30)
+
+ReShape treats a UV coordinate as an **address for anatomy** â€” find the vertex nearest âŸ¨u,vâŸ©,
+read its position, subtract the owning joint. That only works on bodies sharing the layout the
+landmarks were authored against. This section records what has been **measured**, as opposed to
+assumed, because the assumption was wrong once already.
+
+### Measured: BHUNP shares the CBBE layout
+
+| | CBBE 3BA (Bodyslide Output) | BHUNP 3BBB Advanced Ver 3 / Ver 4 |
+|---|---|---|
+| shape probed | `Softbody` (and `FakeOverlay`, identical result) | `BaseShape` |
+| verts | 15,460 / 16,247 | 19,039 / 19,035 |
+| UV bbox | u 0.0104â€“0.9897 Â· v **0.0256â€“0.9902** | u 0.0116â€“0.9888 Â· v **0.0255â€“0.9902** |
+| landmark `uvErr` | 0.0005â€“0.0030 | 0.0007â€“0.0022 |
+
+The v-extent matching to four decimals is effectively a layout fingerprint. Probing a 20Ã—20 UV
+grid and comparing the 3D point each UV addresses on the two bodies (230 points had a vertex
+within `uvErr` 0.02 on BOTH; the other 170 fell in empty UV space):
+
+```
+mean 1.21 u (~1.7 cm) Â· median 0.99 u Â· p90 2.16 u Â· max 3.92 u Â· within 5 u: 100 %
+```
+
+All five landmarks (`R_nipple` 0.424242/0.698242, `chest_center` 0.5/0.654296, `navel`
+0.5/0.839843, `waist_center` 0.5/0.917968, `butt_cheek` 0.065917/0.649902) land on the same
+anatomy on both. The residual is real body-shape difference between the mods â€” the largest
+(3.92 u, the nipple) is exactly where two body mods legitimately differ most.
+
+**So ReShape needs no change to serve BHUNP users**: no extra landmark set, no per-family
+branching, no fingerprinting. Script: `tools/ppb-scratch/uv_layout_compare.py`.
+
+### âš  This CORRECTS the knowledgebase
+
+`KNOWLEDGEBASE.md` asserted *"UNP-family does NOT share the layout"*. That was never measured and
+is wrong for BHUNP. Corrected in place 2026-07-30 with the numbers above.
+
+**Scope â€” do not over-generalise the correction.** Only the BHUNP 3BBB Advanced **body** was
+tested. Classic UNP / UUNP / 7B and other derivatives remain **unknown**; BHUNP was rebuilt and
+may not represent its ancestors. Hands, feet and head are separate meshes with their own layouts
+(and the head channel reads the facegen NIF, a different mechanism entirely).
+
+### The method trap this exposed â€” probe the OUTPUT body, never the ShapeData reference
+
+The first run of this comparison reported "DIFFERENT ANATOMY" with 25â€“51 u drift and was
+**wrong**. It probed `CBBE 3BA (3BBB)/CalienteTools/BodySlide/ShapeData/CBBE 3BA Reference/
+CBBE 3BA Ref.nif` â€” the BodySlide *reference* â€” instead of the installed body. Symptoms worth
+recognising:
+
+* every landmark collapsed onto roughly ONE point (z â‰ˆ 118, head height) instead of a descending
+  chest â†’ navel â†’ waist â†’ hip ladder;
+* `uvErr` ran 0.025â€“0.094, i.e. **above ReShape's own 0.02 rejection threshold**.
+
+That second symptom is the tell, and it is why the gate exists: ReShape rejects `uvErr > 0.02`
+precisely so a wrong mesh announces itself instead of returning a plausible-looking wrong
+answer. The correct target is `Bodyslide Output/meshes/actors/character/character assets/
+femalebody_1.nif` (or the equivalent installed body), which gives `uvErr` 0.0012.
+
+> **Rule:** when a UV probe says "wrong layout", check the `uvErr` FIRST. Above the gate means
+> *you are on the wrong mesh*; below the gate with bad positions would mean a genuine layout
+> difference. Also confirm the V convention â€” a v-flip here raised mean `uvErr` 0.0012 â†’ 0.0147,
+> which is under the gate and would have produced quietly wrong landmarks rather than a failure.
+

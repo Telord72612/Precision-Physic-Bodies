@@ -883,3 +883,150 @@ setting through its full state cycle — a flag that gates both a mutation AND i
 be scoped by value alone. Feature REMOVED from the code entirely 2026-07-29 evening (not knobbed off — a footgun with a
 dormant switch is still a footgun). If ever revived: force-restore the pivots ourselves on
 scope-entry, per ragdoll instance, before the first scoped drive.
+
+## ★ RAISING A CHILD-COUNT BOUND CAN WAKE LATENT JUNK KNOBS (2026-07-29, caught pre-launch)
+Adding the pelvis sensors raised `CapFixChildKnobs(spine1)` from 9 to 11 — and `capSpine1C9/C10`
+**already existed in the shipped tuning file, `Enable 1.0`, with AY = −25.515** (a stale dial from
+some old session). They had been harmless ONLY because the apply loop stopped at C8. Raising the
+bound would have made them live and hung capsules ~25u BEHIND every NPC on all four skeletons.
+Caught by sweeping the newly-exposed index range for non-seed values before launching.
+**RULES:** (1) whenever you raise a child bound, **sweep every newly-reachable index in the tuning
+file for non-seed values** — a knob the loop never reached is untested, not safe; (2) generated knob
+blocks must check for an existing definition (mine duplicated the same keys — two definitions of
+`capSpine1C9Enable`, ambiguous last-wins parsing); (3) this is the third form of the same family as
+"a knob defaulting 0 in code can still ship ON via a leftover tuning-file line."
+Sibling finding, left alone deliberately: `capSpine1C7/C8` are `Enable 1` writing SEED geometry, so
+on the Argonian they flatten its baked dorsal ridge every generation. Pre-existing behaviour, not a
+regression from this change — but it means the ridge is knob-driven, not NIF-driven, on that body.
+
+## ★ WHEN A REWRITE MAKES A TEARDOWN UNNECESSARY, DELETE THE TEARDOWN (2026-07-29, user-reported)
+The hand rigs were destroyed+recreated on 1% hand-scale drift — 60 times in one user's session —
+even though the 07-10 rewrite made all geometry live-solved and `SolveGeometry`'s own header says
+"no recreate needed". The obsolete destroy sat six lines below that comment for three weeks. It was
+not free: every recreate starts collision-OFF for 100 ms and re-derives the collision filter from
+HIGGS's hand body, so the churn both blanked the colliders and repeatedly re-sampled a possibly
+stale anchor — the user's "collision stuck somewhere". Full writeup: doc 09.
+**Corollary (the second half of that fix):** a VELOCITY clamp and a POSITION leash catch disjoint
+failures. HIGGS's own clamp (and ours) only fires when the body cannot keep up; neither can detect
+"followed a wrong anchor perfectly and stopped there". Any body that rides an EXTERNAL anchor needs
+a sanity check against a source you own — ours is now the skeleton hand node (`handBoxLeashU`).
+
+## ★ `nullptr` IN A NAME TABLE MEANS "UNNAMED", NOT "ABSENT" (2026-07-29, found by verification)
+Generating the public capsule-name record (doc 15 §9) turned up **two capsules that are live,
+touchable geometry on all four skeletons yet had no name**: `upperarm.C3` and `com.C20`. Both had
+been assumed to be buried seeds purely because the table held `nullptr` there. Doc 15 had even
+written `com.C20` down as a "spare seed" — it is a byte-exact duplicate of `C10` and fully solid.
+An API built on that table would have resolved a real touch to "unknown".
+
+**The check that finds these** is mechanical: for every unnamed index, read the NIF geometry and
+compare against the known buried-seed spec (`p1=(0,0,0) p2=(0,0,2u) r=0.5u`). Anything that
+doesn't match is real anatomy. Run it per race — the same index can be a seed on one skeleton and
+baked anatomy on another (argonian dorsal ridge at `spine1.C7/C8`, `spine2.C15/C16`; head above
+C14 is per-race entirely, and the head was never index-padded: 23 children on human/draenei vs 17
+on argonian/khajiit). Script: `tools/ppb-scratch/classify_unnamed_children.py`.
+
+## ★ GENERATE THE RECORD, THEN VERIFY IT AGAINST THE BINARY (2026-07-29)
+The capsule name record is now produced by parsing `ProposedPartName()` and then **checking every
+emitted name against the strings actually present in the shipped `PPB.dll`**, aborting on mismatch
+(`tools/ppb-scratch/gen_capsule_name_record.py`). Writing the record by hand is how it drifts; the
+first hand-written draft of the generator also **invented node names** (`"NPC Hand [Hand]"`) that
+do not exist — the real ones are `kSlotNode[12]` in `CapFix.cpp:48` (`"NPC R Hand [RHnd]"`, and
+`"NPC R Foot [Rft ]"` with a load-bearing trailing space). Copy such tables verbatim from source;
+never retype from memory.
+
+Two structural facts an API consumer needs, both easy to get wrong:
+* **`neck` (slot 7) is a `bhkCapsuleShape`, not a list** — 0 children on all four skeletons. Code
+  that iterates `shape->children` for every slot silently finds nothing on the neck.
+* **Dialled positions are NOT in the NIF.** All 11 COM internal sensors and both back capsules
+  still sit at the buried seed spec in the NIF; the real values live only as `cap*` knobs in
+  `PPB_tuning.txt` and are applied at runtime by CapFix. Read positions from the **live Havok
+  body** — the shipped shape is NIF + knobs + ReScale + ReShape + per-NPC fit.
+
+## ★ A DIAGNOSTIC'S CODE DEFAULT IS A SHIPPING DEFAULT (2026-07-29)
+`touchProbe` defaulted to `1` in `Tuning.h`. The tuning file that ships overrode it to `0`, so the
+bug was invisible — until a user deletes or omits their tuning file, at which point they get a
+capsule-mapping log line every 45 frames forever. Fixed to `0` in code. **A knob's code default is
+what a user with no config gets: set it to the shipping value, and never rely on the config file
+to mask it.**
+
+## * A VERSION GATE IS NOT A COMPATIBILITY BUG â€” LOOSENING ONE IS (2026-07-29, SMP Flex)
+PPB refused HDT-SMP Flex with "interface major mismatch â€” link stays OFF". The tempting fix is to
+widen the gate to accept major 1. That would have been **catastrophic**: v1 and v2 of the SMP plugin
+interface differ in exactly one thing, the LISTENER BASE CLASS.
+* v1: `hdt::IEventListener<T>` â€” **no destructor at all** => `onEvent(const T&)` is vtable **slot 0**
+* v2: `RE::BSTEventSink<T>` â€” dtor is slot 0, `ProcessEvent` is slot 1
+
+Attaching a v2-shaped sink to a v1 engine makes the engine call **our destructor once per physics
+step**, on its TBB worker with the world lock held. Everything else is identical: the
+`PluginInterface` vtable (6 slots, same order â€” the upstream v1â†’v2 diff appended and reordered
+NOTHING), both event structs (16 bytes), `BULLET_VERSION{3,24,0}`, and `MSG_STARTUP == 0`.
+
+**The correct shape of the fix: keep the gate, add a correctly-shaped path behind it.** A second
+declaration (`src/fsmp/PluginAPI_v1.h`, namespace `hdtv1`), a second pair of sinks, and ONE shared
+ABI-neutral body per event so the two engines can never drift apart in behaviour.
+
+**And prove the vtable with a positive control** (this ledger's standing rule, earned the hard way
+on PLANCK). Four confirmations were gathered before a line shipped: upstream source verbatim; Flex's
+own shipped PDB (mangled `addListener` names carry `IEventListener@UPreStepEvent`, `onEvent` symbols
+exist, `ProcessEvent` does not, and **no `IEventListener` destructor symbol** â€” checked against a
+control symbol that IS present, so the negative means something); the raw DLL bytes at the
+`g_pluginInterface` vptr; and a live user log printing the header's own constants. Note the third
+and fourth are the ones that could not have been guessed.
+
+**Scope discipline matters too.** "PPB doesn't work on SMP Flex" was wrong: `FsmpLink::Connected()`
+has zero callers and the rig code never consults the link, so Flex users always had hair/tail
+capsules, collision and touch detection. Exactly one layer â€” the SMP push â€” was dead. Measure which
+features actually depend on a broken handshake before describing the blast radius.
+
+## * A KNOB READ BEFORE kDataLoaded IS A KNOB THAT DOES NOTHING (2026-07-29)
+`PPB_tuning.txt` is only ever parsed by `CapFixPollFile`, called from the pre-drive hook installed at
+**kDataLoaded**. `FsmpLink`'s SMP handshake runs at the engine's **kPostPostLoad** â€” earlier â€” so a
+knob consulted there reads its COMPILED DEFAULT and the user's file is silently ignored. The new
+`fsmpFlexCompat 0` would have been a no-op. Fixed with `ObjectHold::EarlyReadKnob(key, fallback)`,
+which reads one key straight off the same `kTunePaths`, mutates no global state, and does not disturb
+the mtime the poller commits. **Any knob consulted before kDataLoaded must use it.**
+
+This is the SECOND knob-semantics footgun found in one day (the other: `handBoxRebuildFrac`'s
+floor clamp turned the intuitive "0 = off" into 2%, i.e. MORE aggressive than the default). Both
+share a root cause worth generalising: **a knob is a contract with the user, and the contract
+includes when it is read and what its zero means.** Check both when adding one.
+
+## * WHY PPB INJECTS FORCES INSTEAD OF USING SMP'S OWN COLLISION (2026-07-29, settled)
+Recurring question, now answered with data. PPB ships a real SMP-native hand collider
+(`ppbHands.xml`, mapped via PPB's `defaultBBPs.xml` override, confirmed live in `hdtSMP64.log` as
+`body HIMBO - Hands`) and it is engine-agnostic â€” both engines read the same per-mesh XML family. It
+whitelists `<can-collide-with-tag>Tail</can-collide-with-tag>` and that genuinely works.
+
+It cannot be extended to hair. Per the FSMP wiki, `can-collide-with-*` is **exclusive**, the other
+shape must carry a matching `<tag>`, and `<shared>private</shared>` means same-mesh-only. Measured
+over the whole install: **216 files declare `<tag>hair</tag>` and ZERO declare `<shared>public</shared>`**,
+and they additionally whitelist only their own in-file virtual colliders. Both blockers live in other
+mods' read-only XML. Force injection into the bone's `btRigidBody` bypasses SMP's filtering entirely
+â€” that is the whole reason it exists. (Corollary: a hair mod shipping its own `VirtualHands`
+collider already has hand-to-hair collision natively, with no help from PPB.)
+
+
+## * A UV PROBE THAT SAYS "WRONG LAYOUT" IS USUALLY THE WRONG MESH (2026-07-30)
+Asked whether BHUNP shares CBBE's body UV layout, the first comparison answered "DIFFERENT
+ANATOMY" with 25-51 u drift. It was wrong: it probed `CBBE 3BA Ref.nif`, the BodySlide
+**reference**, instead of the installed body. The correct answer is the opposite â€” BHUNP shares
+the layout, mean drift **1.21 u** over a 230-point UV grid, 100% within 5 u (doc 04, and a
+correction now stamped into KNOWLEDGEBASE.md, which had asserted the reverse without measuring).
+
+**The tell was in the data, not in the conclusion.** `uvErr` ran 0.025-0.094 â€” *above ReShape's
+own 0.02 rejection threshold* â€” and all five landmarks collapsed onto one point at head height
+instead of forming a chest â†’ navel â†’ waist â†’ hip ladder. ReShape gates on `uvErr > 0.02`
+precisely so a wrong mesh announces itself; the gate did its job and the first read ignored it.
+
+Rules earned:
+* **Probe the installed / BodySlide-OUTPUT body, never the ShapeData reference.**
+* **Read the error metric before believing the result.** A conclusion drawn from samples that
+  failed the code's own acceptance gate is not a measurement.
+* **Sanity-check the axis convention.** A v-flip here moved mean `uvErr` 0.0012 â†’ 0.0147 â€” still
+  *under* the gate, so it would have produced quietly wrong landmarks rather than a clean
+  failure. Where a plausible-but-wrong convention exists, prove which one is right by which
+  minimises the error, not by assumption.
+* **Five samples is an anecdote.** The claim only became solid at 230 grid points plus the UV
+  bounding boxes agreeing to four decimals (v 0.0255/0.0256 â†’ 0.9902/0.9902) â€” a layout
+  fingerprint that a handful of landmarks could never establish.
+

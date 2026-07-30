@@ -109,7 +109,9 @@ namespace ObjectHold {
                     PK_NOSNAP(fsmpPushMinDispU),
                     // 2026-07-13 MULTI-RIG (NpcFingerTest.cpp): global push multiplier +
                     // the always-on garment-rig master switch — read live per frame.
-                    PK_NOSNAP(fsmpPushMult), PK_NOSNAP(npcFollower),
+                    PK_NOSNAP(fsmpPushMult), PK_NOSNAP(npcFollower), PK_NOSNAP(fsmpFlexCompat),
+                    PK_NOSNAP(npcRigRangeU), PK_NOSNAP(npcRigRangeHystU), PK_NOSNAP(npcRigMaxActors),
+                    PK_NOSNAP(higgsPokeFix),
                     PK_NOSNAP(npcFingerTipU), PK_NOSNAP(npcFingerMassKg), PK_NOSNAP(npcGarmentMassKg), PK_NOSNAP(npcTailMassKg), PK_NOSNAP(npcSilentVelMS), PK_NOSNAP(npcGarmentMat), PK_NOSNAP(npcFingerAlpha),
                     PK_NOSNAP(npcFingerCurlGain), PK_NOSNAP(npcFingerCurlDecay), PK_NOSNAP(npcFingerCurlMax), PK_NOSNAP(npcFingerCurlMode), PK_NOSNAP(npcFingerCurlLagGate),
                     PK_NOSNAP(fsmpMassScale), PK_NOSNAP(fsmpContactGate), PK_NOSNAP(fsmpContactDevU), PK_NOSNAP(fsmpContactHoldMS),
@@ -215,7 +217,7 @@ namespace ObjectHold {
                     PK_NOSNAP(handBoxPlateTilt2Deg), PK_NOSNAP(handBoxPlateTilt2Axis),
                     PK_NOSNAP(handBoxIdxHalfW), PK_NOSNAP(handBoxIdxHalfT),
                     PK_NOSNAP(handBoxSlabHalfT), PK_NOSNAP(handBoxPad), PK_NOSNAP(handBoxSubLayer),
-                    PK_NOSNAP(handBoxMaxVel), PK_NOSNAP(handBoxBeast), PK_NOSNAP(handBoxDump),
+                    PK_NOSNAP(handBoxMaxVel), PK_NOSNAP(handBoxLeashU), PK_NOSNAP(handBoxRebuildFrac), PK_NOSNAP(handBoxBeast), PK_NOSNAP(handBoxDump),
                     // 2026-07-10 per-box LIVE DIALS (HandBox.cpp) — read live per frame, PK_NOSNAP.
                     PK_NOSNAP(handBoxPlateOffX), PK_NOSNAP(handBoxPlateOffY), PK_NOSNAP(handBoxPlateOffZ),
                     PK_NOSNAP(handBoxPlateHalfW), PK_NOSNAP(handBoxPlateHalfT),
@@ -236,10 +238,10 @@ namespace ObjectHold {
                 // is 12 (2 breast children added); capHeadC (10) is NEW — head is now a bhkListShape.
                 const ChildArray kArrays[] = {
                     { "capSpine0C", g_tune.spine0C, 10 },
-                    { "capSpine1C", g_tune.spine1C, 10 },
-                    { "capSpine2C", g_tune.spine2C, 16 },   // 2026-07-16: 14 -> 16 (+Argonian ridge)
+                    { "capSpine1C", g_tune.spine1C, 12 },
+                    { "capSpine2C", g_tune.spine2C, 20 },   // 2026-07-16: 14 -> 16 (+Argonian ridge)
                     { "capHeadC",   g_tune.headC,   22 },   // 2026-07-19: 16 -> 22 (+C17..C22 = the 8 head-joint horn/antler seeds; C15/C16 doubled as Khajiit ears on beast heads)
-                    { "capComC",    g_tune.comC,    20 },
+                    { "capComC",    g_tune.comC,    32 },
                 };
                 static const char* kSuf[8] = { "Enable", "AX", "AY", "AZ", "BX", "BY", "BZ", "R" };
                 char buf[40];
@@ -273,6 +275,31 @@ namespace ObjectHold {
         "D:/Games/My Skyrim/mods/Precision Physic Bodies/SKSE/Plugins/PPB_tuning.txt",  // dev live-edit
         "Data/SKSE/Plugins/PPB_tuning.txt",                                             // shipped (USVFS)
     };
+
+    // ── EARLY ONE-KEY READ (2026-07-29) ─────────────────────────────────────────────
+    // The full parse (ReloadGrabTune) is driven by CapFixPollFile from the pre-drive hook,
+    // which is installed at kDataLoaded. Anything that must consult a knob EARLIER than
+    // that — notably FsmpLink's SMP handshake, which runs at the engine's kPostPostLoad
+    // MSG_STARTUP — would otherwise read the compiled default and silently ignore the
+    // user's file. (Exactly the class of bug that made handBoxRebuildFrac's "0" mean 2%.)
+    // This reads ONE key straight off disk using the same kTunePaths, mutates no global
+    // state, and does not touch the mtime the poller commits.
+    float EarlyReadKnob(const char* key, float fallback)
+    {
+        if (!key || !*key) return fallback;
+        std::ifstream f;
+        for (auto* p : kTunePaths) { f.open(p); if (f.is_open()) break; f.clear(); }
+        if (!f.is_open()) return fallback;
+        std::string line, k; float v;
+        float found = fallback;
+        while (std::getline(f, line)) {
+            if (line.empty() || line[0] == '#' || line[0] == ';') continue;
+            std::istringstream ss(line);
+            if (!(ss >> k >> v)) continue;
+            if (k == key) found = v;      // last occurrence wins, matching the full parser
+        }
+        return found;
+    }
 
     // Returns the kTunePaths entry actually opened (nullptr if none could be opened) so
     // CapFixPollFile commits the mtime only after a SUCCESSFUL parse of the SAME file
@@ -524,9 +551,9 @@ namespace ObjectHold {
         // (head=10, spine0=7 & spine1=6 in the NIF but the arrays keep MAX capacity 10; spine2=12; com=20)
         case 3:  f = ChildPtr(g_tune.headC,   22, child, &g_tune.capHeadEnable);   break;   // 2026-07-19: 16 -> 22 (horn/antler seeds)
         case 4:  f = ChildPtr(g_tune.spine0C, 10, child, &g_tune.capSpine0Enable); break;
-        case 5:  f = ChildPtr(g_tune.spine1C, 10, child, &g_tune.capSpine1Enable); break;
-        case 6:  f = ChildPtr(g_tune.spine2C, 16, child, &g_tune.capSpine2Enable); break;   // 2026-07-16: 14 -> 16 (ridge)
-        case 11: f = ChildPtr(g_tune.comC,    20, child, &g_tune.capComEnable);    break;
+        case 5:  f = ChildPtr(g_tune.spine1C, 12, child, &g_tune.capSpine1Enable); break;   // 2026-07-29: 10 -> 12
+        case 6:  f = ChildPtr(g_tune.spine2C, 20, child, &g_tune.capSpine2Enable); break;   // 2026-07-29: 16 -> 20
+        case 11: f = ChildPtr(g_tune.comC,    32, child, &g_tune.capComEnable);    break;   // 2026-07-29: 20 -> 32
         default: break;
         }
         if (!f) return false;
@@ -544,12 +571,12 @@ namespace ObjectHold {
         case 2:  return 4;   // upper arm: main + taper + 2 shoulder-lock (2026-07-09)
         case 3:  return 23;  // head: main + 22 seeds     (2026-07-19: +C17..C22 = horn/antler seeds; 07-16: C15/C16 ears)
         case 4:  return 10;  // spine0: main + 9 seeds    (2026-07-16: +C8/C9 = Argonian ridge)
-        case 5:  return 9;   // spine1: main + 8 seeds    (2026-07-16: +C7/C8 = Argonian ridge)
-        case 6:  return 17;  // spine2: main + 16 seeds   (2026-07-16: +C15/C16 = Argonian ridge)
+        case 5:  return 11;  // spine1: main + 10        (2026-07-29: +C9/C10 = BACK L/R)
+        case 6:  return 19;  // spine2: main + 18        (2026-07-29: +C17/C18 = SHOULDER BLADE L/R)
         case 8:  return 7;   // thigh: main + 5 rings + knee hook (2026-07-09)
         case 9:  return 5;   // calf:  main + 3 rings + knee hook (2026-07-09)
         case 10: return 4;   // foot: main + 3 sole rods (2026-07-09: +1 ankle lock)
-        case 11: return 21;  // com: main + 20 seeds     (wave-2 torso bake)
+        case 11: return 32;  // com: main + 31           (2026-07-29: +C21..C31 pelvis sensors)
         default: return 0;
         }
     }
@@ -687,6 +714,12 @@ namespace ObjectHold {
     float FsmpPushMinDispU()    { return g_tune.fsmpPushMinDispU < 0.f ? 0.f : g_tune.fsmpPushMinDispU; }
     float FsmpPushMult()        { return g_tune.fsmpPushMult < 0.f ? 0.f : (g_tune.fsmpPushMult > 10.f ? 10.f : g_tune.fsmpPushMult); }
     bool  NpcFollowerEnabled()  { return g_tune.npcFollower > 0.5f; }
+    // Garment-rig budget (2026-07-30). 0 disables each limit; negatives are clamped away so a
+    // typo can never mean "range zero = no rigs at all".
+    float HiggsPokeFix()        { return g_tune.higgsPokeFix; }
+    float NpcRigRangeU()        { return g_tune.npcRigRangeU     < 0.f ? 0.f : g_tune.npcRigRangeU; }
+    float NpcRigRangeHystU()    { return g_tune.npcRigRangeHystU < 0.f ? 0.f : g_tune.npcRigRangeHystU; }
+    int   NpcRigMaxActors()     { const int n = (int)(g_tune.npcRigMaxActors + 0.5f); return n < 0 ? 0 : n; }
     int   NpcFingerCount()      { const int c = (int)(g_tune.npcFingerCount + 0.5f); return c < 1 ? 1 : (c > 4 ? 4 : c); }
     float NpcFingerR()          { return g_tune.npcFingerR < 0.2f ? 0.2f : g_tune.npcFingerR; }
     float NpcFingerTipU()       { return g_tune.npcFingerTipU < 0.f ? 0.f : (g_tune.npcFingerTipU > 5.f ? 5.f : g_tune.npcFingerTipU); }
@@ -1008,6 +1041,18 @@ namespace ObjectHold {
         // PROVEN 2026-07-16 (CTD on load). See KNOWLEDGEBASE + Pitfall Ledger.
         if (v == 2 || v == 3 || v == 5 || v == 6 || v == 30) v = 4;
         return (unsigned)v;
+    }
+    float HandBoxLeashU()       { return g_tune.handBoxLeashU; }
+    // handBoxRebuildFrac semantics, corrected 2026-07-29:
+    //   <= 0  -> DISABLED: never rebuild the rig on a scale change (returns an unreachable
+    //            fraction). Previously 0 fell through the floor clamp and became 0.02 = 2%, i.e.
+    //            the intuitive "off" made the churn WORSE than the 15% it replaced. A knob whose
+    //            zero value is more aggressive than its default is a footgun; fixed.
+    //   > 0   -> the fraction, floored at 0.02 so a typo like 0.001 cannot reinstate the churn.
+    float HandBoxRebuildFrac()
+    {
+        if (g_tune.handBoxRebuildFrac <= 0.f) return 1.0e9f;   // never reached by any real scale
+        return g_tune.handBoxRebuildFrac < 0.02f ? 0.02f : g_tune.handBoxRebuildFrac;
     }
     float HandBoxMaxVel()       { return g_tune.handBoxMaxVel < 1.f ? 1.f : g_tune.handBoxMaxVel; }
     bool  HandBoxBeast()        { return g_tune.handBoxBeast > 0.5f; }

@@ -579,3 +579,166 @@ bodies, so that one still needs the shape key or the geometric fallback. Differe
 2. Add the 4 follower boxes per hand (2 index segments + 2 for the middle/ring/pinky group, no thumb),
    riding the live VR finger bones. Reuse collviz_markers' proven runtime-body machinery.
 3. Add CBPC fingertip nodes for attribution; VRTouchEvents picks them up by name with no new plumbing.
+
+---
+
+# ★★ THE 2026-07-29 RUNAWAY-COLLIDER BUGS (user-reported, both fixed)
+
+A user reported *"finger collision stuck somewhere"* — colliders acting from a place their hand
+wasn't. Their `PPB.log` contained two independent defects. Both are now fixed; both are worth
+understanding because each is a general class, not a one-off.
+
+## Bug 1 — REBUILD CHURN: 60 destroy/create cycles per session, all obsolete
+
+**Evidence:** 64 `HBOX CREATE` + 62 `HBOX DESTROY` in one 38-minute session, **every destroy
+`reason=scaleChange`**, with the player hand scale merely jittering (0.8005 · 0.8245 · 0.8252 ·
+0.8492 · 0.8500 · 0.8755).
+
+**Root cause:** the trigger fired on **1% hand-scale drift**
+(`fabs(scale − scaleAtCreate) > 0.01f * scaleAtCreate`) — and that teardown had been **obsolete
+since the 2026-07-10 rewrite**. `SolveGeometry`'s own header says it: anchors, tilt, length AND
+half-extents are re-solved LIVE every consumed snapshot, *"no recreate needed"*. The destroy path
+was simply never removed when the live re-solve landed.
+
+**Why churn breaks the colliders (this is the interesting part):**
+- every `CREATE` starts **collision-OFF (bit 14) with a 100 ms enable delay** → at 60 rebuilds the
+  boxes spend meaningful time inert, so touches silently miss;
+- every `CREATE` **re-derives the filter word from HIGGS's hand body** — and that user's log shows
+  the player collision GROUP changing **16 times** (`word=0x0009C438` → … → `0x0889C438`), so churn
+  hands a stale anchor repeated chances to be sampled.
+
+**Fix:** threshold is now the knob **`handBoxRebuildFrac` (default 0.15)**, accessor-clamped to a
+0.02 floor — only a genuine form change (werewolf / vampire lord) rebuilds. Churn 60 → ~0.
+
+**The transferable lesson:** *when a rewrite makes a teardown unnecessary, DELETE the teardown.*
+It survived here as a comment claiming it wasn't needed sitting six lines above the code doing it.
+
+## Bug 2 — NO POSITION LEASH: a velocity clamp cannot catch "arrived wrong and stopped"
+
+**What HIGGS does** (verified in `higgs/src/physics.cpp ApplyHardKeyframeVelocityClamped`, and it
+is exactly what the user intuited): keyframe toward the target, then **if the resulting velocity
+exceeds the body's max, hard `setPosition` to the target**. PPB already replicated this — and
+improves on it by re-applying the keyframe after the teleport so the residual velocity is ~0
+(HIGGS leaves the big velocity on the body).
+
+**The gap:** that check is on **VELOCITY ONLY**. It catches *"can't keep up"*; it can never catch
+*"tracked a wrong target perfectly."* PPB's boxes run `handBoxFollowMode 2`, anchored to **HIGGS's
+hand rigid body**, not the skeleton hand node. If that anchor is ever stale or displaced (hand
+disabled, two-handing, beast recreation, a tracking glitch, or the churn above), our boxes follow
+it **smoothly** to the wrong place — no velocity spike, no teleport, wrong forever.
+
+**Fix — a two-part leash, both measured against the skeleton hand node (always-valid ground truth):**
+1. **Reject the runaway ANCHOR at source** (`UpdateEffFrames`): if HIGGS's hand body is further than
+   `handBoxLeashU` (30u ≈ 43 cm) from the hand node, ignore it and ride the node this frame. This
+   fixes the *cause* — teleporting to a bad target would have achieved nothing.
+2. **Snap the BODY home** (`KeyframeAll`): if a box itself ends up beyond the leash regardless of
+   velocity, teleport + re-keyframe, reusing the proven spike path.
+Both log up to 3× per hand with the measured distance, so the next report arrives with evidence.
+
+**The transferable lesson:** *a rate/velocity guard and a position guard catch disjoint failures.*
+Any system that follows an external anchor needs a sanity check against a source it OWNS.
+
+## What the same log ALSO proved was healthy
+- **No orphaned bodies.** The world-change destroy logged `ownerHeld=true`, i.e. the strong
+  `NiPointer<bhkWorld>` held the creation world alive and removal came from the correct world. The
+  2026-07-14 orphan-capsule fix is holding. (`removedInWorld=false` there is only the diagnostic
+  "the stored world != the live world" flag — NOT a failed removal.)
+- PPB listening for **both** sender names (`hdtsmp64` and `hdtSMP64`) is what let the FSMP handshake
+  be diagnosed at all — see below.
+
+## Third finding from the same log: two silent misconfigurations
+Not PPB bugs, but they made that user's install run two features short — worth checking in any
+"PPB is wrong for me" report:
+- **`Heels Fix NOT installed`** → the heel offset is disabled outright; every heeled NPC keeps a
+  barefoot-height Havok body. PPB logs it as a required dependency.
+- **`FSMPLINK: interface major mismatch — link stays OFF`** → their engine announced itself as
+  **`hdtSMP64` interface 1.0.0**; PPB compiles against **2.0.0**. The capital-S sender name is
+  **HDT-SMP Flex** (`hdtSMP64.dll`, build string `Flex for VR - .8.0.1`), not an old Faster HDT-SMP
+  (`hdtsmp64.dll`, interface 2.0.0, verified working at **4.0.1**). Consequence: hair/tail capsules
+  still ride and collide, but PPB cannot PUSH the SMP bones — the headline SMP feature is silently
+  off. Flex *does* implement the interface (its DLL exports `PluginInterface@hdt`), just at major 1.
+  **Open idea:** accept interface 1 in READ-ONLY mode (census reads may be ABI-safe since Bullet
+  matches at 3.24; only the push forces ride the compiled layout) so Flex users get touch detection
+  instead of nothing. Needs Flex's interface-1 header verified before it is attempted.
+
+---
+
+## THE RUNAWAY-FINGER FIX, CONFIRMED FROM LOGS (2026-07-29)
+
+Both halves of the fix are now backed by measured data rather than reasoning. Two logs:
+**`kemer`** (the original reporter, SMP Flex, interface 1.0.0) and **the author's own machine**
+(FSMP 4.0.1, interface 2.0.0). Analysis script:
+`scratchpad/analyze_hbox.py` — it replays a log's real scale sequence through both the old and new
+rule and counts the rebuilds each would produce.
+
+### Half 1 — the LEASH: caught in the act, 272u out
+
+The author's log contains the failure itself, with both stages firing 131 ms apart:
+
+```
+[21:13:44.339] HBOX leash: R HIGGS hand anchor is 272.7u from the hand node (> 30u)
+                            — falling back to the skeleton node this frame
+[21:13:44.339] HBOX leash: L HIGGS hand anchor is 271.2u from the hand node (> 30u) — ...
+[21:13:44.470] HBOX leash: R box 0 was 269.6u from the hand node (> 30u) — snapped home
+[21:13:44.470] HBOX leash: R box 1 was 270.1u ... L box 0/1/2 was 264.7/265.7/267.7u — snapped home
+[21:16:25.304] HBOX leash: L HIGGS hand anchor is 45.8u ...
+[21:17:16.762] HBOX leash: R HIGGS hand anchor is 47.5u ...
+```
+
+**272.7u ≈ 3.9 metres**, on BOTH hands simultaneously. That is the "finger collision stuck
+somewhere" report, measured.
+
+The two stages are not redundant, and this log proves why:
+* **Part 1** (reject the anchor) fired first — but the boxes had *already* been carried out there.
+* **Part 2** (position snap) was still needed 131 ms later to recover the displaced bodies.
+
+A body sitting 270u away with **zero velocity** is invisible to every velocity clamp — HIGGS's own
+and ours. Without Part 2 those boxes stay wrong forever. This is the concrete case behind the
+ledger rule *"a velocity clamp and a position leash catch disjoint failures."*
+
+Smaller excursions (45.8u, 35.6u, 47.5u) were also caught, so the failure is not purely a
+once-per-session teleport event.
+
+### Half 2 — the CHURN: 60 → 0 rebuilds, replayed against real scale data
+
+| log | window | scaleChange destroys | worldChange | scale range | **max drift from built-at** |
+|---|---|---|---|---|---|
+| kemer | 23.0 min | **60** | 2 | 0.8005 – 0.8755 | **8.57 %** |
+| author | 25.0 min | **10** | 0 | 0.8264 – 0.9639 | **14.26 %** |
+
+Replaying both sequences: the old ~1 % rule produces 30 rebuilds per hand (kemer) and 5 per hand
+(author); the new rule produces **0** in both. The 2 `worldChange` rebuilds correctly survive — a
+cell change genuinely invalidates the rig.
+
+Each suppressed rebuild also removes a 100 ms collision-OFF window and a re-derivation of the
+collision filter from HIGGS's hand body — i.e. the churn was *also* re-sampling a possibly stale
+anchor 60 times, feeding Half 1.
+
+### ⚠ The first threshold was too tight — and a zero-value footgun
+
+`handBoxRebuildFrac` shipped at **0.15**, chosen before the author's log was analysed. Against that
+log's measured **14.26 %** drift it left only **0.74 percentage points** of margin. Raised to
+**0.50**.
+
+Worse, the accessor floor-clamped to `0.02`, so setting the knob to the intuitive `0` produced a
+**2 % threshold — more aggressive than the 15 % it replaced.** A knob whose zero value is more
+dangerous than its default is a trap. Corrected: `<= 0` now means *never rebuild on scale*
+(returns an unreachable `1e9`), and positive values keep the 0.02 floor so a typo cannot reinstate
+the churn.
+
+The rebuild is **vestigial in the first place**: geometry is re-solved live every consumed
+snapshot, and a beast-form change is handled by a different path entirely
+(`handBoxBeast` → `DestroyHand("off")` in `RigLifecycle`). Nothing needs the scale rebuild; a wide
+threshold costs nothing and a narrow one costs collider flicker.
+
+> **Rule:** pick a guard threshold from MEASURED data, not from what sounds conservative. 15 %
+> sounded generous and was nearly breached by the very next log examined.
+
+### Diagnostic gap closed: the log cap hid the true rate
+
+Both leash sites logged only the **first 3 events per hand**, and both hit that cap in the author's
+log — so the log could not distinguish *"fired 6 times"* (a real one-off glitch, now fixed) from
+*"fires every frame"* (a false positive silently degrading follow-mode 2 to mode 0, which would
+feel like sluggish colliders rather than absent ones). Both sites now keep a running total and emit
+one summary line every 256 events. **A capped diagnostic that reaches its cap has stopped being a
+measurement.**

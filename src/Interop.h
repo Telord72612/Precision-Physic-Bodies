@@ -25,6 +25,11 @@ namespace Interop {
     void AcquireHiggs();                        // idempotent; call at kPostPostLoad + kDataLoaded
     bool HasHiggs();
     Higgs::IHiggsInterface001* GetHiggs();      // nullptr until acquired
+    // Sets HIGGS's SelectedCloseFingerAnimMaxHandSpeed to -1 through HIGGS's own settings API
+    // so the hand stays OPEN near grabbables and PPB's finger colliders can actually poke.
+    // Idempotent; knob higgsPokeFix. Call at kDataLoaded AND after every game load (HIGGS
+    // re-reads its ini on a settings reload). whenTag only labels the one-time log line.
+    void ApplyHiggsPokeFix(const char* whenTag);
 
     // TRUE while either player hand HIGGS-holds this actor (a grabbed NPC limb reports the NPC
     // refr through GetGrabbedObject — HIGGS State::HeldBody covers held bodies). Two virtual

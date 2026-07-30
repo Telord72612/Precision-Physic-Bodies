@@ -2,6 +2,7 @@
 #include "Interop.h"
 #include "HiggsInterface.h"
 #include "SKEE.h"        // RaceMenu VR body-morph interface (Body-Scale, 2026-07-14)
+#include "Tuning.h"      // ObjectHold::HiggsPokeFix (2026-07-30)
 
 #include <Windows.h>  // GetModuleHandleA
 
@@ -56,6 +57,53 @@ namespace {
 }
 
 namespace Interop {
+
+    // ── HIGGS POKE FIX (2026-07-30, knob higgsPokeFix) ───────────────────────────────────
+    // HIGGS plays a finger-CLOSE animation whenever a hand is near a grabbable object. That
+    // is exactly the hand pose PPB's finger colliders need OPEN — with the fingers curled you
+    // cannot poke anything, which is the single most common "PPB doesn't do anything for me"
+    // report. HIGGS exposes the switch as `SelectedCloseFingerAnimMaxHandSpeed`, documented in
+    // higgs_vr.ini as "Roomspace hand speed (m/s) below which to open the fingers when the hand
+    // is next to a valid item to grab"; -1 disables the close animation so the hand stays open.
+    //
+    // We set it through HIGGS's OWN settings API (SetSettingDouble, vfunc 39) rather than
+    // shipping an ini override. That matters: an ini override would clobber the user's whole
+    // HIGGS config file and lose every other setting they had tuned, and it would fight the
+    // load order. A runtime call touches ONE value, leaves their file untouched, and is
+    // reversible by a knob.
+    //
+    // ⚠ Re-applied on every game load: HIGGS re-reads higgs_vr.ini when settings reload, which
+    // would silently restore the default mid-session. Idempotent — it reads first and only
+    // writes when the value actually differs, so a user who deliberately set something else
+    // sees exactly one log line explaining what changed and how to opt out.
+    void ApplyHiggsPokeFix(const char* whenTag)
+    {
+        if (ObjectHold::HiggsPokeFix() < 0.5f) return;
+        auto* h = GetHiggs();
+        if (!h) return;
+        constexpr const char* kKey = "SelectedCloseFingerAnimMaxHandSpeed";
+        const double want = -1.0;
+        double cur = 0.0;
+        const bool gotOk = h->GetSettingDouble(kKey, cur);
+        if (gotOk && cur == want) return;                       // already correct — silent
+        const bool setOk = h->SetSettingDouble(kKey, want);
+        static bool s_logged = false;
+        if (!s_logged) {
+            s_logged = true;
+            if (setOk) {
+                logger::info("HIGGS poke fix ({}): {} {} -> {:.1f} via HIGGS's own settings API. "
+                             "HIGGS closes the fingers near a grabbable, which defeats PPB's finger "
+                             "colliders; -1 keeps the hand open so poking works. Your higgs_vr.ini is "
+                             "NOT modified. Set higgsPokeFix 0 in PPB_tuning.txt to leave it alone.",
+                             whenTag, kKey,
+                             gotOk ? std::to_string(cur) : std::string("<unreadable>"), want);
+            } else {
+                logger::warn("HIGGS poke fix ({}): SetSettingDouble('{}') FAILED — HIGGS build may not "
+                             "expose it. Poking will need the ini set by hand.", whenTag, kKey);
+            }
+        }
+    }
+
 
     void AcquireHiggs()
     {

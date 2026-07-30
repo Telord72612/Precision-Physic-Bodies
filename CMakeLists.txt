@@ -15,7 +15,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # ---------------------------------------------------------------------------
 
 # CommonLibSSE-NG (VR-enabled) as a local subdirectory.
-set(COMMONLIB_PATH "" CACHE PATH "Path to CommonLibSSE-NG (VR-enabled) source (required)")
+set(COMMONLIB_PATH "D:/Games/My Skyrim/Tools/CommonLibVR-4.14.0" CACHE PATH "Path to CommonLibSSE-NG source")
 
 # VR-only runtime (smaller; this plugin is VR-exclusive).
 set(ENABLE_SKYRIM_SE OFF CACHE BOOL "" FORCE)
@@ -55,7 +55,7 @@ target_precompile_headers(PPB PRIVATE src/PCH.h)
 # NOTE: the namespace-scope hk link stubs (hkReferencedObject::addReference etc.)
 # are defined in PivFix.cpp ONLY — the other SDK TUs must never repeat them
 # (duplicate-symbol link error; FINGER_BUILD_PLAN hard rule).
-set(PPB_HAVOK_SDK_SOURCE "" CACHE PATH "Path to the Havok 2010.2 SDK Source folder (required)")
+set(PPB_HAVOK_SDK_SOURCE "F:/CHIM Emotion/Havok/Source")
 set_source_files_properties(src/PivFix.cpp src/NpcFingerTest.cpp
     src/HandBox.cpp PROPERTIES
     INCLUDE_DIRECTORIES "${PPB_HAVOK_SDK_SOURCE}"
@@ -83,7 +83,7 @@ set_target_properties(PPB PROPERTIES
 )
 
 # Copy the built DLL into the Precision Physic Bodies mod's SKSE/Plugins folder.
-set(MOD_OUTPUT "" CACHE PATH "Optional: copy the built DLL straight into your mod folder")
+set(MOD_OUTPUT "D:/Games/My Skyrim/mods/Precision Physic Bodies/SKSE/Plugins")
 add_custom_command(TARGET PPB POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "${MOD_OUTPUT}"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:PPB>" "${MOD_OUTPUT}/"

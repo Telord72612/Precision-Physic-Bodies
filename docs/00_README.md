@@ -38,7 +38,10 @@ Scale, shape, and pose corrections all reconcile these three so collision matche
 | 09 | **Player Hand & Finger Colliders** | HIGGS hand colliders + the Havok-vs-CBPC/SMP touch split |
 | 10 | **Runtime Skeleton Map & Per-NPC** | per-race skeletons (no-ESP) + per-NPC capsule overrides |
 | 11 | **Ecosystem Conflict Forecast** | before updating PLANCK / HIGGS / FSMP / XP32 |
+| 12 | **Deep Reference** (toolchain / impact sound / dismemberment) | working a specific subsystem's internals |
 | 13 | **ReTouch: Havok-Native Touch** | touch detection, mouth gate, held-object identity |
+| 15 | **Capsule → Body-Part Map** | naming every touchable capsule for an API (+ capsule_body_part_map.json) |
+| 14 | **Dismemberment & Decapitation Compat** | DF/NGD freezes, severed heads, head-only skeletons, mass/sound |
 
 ## Current state (2026-07-19)
 The capsule-fitting stack is complete and four-body certified:
@@ -101,6 +104,7 @@ use this map.
 Full session history lives in the auto-memory (`ragdoll_remake_project.md`). Keep it that way: new
 findings become reference edits to the doc that owns the topic, not a new dated banner.
 
+- **14_Dismemberment_Decapitation_Compat** — DF/NGD/PLANCK/FSMP: the VR hard-freeze root cause and
   the API-based fix, the severed-head clone architecture, head-only skeleton authoring, the
   mass/inertia/friction field map, and the foreign-DLL hooking technique.
 - **13_ReTouch_Havok_Native_Touch** — the touch layer: CBPC replaced by pure-geometry detection on the live capsules; mouth gate + phoneme reactions; held-object identity; the marker-seizure laws.

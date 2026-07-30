@@ -2,12 +2,27 @@
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:noNamespaceSchemaLocation="http://qconsulting.ca/fo3/ModConfig5.0.xsd">
 
+  <!-- ⚠ ELEMENT ORDER IS FIXED BY THE SCHEMA and Vortex enforces it strictly (MO2 does not):
+       moduleName -> moduleImage -> moduleDependencies -> requiredInstallFiles -> installSteps
+                  -> conditionalFileInstalls
+       Putting requiredInstallFiles after installSteps parses fine as XML but fails Vortex with
+       "Sch_InvalidElementContentExpecting". -->
+
   <moduleName>Precision Physic Bodies</moduleName>
 
   <!-- Banner shown at the top of every installer page.
        Path is relative to the ARCHIVE ROOT, backslashes, and the file must actually
        exist or Vortex/MO2 will error on install. -->
   <moduleImage path="fomod\images\header.jpg" showImage="true" showFade="true" height="-1"/>
+
+  <!-- Core payload: always installed, nothing to choose.
+       All four race skeletons ship together on purpose — the race map points a race at a
+       skeleton file, and a map entry pointing at a file that was not installed would leave
+       those NPCs without a skeleton. They are ~100 KB each; which races are actually driven
+       is decided by PPB_Skeletons_Added_Race.ini, which the user can edit at any time. -->
+  <requiredInstallFiles>
+    <folder source="00 Core" destination="" priority="0"/>
+  </requiredInstallFiles>
 
   <installSteps order="Explicit">
 
@@ -61,14 +76,5 @@ get doubled cuts.
     </installStep>
 
   </installSteps>
-
-  <!-- Core payload: always installed, nothing to choose.
-       All four race skeletons ship together on purpose — the race map points a race at a
-       skeleton file, and a map entry pointing at a file that was not installed would leave
-       those NPCs without a skeleton. They are ~100 KB each; which races are actually driven
-       is decided by PPB_Skeletons_Added_Race.ini, which the user can edit at any time. -->
-  <requiredInstallFiles>
-    <folder source="00 Core" destination="" priority="0"/>
-  </requiredInstallFiles>
 
 </config>
