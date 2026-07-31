@@ -462,6 +462,13 @@ namespace ObjectHold {
         float apiDwellComS     = 2.0f;   // pelvis/butt — the most brushed-in-passing slot
         float apiDwellSensorS  = 0.5f;   // interior sensors — insertion is already deliberate
         float apiDwellTailS    = 1.0f;   // tail chords
+        float apiSubRegionInEvent = 0.f; // 1 = append a 5th '|' field (the SUB-REGION) to every
+                                         // touch mod-event string. SHIPS OFF: the documented
+                                         // format is 4 fields and a consumer told to "split on
+                                         // the first three '|'" would read "human|In mouth" as
+                                         // the skeleton. Native/Papyrus consumers get the
+                                         // sub-region without this; the knob is for event-only
+                                         // scripts whose author has opted in.
         float apiRawEvents     = 0.f;    // 1 = also fire the verbose PPB_TouchRaw* events (one
                                          // per capsule per source class). Ships OFF: the digest
                                          // stream is what consumers want; raw is opt-in.
@@ -1040,6 +1047,7 @@ namespace ObjectHold {
     float    ApiDwellSensorS();         // dwell filter: interior sensors C21-31
     float    ApiDwellTailS();           // dwell filter: tail pseudo-slot
     bool     ApiRawEventsEnabled();     // verbose PPB_TouchRaw* stream (ships off)
+    bool     ApiSubRegionInEvent();     // append the sub-region as a 5th packed field (off)
     bool     ApiSuppressHeldHand();     // mute a hand that is holding something
     bool     ApiHairTarget();           // hair chords as touch targets (ships off)
     float    NpcRigRangeU();            // garment-rig create/keep range in game units (0 = unlimited)

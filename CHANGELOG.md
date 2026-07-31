@@ -1,5 +1,59 @@
 # Changelog
 
+## Unreleased
+
+### Touch API: sub-regions and a depth ladder
+
+The touch API reported a coarse **region** (`Face`) and the exact **capsule** (`palate`). It now
+also reports a **sub-region** in between (`In mouth`), plus a **depth** rung — and the sub-region
+carries the override semantics that were previously only implicit.
+
+Within the mouth and the intimate chain, sub-regions are ordered shallow to deep and each level
+overrides the ones below it:
+
+```
+Face surface  <  Mouth opening  <  In mouth  <  Mouth wall
+0 surface        1 opening         2 inside     3 deepest
+```
+
+The correction that motivated this: a **cheek or a chin is an ordinary face touch**. Those capsules
+participate in mouth detection, but only *in conjunction* — the gate needs the palate and both
+cheeks at once. A **palate** touch means something IS inside, and outranks any lip or cheek
+reading. The **throat wall** outranks even the palate. The intimate chain follows the same shape.
+
+**Additive only — nothing moved.** The interface is still revision 1: three methods appended at
+the end of the vtable (`SubRegionOf`, `SubRegionName`, `SubRegionDepth`), three bytes taken from
+`PpbTouchContact`'s reserved tail (`region`, `subRegion`, `depth`), and three Papyrus natives
+added (`GetContactRegion`, `GetContactSubRegion`, `GetContactDepth`). A plugin built against the
+previous header still runs unchanged.
+
+The mod-event string is **deliberately unchanged** at four `|` fields, because consumers are told
+they may split on the first three. `apiSubRegionInEvent` (ships **off**) appends the sub-region as
+a fifth field for authors who opt in.
+
+### Tail contacts were always three segments, not one
+
+`tail (base)` / `tail (mid)` / `tail (tip)`, computed as equal thirds of the chord chain — so
+"tip" means the same place on a 4-chord foxtail and a 14-chord fluffy tail. This shipped with the
+tail work; only the documentation was wrong.
+
+### New: developer integration guide
+
+`INTEGRATION.md` — how to consume the API from Papyrus (events or natives) or from an SKSE
+plugin, with the coverage contract, the dwell gates that explain "why am I seeing nothing", and
+the gotchas. Alongside it, `docs/PPB_Touch_API_Contact_List.xlsx`: all 107 capsules with their
+region, sub-region, depth, dwell and override behaviour, generated from the source tables and
+verified against the shipped DLL.
+
+### Fixes
+
+- The public header and `PPB_Touch.psc` both documented `apiHz` as defaulting to 20/s; it ships
+  at 4/s. Corrected — a wrong number in a public contract is one modders build against.
+- The published capsule record carried three invented knob prefixes (`capForearm`, `capUpperarm`,
+  `capSpine`); the real keys are `capFore`, `capUpper`, `capSpine0`. Anyone following the record
+  to tune a forearm capsule was editing a key the plugin never reads. Corrected, and the
+  generator now verifies every cited knob against the shipped tuning file.
+
 ## 1.3.0
 
 ### HDT-SMP Flex support

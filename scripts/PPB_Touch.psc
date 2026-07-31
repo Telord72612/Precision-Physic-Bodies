@@ -10,7 +10,8 @@ FIVE VARIABLES per contact:
   DURATION  GetContactDuration(i)   - seconds since this contact began
 
 POLLING: GetContactCount() then index 0..count-1. The list is a snapshot refreshed at the
-apiHz rate (default 20/s, PPB_tuning.txt). Indices are NOT stable across polls - read what
+apiHz rate (ships at 4/s; it is a host knob in PPB_tuning.txt, do not assume a
+rate). Indices are NOT stable across polls - read what
 you need in one pass.
 
 EVENTS (push, no polling needed) - register a ModEvent handler:
@@ -48,3 +49,24 @@ Float Function GetContactDistance(Int i) Global Native
 
 ; the full "WAND|SOURCE|BODYPART|SKELETON" string (same format as the mod events)
 String Function GetContactPacked(Int i) Global Native
+
+; -- the SUB-REGION layer (added 2026-07-31) -------------------------------------------
+; Region is the coarse bucket the digest groups by: "Face" / "Neck" / "Chest" / "Belly" /
+; "Waist" / "Pelvis" / "Intimate" / "Arm" / "Hand" / "Leg" / "Foot" / "Tail" / "Hair".
+String Function GetContactRegion(Int i) Global Native
+
+; The finer bucket: "Head", "Face surface", "Mouth opening", "In mouth", "Mouth wall",
+; "Breast", "Glute", "Intimate - vaginal (deep)", "Tail - tip (far third)", ...
+; Cheeks and chins report "Face surface" - they are ordinary face touches on their own and
+; only signify the mouth in conjunction. The PALATE reports "In mouth": a touch there means
+; something IS inside, and it outranks any lip reading. The THROAT reports "Mouth wall" and
+; outranks even the palate.
+String Function GetContactSubRegion(Int i) Global Native
+
+; The ladder as a number, when you only care HOW FAR IN and not where:
+;   0 = surface (skin, a face touch, a hip)
+;   1 = opening (lips, vaginal/anal opening)
+;   2 = inside  (palate, cervix, rectum)
+;   3 = deepest (throat wall, uterus)
+; -1 if the index is stale.
+Int Function GetContactDepth(Int i) Global Native

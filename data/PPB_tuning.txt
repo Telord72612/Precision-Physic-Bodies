@@ -1191,6 +1191,12 @@ apiHairTarget 0
 # mod authors building their own aggregation. The native interface exposes raw either way
 # via GetRawContacts(), so turning this on is only about Papyrus.
 apiRawEvents 0
+# 1 = append a 5th '|' field (the SUB-REGION, e.g. "In mouth") to every touch mod-event
+# string. SHIPS OFF: the documented format is 4 fields and consumers are told they may split
+# on the first three '|', so a 5th field would land inside their SKELETON value. Native and
+# Papyrus consumers read the sub-region without this knob (PPB_Touch.GetContactSubRegion /
+# IPpbTouchInterface1::SubRegionOf). Turn it on only if every listening script expects it.
+apiSubRegionInEvent 0
 # apiSuppressHeldHand: a hand HOLDING a weapon or object stops reporting bare-hand
 # contacts (your palm is on the grip, so those were phantom FIST events alongside every
 # knife touch). The OTHER hand is unaffected.

@@ -114,7 +114,8 @@ namespace ObjectHold {
                     PK_NOSNAP(apiTouch), PK_NOSNAP(apiHz), PK_NOSNAP(apiTouchU), PK_NOSNAP(apiExitPadU),
                     PK_NOSNAP(apiMaxActors), PK_NOSNAP(apiRangeU), PK_NOSNAP(apiFistTipPalmU),
                     PK_NOSNAP(apiEvents), PK_NOSNAP(apiLog), PK_NOSNAP(apiHairTarget),
-                    PK_NOSNAP(apiRawEvents), PK_NOSNAP(apiSuppressHeldHand),
+                    PK_NOSNAP(apiRawEvents), PK_NOSNAP(apiSubRegionInEvent),
+                    PK_NOSNAP(apiSuppressHeldHand),
                     PK_NOSNAP(apiDwellS), PK_NOSNAP(apiDwellHeadS), PK_NOSNAP(apiDwellComS),
                     PK_NOSNAP(apiDwellSensorS), PK_NOSNAP(apiDwellTailS),
                     PK_NOSNAP(higgsPokeFix),
@@ -738,6 +739,7 @@ namespace ObjectHold {
     float ApiDwellSensorS()     { return g_tune.apiDwellSensorS < 0.f ? 0.f : g_tune.apiDwellSensorS; }
     float ApiDwellTailS()       { return g_tune.apiDwellTailS   < 0.f ? 0.f : g_tune.apiDwellTailS; }
     bool  ApiRawEventsEnabled() { return g_tune.apiRawEvents > 0.5f; }
+    bool  ApiSubRegionInEvent() { return g_tune.apiSubRegionInEvent > 0.5f; }
     bool  ApiSuppressHeldHand() { return g_tune.apiSuppressHeldHand > 0.5f; }
     bool  ApiHairTarget()       { return g_tune.apiHairTarget > 0.5f; }
     float NpcRigRangeU()        { return g_tune.npcRigRangeU     < 0.f ? 0.f : g_tune.npcRigRangeU; }

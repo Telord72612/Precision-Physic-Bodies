@@ -1,900 +1,901 @@
 {
-  "schema": "ppb.capsule-name-map/2",
-  "generatedFrom": "ProposedPartName() in NpcFingerTest.cpp (parsed, DLL-verified)",
-  "skeleton": "human female (PPB) is the naming reference",
-  "note": "Slot+child is the stable address. Sided slots (hasLeftTwin) carry an identical left twin under kSlotNodeL, so a full address is (slot, side, child). Seeds are real capsule children that are buried and unnamed - never surface them.",
-  "indexAlignmentWarning": "Names are index-aligned across all four PPB skeletons ONLY for the NAMED range of each slot. Above that range the same index is DIFFERENT anatomy per race, which is why those indices are deliberately left unnamed. Verified 2026-07-29 by classify_unnamed_children.py:\n  slot 3 (head) C15+ : buried seeds on human; argonian C15/C16 = horn/spine; khajiit C15/C16 = ears; draenei C15..C22 = horns + ears. Head child count is 23 on human/draenei but 17 on argonian/khajiit.\n  slot 4 (spine) C8/C9 : exist ONLY on argonian (10 children vs 8) = dorsal ridge.\n  slot 5 (spine1) C7/C8 and slot 6 (spine2) C15/C16 : buried seeds on human, argonian dorsal RIDGE on skeletonbeast_female.\nNever resolve an unnamed index to a human name.",
-  "geometrySourceWarning": "The NIF holds BASE geometry only. Every dialled capsule - including all 11 COM internal sensors (C21..C31) and the two back capsules (spine1 C9, spine2 C17) - is positioned at RUNTIME from cap* knobs in PPB_tuning.txt. In the NIF those children still sit at the buried seed spec p1=(0,0,0) p2=(0,0,2u) r=0.5u. Read positions from the live Havok body, never from the NIF.",
-  "counts": {
-    "slots": 12,
-    "children": 113,
-    "named": 107,
-    "seeds": 6
-  },
-  "slots": [
+ "schema": "ppb.capsule-name-map/2",
+ "generatedFrom": "ProposedPartName() in NpcFingerTest.cpp (parsed, DLL-verified)",
+ "skeleton": "human female (PPB) is the naming reference",
+ "note": "Slot+child is the stable address. Sided slots (hasLeftTwin) carry an identical left twin under kSlotNodeL, so a full address is (slot, side, child). Seeds are real capsule children that are buried and unnamed - never surface them.",
+ "indexAlignmentWarning": "Names are index-aligned across all four PPB skeletons ONLY for the NAMED range of each slot. Above that range the same index is DIFFERENT anatomy per race, which is why those indices are deliberately left unnamed. Verified 2026-07-29 by classify_unnamed_children.py:\n  slot 3 (head) C15+ : buried seeds on human; argonian C15/C16 = horn/spine; khajiit C15/C16 = ears; draenei C15..C22 = horns + ears. Head child count is 23 on human/draenei but 17 on argonian/khajiit.\n  slot 4 (spine) C8/C9 : exist ONLY on argonian (10 children vs 8) = dorsal ridge.\n  slot 5 (spine1) C7/C8 and slot 6 (spine2) C15/C16 : buried seeds on human, argonian dorsal RIDGE on skeletonbeast_female.\nNever resolve an unnamed index to a human name.",
+ "geometrySourceWarning": "The NIF holds BASE geometry only. Every dialled capsule - including all 11 COM internal sensors (C21..C31) and the two back capsules (spine1 C9, spine2 C17) - is positioned at RUNTIME from cap* knobs in PPB_tuning.txt. In the NIF those children still sit at the buried seed spec p1=(0,0,0) p2=(0,0,2u) r=0.5u. Read positions from the live Havok body, never from the NIF.",
+ "counts": {
+  "slots": 12,
+  "children": 113,
+  "named": 107,
+  "seeds": 6
+ },
+ "slots": [
+  {
+   "slot": 0,
+   "key": "hand",
+   "node": "NPC R Hand [RHnd]",
+   "nodeLeft": "NPC L Hand [LHnd]",
+   "knobPrefix": "capHand",
+   "hasLeftTwin": true,
+   "namedRange": 5,
+   "children": [
     {
-      "slot": 0,
-      "key": "hand",
-      "node": "NPC R Hand [RHnd]",
-      "nodeLeft": "NPC L Hand [LHnd]",
-      "knobPrefix": "capHand",
-      "hasLeftTwin": true,
-      "namedRange": 5,
-      "children": [
-        {
-          "child": 0,
-          "name": "palm rod",
-          "seed": false,
-          "knob": "capHand"
-        },
-        {
-          "child": 1,
-          "name": "thumb-side rod",
-          "seed": false,
-          "knob": "capHandC1"
-        },
-        {
-          "child": 2,
-          "name": "pinky-side rod",
-          "seed": false,
-          "knob": "capHandC2"
-        },
-        {
-          "child": 3,
-          "name": "palm centre (1)",
-          "seed": false,
-          "knob": "capHandC3"
-        },
-        {
-          "child": 4,
-          "name": "palm centre (2)",
-          "seed": false,
-          "knob": "capHandC4"
-        }
-      ],
-      "nifChildCount": {
-        "human": 5,
-        "argonian": 5,
-        "khajiit": 5,
-        "draenei": 5
-      }
+     "child": 0,
+     "name": "palm rod",
+     "seed": false,
+     "knob": "capHand"
     },
     {
-      "slot": 1,
-      "key": "forearm",
-      "node": "NPC R Forearm [RLar]",
-      "nodeLeft": "NPC L Forearm [LLar]",
-      "knobPrefix": "capForearm",
-      "hasLeftTwin": true,
-      "namedRange": 2,
-      "children": [
-        {
-          "child": 0,
-          "name": "forearm (elbow half)",
-          "seed": false,
-          "knob": "capForearm"
-        },
-        {
-          "child": 1,
-          "name": "forearm (wrist half)",
-          "seed": false,
-          "knob": "capForearmC1"
-        }
-      ],
-      "nifChildCount": {
-        "human": 2,
-        "argonian": 2,
-        "khajiit": 2,
-        "draenei": 2
-      }
+     "child": 1,
+     "name": "thumb-side rod",
+     "seed": false,
+     "knob": "capHandC1"
     },
     {
-      "slot": 2,
-      "key": "upperarm",
-      "node": "NPC R UpperArm [RUar]",
-      "nodeLeft": "NPC L UpperArm [LUar]",
-      "knobPrefix": "capUpperarm",
-      "hasLeftTwin": true,
-      "namedRange": 4,
-      "children": [
-        {
-          "child": 0,
-          "name": "upper arm (shoulder half)",
-          "seed": false,
-          "knob": "capUpperarm"
-        },
-        {
-          "child": 1,
-          "name": "upper arm (elbow half)",
-          "seed": false,
-          "knob": "capUpperarmC1"
-        },
-        {
-          "child": 2,
-          "name": "deltoid / shoulder cap",
-          "seed": false,
-          "knob": "capUpperarmC2"
-        },
-        {
-          "child": 3,
-          "name": "upper arm (elbow half, inner twin)",
-          "seed": false,
-          "knob": "capUpperarmC3"
-        }
-      ],
-      "nifChildCount": {
-        "human": 4,
-        "argonian": 4,
-        "khajiit": 4,
-        "draenei": 4
-      }
+     "child": 2,
+     "name": "pinky-side rod",
+     "seed": false,
+     "knob": "capHandC2"
     },
     {
-      "slot": 3,
-      "key": "head",
-      "node": "NPC Head [Head]",
-      "nodeLeft": null,
-      "knobPrefix": "capHead",
-      "hasLeftTwin": false,
-      "namedRange": 15,
-      "children": [
-        {
-          "child": 0,
-          "name": "cranium",
-          "seed": false,
-          "knob": "capHead"
-        },
-        {
-          "child": 1,
-          "name": "upper lip",
-          "seed": false,
-          "knob": "capHeadC1"
-        },
-        {
-          "child": 2,
-          "name": "chin R",
-          "seed": false,
-          "knob": "capHeadC2"
-        },
-        {
-          "child": 3,
-          "name": "chin L",
-          "seed": false,
-          "knob": "capHeadC3"
-        },
-        {
-          "child": 4,
-          "name": "cheek R",
-          "seed": false,
-          "knob": "capHeadC4"
-        },
-        {
-          "child": 5,
-          "name": "cheek L",
-          "seed": false,
-          "knob": "capHeadC5"
-        },
-        {
-          "child": 6,
-          "name": "cheekbone R",
-          "seed": false,
-          "knob": "capHeadC6"
-        },
-        {
-          "child": 7,
-          "name": "cheekbone L",
-          "seed": false,
-          "knob": "capHeadC7"
-        },
-        {
-          "child": 8,
-          "name": "nose",
-          "seed": false,
-          "knob": "capHeadC8"
-        },
-        {
-          "child": 9,
-          "name": "palate",
-          "seed": false,
-          "knob": "capHeadC9"
-        },
-        {
-          "child": 10,
-          "name": "throat wall",
-          "seed": false,
-          "knob": "capHeadC10"
-        },
-        {
-          "child": 11,
-          "name": "under-jaw (deep)",
-          "seed": false,
-          "knob": "capHeadC11"
-        },
-        {
-          "child": 12,
-          "name": "temple/ear R",
-          "seed": false,
-          "knob": "capHeadC12"
-        },
-        {
-          "child": 13,
-          "name": "temple/ear L",
-          "seed": false,
-          "knob": "capHeadC13"
-        },
-        {
-          "child": 14,
-          "name": "back of head",
-          "seed": false,
-          "knob": "capHeadC14"
-        }
-      ],
-      "nifChildCount": {
-        "human": 23,
-        "argonian": 17,
-        "khajiit": 17,
-        "draenei": 23
-      }
+     "child": 3,
+     "name": "palm centre (1)",
+     "seed": false,
+     "knob": "capHandC3"
     },
     {
-      "slot": 4,
-      "key": "spine0",
-      "node": "NPC Spine [Spn0]",
-      "nodeLeft": null,
-      "knobPrefix": "capSpine",
-      "hasLeftTwin": false,
-      "namedRange": 8,
-      "children": [
-        {
-          "child": 0,
-          "name": "waist ring",
-          "seed": false,
-          "knob": "capSpine"
-        },
-        {
-          "child": 1,
-          "name": "lower belly R",
-          "seed": false,
-          "knob": "capSpineC1"
-        },
-        {
-          "child": 2,
-          "name": "lower belly L",
-          "seed": false,
-          "knob": "capSpineC2"
-        },
-        {
-          "child": 3,
-          "name": "front waist band",
-          "seed": false,
-          "knob": "capSpineC3"
-        },
-        {
-          "child": 4,
-          "name": "lower abdomen",
-          "seed": false,
-          "knob": "capSpineC4"
-        },
-        {
-          "child": 5,
-          "name": "lower back R",
-          "seed": false,
-          "knob": "capSpineC5"
-        },
-        {
-          "child": 6,
-          "name": "lower back L",
-          "seed": false,
-          "knob": "capSpineC6"
-        },
-        {
-          "child": 7,
-          "name": "flank R",
-          "seed": false,
-          "knob": "capSpineC7"
-        }
-      ],
-      "nifChildCount": {
-        "human": 8,
-        "argonian": 10,
-        "khajiit": 8,
-        "draenei": 8
-      }
-    },
-    {
-      "slot": 5,
-      "key": "spine1",
-      "node": "NPC Spine1 [Spn1]",
-      "nodeLeft": null,
-      "knobPrefix": "capSpine1",
-      "hasLeftTwin": false,
-      "namedRange": 11,
-      "children": [
-        {
-          "child": 0,
-          "name": "belly / navel (FRONT)",
-          "seed": false,
-          "knob": "capSpine1"
-        },
-        {
-          "child": 1,
-          "name": "belly side R",
-          "seed": false,
-          "knob": "capSpine1C1"
-        },
-        {
-          "child": 2,
-          "name": "belly side L",
-          "seed": false,
-          "knob": "capSpine1C2"
-        },
-        {
-          "child": 3,
-          "name": "midriff R",
-          "seed": false,
-          "knob": "capSpine1C3"
-        },
-        {
-          "child": 4,
-          "name": "midriff L",
-          "seed": false,
-          "knob": "capSpine1C4"
-        },
-        {
-          "child": 5,
-          "name": "flank R",
-          "seed": false,
-          "knob": "capSpine1C5"
-        },
-        {
-          "child": 6,
-          "name": "flank L",
-          "seed": false,
-          "knob": "capSpine1C6"
-        },
-        {
-          "child": 7,
-          "name": null,
-          "seed": true,
-          "knob": "capSpine1C7"
-        },
-        {
-          "child": 8,
-          "name": null,
-          "seed": true,
-          "knob": "capSpine1C8"
-        },
-        {
-          "child": 9,
-          "name": "BACK (lower)",
-          "seed": false,
-          "knob": "capSpine1C9"
-        },
-        {
-          "child": 10,
-          "name": null,
-          "seed": true,
-          "knob": "capSpine1C10"
-        }
-      ],
-      "nifChildCount": {
-        "human": 11,
-        "argonian": 11,
-        "khajiit": 11,
-        "draenei": 11
-      }
-    },
-    {
-      "slot": 6,
-      "key": "spine2",
-      "node": "NPC Spine2 [Spn2]",
-      "nodeLeft": null,
-      "knobPrefix": "capSpine2",
-      "hasLeftTwin": false,
-      "namedRange": 19,
-      "children": [
-        {
-          "child": 0,
-          "name": "chest ring",
-          "seed": false,
-          "knob": "capSpine2"
-        },
-        {
-          "child": 1,
-          "name": "lat R",
-          "seed": false,
-          "knob": "capSpine2C1"
-        },
-        {
-          "child": 2,
-          "name": "lat L",
-          "seed": false,
-          "knob": "capSpine2C2"
-        },
-        {
-          "child": 3,
-          "name": "front rib R",
-          "seed": false,
-          "knob": "capSpine2C3"
-        },
-        {
-          "child": 4,
-          "name": "front rib L",
-          "seed": false,
-          "knob": "capSpine2C4"
-        },
-        {
-          "child": 5,
-          "name": "lower chest",
-          "seed": false,
-          "knob": "capSpine2C5"
-        },
-        {
-          "child": 6,
-          "name": "trapezius R",
-          "seed": false,
-          "knob": "capSpine2C6"
-        },
-        {
-          "child": 7,
-          "name": "trapezius L",
-          "seed": false,
-          "knob": "capSpine2C7"
-        },
-        {
-          "child": 8,
-          "name": "collarbone R",
-          "seed": false,
-          "knob": "capSpine2C8"
-        },
-        {
-          "child": 9,
-          "name": "collarbone L",
-          "seed": false,
-          "knob": "capSpine2C9"
-        },
-        {
-          "child": 10,
-          "name": "sternum / cleavage",
-          "seed": false,
-          "knob": "capSpine2C10"
-        },
-        {
-          "child": 11,
-          "name": "BREAST R",
-          "seed": false,
-          "knob": "capSpine2C11"
-        },
-        {
-          "child": 12,
-          "name": "BREAST L",
-          "seed": false,
-          "knob": "capSpine2C12"
-        },
-        {
-          "child": 13,
-          "name": "shoulder cap R",
-          "seed": false,
-          "knob": "capSpine2C13"
-        },
-        {
-          "child": 14,
-          "name": "shoulder cap L",
-          "seed": false,
-          "knob": "capSpine2C14"
-        },
-        {
-          "child": 15,
-          "name": null,
-          "seed": true,
-          "knob": "capSpine2C15"
-        },
-        {
-          "child": 16,
-          "name": null,
-          "seed": true,
-          "knob": "capSpine2C16"
-        },
-        {
-          "child": 17,
-          "name": "BACK (upper)",
-          "seed": false,
-          "knob": "capSpine2C17"
-        },
-        {
-          "child": 18,
-          "name": null,
-          "seed": true,
-          "knob": "capSpine2C18"
-        }
-      ],
-      "nifChildCount": {
-        "human": 19,
-        "argonian": 19,
-        "khajiit": 19,
-        "draenei": 19
-      }
-    },
-    {
-      "slot": 7,
-      "key": "neck",
-      "node": "NPC Neck [Neck]",
-      "nodeLeft": null,
-      "knobPrefix": "capNeck",
-      "hasLeftTwin": false,
-      "namedRange": 1,
-      "children": [
-        {
-          "child": 0,
-          "name": "neck / throat",
-          "seed": false,
-          "knob": "capNeck"
-        }
-      ],
-      "nifChildCount": {
-        "human": 0,
-        "argonian": 0,
-        "khajiit": 0,
-        "draenei": 0
-      },
-      "shape": "bhkCapsuleShape (single capsule, NOT a list)",
-      "addressingNote": "Addressed as child 0 by convention; the body has no list children at all."
-    },
-    {
-      "slot": 8,
-      "key": "thighR",
-      "node": "NPC R Thigh [RThg]",
-      "nodeLeft": "NPC L Thigh [LThg]",
-      "knobPrefix": "capThigh",
-      "hasLeftTwin": true,
-      "namedRange": 7,
-      "children": [
-        {
-          "child": 0,
-          "name": "thigh rod",
-          "seed": false,
-          "knob": "capThigh"
-        },
-        {
-          "child": 1,
-          "name": "upper thigh / groin",
-          "seed": false,
-          "knob": "capThighC1"
-        },
-        {
-          "child": 2,
-          "name": "hip-glute fold",
-          "seed": false,
-          "knob": "capThighC2"
-        },
-        {
-          "child": 3,
-          "name": "upper thigh",
-          "seed": false,
-          "knob": "capThighC3"
-        },
-        {
-          "child": 4,
-          "name": "mid thigh",
-          "seed": false,
-          "knob": "capThighC4"
-        },
-        {
-          "child": 5,
-          "name": "lower thigh",
-          "seed": false,
-          "knob": "capThighC5"
-        },
-        {
-          "child": 6,
-          "name": "knee",
-          "seed": false,
-          "knob": "capThighC6"
-        }
-      ],
-      "nifChildCount": {
-        "human": 7,
-        "argonian": 7,
-        "khajiit": 7,
-        "draenei": 7
-      }
-    },
-    {
-      "slot": 9,
-      "key": "calfR",
-      "node": "NPC R Calf [RClf]",
-      "nodeLeft": "NPC L Calf [LClf]",
-      "knobPrefix": "capCalf",
-      "hasLeftTwin": true,
-      "namedRange": 5,
-      "children": [
-        {
-          "child": 0,
-          "name": "calf rod",
-          "seed": false,
-          "knob": "capCalf"
-        },
-        {
-          "child": 1,
-          "name": "upper calf",
-          "seed": false,
-          "knob": "capCalfC1"
-        },
-        {
-          "child": 2,
-          "name": "calf belly",
-          "seed": false,
-          "knob": "capCalfC2"
-        },
-        {
-          "child": 3,
-          "name": "shin (lower)",
-          "seed": false,
-          "knob": "capCalfC3"
-        },
-        {
-          "child": 4,
-          "name": "knee rear",
-          "seed": false,
-          "knob": "capCalfC4"
-        }
-      ],
-      "nifChildCount": {
-        "human": 5,
-        "argonian": 5,
-        "khajiit": 5,
-        "draenei": 5
-      }
-    },
-    {
-      "slot": 10,
-      "key": "footR",
-      "node": "NPC R Foot [Rft ]",
-      "nodeLeft": "NPC L Foot [Lft ]",
-      "knobPrefix": "capFoot",
-      "hasLeftTwin": true,
-      "namedRange": 4,
-      "children": [
-        {
-          "child": 0,
-          "name": "sole (inner)",
-          "seed": false,
-          "knob": "capFoot"
-        },
-        {
-          "child": 1,
-          "name": "sole (outer)",
-          "seed": false,
-          "knob": "capFootC1"
-        },
-        {
-          "child": 2,
-          "name": "arch",
-          "seed": false,
-          "knob": "capFootC2"
-        },
-        {
-          "child": 3,
-          "name": "ankle lock",
-          "seed": false,
-          "knob": "capFootC3"
-        }
-      ],
-      "nifChildCount": {
-        "human": 4,
-        "argonian": 4,
-        "khajiit": 4,
-        "draenei": 4
-      }
-    },
-    {
-      "slot": 11,
-      "key": "com",
-      "node": "NPC COM [COM ]",
-      "nodeLeft": null,
-      "knobPrefix": "capCom",
-      "hasLeftTwin": false,
-      "namedRange": 32,
-      "children": [
-        {
-          "child": 0,
-          "name": "orifice ring (base)",
-          "seed": false,
-          "knob": "capCom"
-        },
-        {
-          "child": 1,
-          "name": "orifice ring (mid)",
-          "seed": false,
-          "knob": "capComC1"
-        },
-        {
-          "child": 2,
-          "name": "orifice ring (upper)",
-          "seed": false,
-          "knob": "capComC2"
-        },
-        {
-          "child": 3,
-          "name": "inner pelvis wall R",
-          "seed": false,
-          "knob": "capComC3"
-        },
-        {
-          "child": 4,
-          "name": "inner pelvis wall L",
-          "seed": false,
-          "knob": "capComC4"
-        },
-        {
-          "child": 5,
-          "name": "pubic mound",
-          "seed": false,
-          "knob": "capComC5"
-        },
-        {
-          "child": 6,
-          "name": "groin crease R",
-          "seed": false,
-          "knob": "capComC6"
-        },
-        {
-          "child": 7,
-          "name": "groin crease L",
-          "seed": false,
-          "knob": "capComC7"
-        },
-        {
-          "child": 8,
-          "name": "front hip R",
-          "seed": false,
-          "knob": "capComC8"
-        },
-        {
-          "child": 9,
-          "name": "front hip L",
-          "seed": false,
-          "knob": "capComC9"
-        },
-        {
-          "child": 10,
-          "name": "rear centreline R",
-          "seed": false,
-          "knob": "capComC10"
-        },
-        {
-          "child": 11,
-          "name": "rear centreline L",
-          "seed": false,
-          "knob": "capComC11"
-        },
-        {
-          "child": 12,
-          "name": "upper glute R",
-          "seed": false,
-          "knob": "capComC12"
-        },
-        {
-          "child": 13,
-          "name": "upper glute L",
-          "seed": false,
-          "knob": "capComC13"
-        },
-        {
-          "child": 14,
-          "name": "inner rail R",
-          "seed": false,
-          "knob": "capComC14"
-        },
-        {
-          "child": 15,
-          "name": "inner rail L",
-          "seed": false,
-          "knob": "capComC15"
-        },
-        {
-          "child": 16,
-          "name": "BUTT CHEEK R",
-          "seed": false,
-          "knob": "capComC16"
-        },
-        {
-          "child": 17,
-          "name": "BUTT CHEEK L",
-          "seed": false,
-          "knob": "capComC17"
-        },
-        {
-          "child": 18,
-          "name": "hip R",
-          "seed": false,
-          "knob": "capComC18"
-        },
-        {
-          "child": 19,
-          "name": "hip L",
-          "seed": false,
-          "knob": "capComC19"
-        },
-        {
-          "child": 20,
-          "name": "rear centreline R (twin)",
-          "seed": false,
-          "knob": "capComC20"
-        },
-        {
-          "child": 21,
-          "name": "CLITORIS",
-          "seed": false,
-          "knob": "capComC21"
-        },
-        {
-          "child": 22,
-          "name": "vaginal opening R",
-          "seed": false,
-          "knob": "capComC22"
-        },
-        {
-          "child": 23,
-          "name": "vaginal opening L",
-          "seed": false,
-          "knob": "capComC23"
-        },
-        {
-          "child": 24,
-          "name": "cervix R",
-          "seed": false,
-          "knob": "capComC24"
-        },
-        {
-          "child": 25,
-          "name": "cervix L",
-          "seed": false,
-          "knob": "capComC25"
-        },
-        {
-          "child": 26,
-          "name": "uterus R",
-          "seed": false,
-          "knob": "capComC26"
-        },
-        {
-          "child": 27,
-          "name": "uterus L",
-          "seed": false,
-          "knob": "capComC27"
-        },
-        {
-          "child": 28,
-          "name": "anus R",
-          "seed": false,
-          "knob": "capComC28"
-        },
-        {
-          "child": 29,
-          "name": "anus L",
-          "seed": false,
-          "knob": "capComC29"
-        },
-        {
-          "child": 30,
-          "name": "rectum R",
-          "seed": false,
-          "knob": "capComC30"
-        },
-        {
-          "child": 31,
-          "name": "rectum L",
-          "seed": false,
-          "knob": "capComC31"
-        }
-      ],
-      "nifChildCount": {
-        "human": 32,
-        "argonian": 32,
-        "khajiit": 32,
-        "draenei": 32
-      }
+     "child": 4,
+     "name": "palm centre (2)",
+     "seed": false,
+     "knob": "capHandC4"
     }
-  ]
+   ],
+   "nifChildCount": {
+    "human": 5,
+    "argonian": 5,
+    "khajiit": 5,
+    "draenei": 5
+   }
+  },
+  {
+   "slot": 1,
+   "key": "forearm",
+   "node": "NPC R Forearm [RLar]",
+   "nodeLeft": "NPC L Forearm [LLar]",
+   "knobPrefix": "capFore",
+   "hasLeftTwin": true,
+   "namedRange": 2,
+   "children": [
+    {
+     "child": 0,
+     "name": "forearm (elbow half)",
+     "seed": false,
+     "knob": "capFore"
+    },
+    {
+     "child": 1,
+     "name": "forearm (wrist half)",
+     "seed": false,
+     "knob": "capForeC1"
+    }
+   ],
+   "nifChildCount": {
+    "human": 2,
+    "argonian": 2,
+    "khajiit": 2,
+    "draenei": 2
+   }
+  },
+  {
+   "slot": 2,
+   "key": "upperarm",
+   "node": "NPC R UpperArm [RUar]",
+   "nodeLeft": "NPC L UpperArm [LUar]",
+   "knobPrefix": "capUpper",
+   "hasLeftTwin": true,
+   "namedRange": 4,
+   "children": [
+    {
+     "child": 0,
+     "name": "upper arm (shoulder half)",
+     "seed": false,
+     "knob": "capUpper"
+    },
+    {
+     "child": 1,
+     "name": "upper arm (elbow half)",
+     "seed": false,
+     "knob": "capUpperC1"
+    },
+    {
+     "child": 2,
+     "name": "deltoid / shoulder cap",
+     "seed": false,
+     "knob": "capUpperC2"
+    },
+    {
+     "child": 3,
+     "name": "upper arm (elbow half, inner twin)",
+     "seed": false,
+     "knob": "capUpperC3"
+    }
+   ],
+   "nifChildCount": {
+    "human": 4,
+    "argonian": 4,
+    "khajiit": 4,
+    "draenei": 4
+   }
+  },
+  {
+   "slot": 3,
+   "key": "head",
+   "node": "NPC Head [Head]",
+   "nodeLeft": null,
+   "knobPrefix": "capHead",
+   "hasLeftTwin": false,
+   "namedRange": 15,
+   "children": [
+    {
+     "child": 0,
+     "name": "cranium",
+     "seed": false,
+     "knob": "capHead"
+    },
+    {
+     "child": 1,
+     "name": "upper lip",
+     "seed": false,
+     "knob": "capHeadC1"
+    },
+    {
+     "child": 2,
+     "name": "chin R",
+     "seed": false,
+     "knob": "capHeadC2"
+    },
+    {
+     "child": 3,
+     "name": "chin L",
+     "seed": false,
+     "knob": "capHeadC3"
+    },
+    {
+     "child": 4,
+     "name": "cheek R",
+     "seed": false,
+     "knob": "capHeadC4"
+    },
+    {
+     "child": 5,
+     "name": "cheek L",
+     "seed": false,
+     "knob": "capHeadC5"
+    },
+    {
+     "child": 6,
+     "name": "cheekbone R",
+     "seed": false,
+     "knob": "capHeadC6"
+    },
+    {
+     "child": 7,
+     "name": "cheekbone L",
+     "seed": false,
+     "knob": "capHeadC7"
+    },
+    {
+     "child": 8,
+     "name": "nose",
+     "seed": false,
+     "knob": "capHeadC8"
+    },
+    {
+     "child": 9,
+     "name": "palate",
+     "seed": false,
+     "knob": "capHeadC9"
+    },
+    {
+     "child": 10,
+     "name": "throat wall",
+     "seed": false,
+     "knob": "capHeadC10"
+    },
+    {
+     "child": 11,
+     "name": "under-jaw (deep)",
+     "seed": false,
+     "knob": "capHeadC11"
+    },
+    {
+     "child": 12,
+     "name": "temple/ear R",
+     "seed": false,
+     "knob": "capHeadC12"
+    },
+    {
+     "child": 13,
+     "name": "temple/ear L",
+     "seed": false,
+     "knob": "capHeadC13"
+    },
+    {
+     "child": 14,
+     "name": "back of head",
+     "seed": false,
+     "knob": "capHeadC14"
+    }
+   ],
+   "nifChildCount": {
+    "human": 23,
+    "argonian": 17,
+    "khajiit": 17,
+    "draenei": 23
+   }
+  },
+  {
+   "slot": 4,
+   "key": "spine0",
+   "node": "NPC Spine [Spn0]",
+   "nodeLeft": null,
+   "knobPrefix": "capSpine0",
+   "hasLeftTwin": false,
+   "namedRange": 8,
+   "children": [
+    {
+     "child": 0,
+     "name": "waist ring",
+     "seed": false,
+     "knob": "capSpine0"
+    },
+    {
+     "child": 1,
+     "name": "lower belly R",
+     "seed": false,
+     "knob": "capSpine0C1"
+    },
+    {
+     "child": 2,
+     "name": "lower belly L",
+     "seed": false,
+     "knob": "capSpine0C2"
+    },
+    {
+     "child": 3,
+     "name": "front waist band",
+     "seed": false,
+     "knob": "capSpine0C3"
+    },
+    {
+     "child": 4,
+     "name": "lower abdomen",
+     "seed": false,
+     "knob": "capSpine0C4"
+    },
+    {
+     "child": 5,
+     "name": "lower back R",
+     "seed": false,
+     "knob": "capSpine0C5"
+    },
+    {
+     "child": 6,
+     "name": "lower back L",
+     "seed": false,
+     "knob": "capSpine0C6"
+    },
+    {
+     "child": 7,
+     "name": "flank R",
+     "seed": false,
+     "knob": "capSpine0C7"
+    }
+   ],
+   "nifChildCount": {
+    "human": 8,
+    "argonian": 10,
+    "khajiit": 8,
+    "draenei": 8
+   }
+  },
+  {
+   "slot": 5,
+   "key": "spine1",
+   "node": "NPC Spine1 [Spn1]",
+   "nodeLeft": null,
+   "knobPrefix": "capSpine1",
+   "hasLeftTwin": false,
+   "namedRange": 11,
+   "children": [
+    {
+     "child": 0,
+     "name": "belly / navel (FRONT)",
+     "seed": false,
+     "knob": "capSpine1"
+    },
+    {
+     "child": 1,
+     "name": "belly side R",
+     "seed": false,
+     "knob": "capSpine1C1"
+    },
+    {
+     "child": 2,
+     "name": "belly side L",
+     "seed": false,
+     "knob": "capSpine1C2"
+    },
+    {
+     "child": 3,
+     "name": "midriff R",
+     "seed": false,
+     "knob": "capSpine1C3"
+    },
+    {
+     "child": 4,
+     "name": "midriff L",
+     "seed": false,
+     "knob": "capSpine1C4"
+    },
+    {
+     "child": 5,
+     "name": "flank R",
+     "seed": false,
+     "knob": "capSpine1C5"
+    },
+    {
+     "child": 6,
+     "name": "flank L",
+     "seed": false,
+     "knob": "capSpine1C6"
+    },
+    {
+     "child": 7,
+     "name": null,
+     "seed": true,
+     "knob": "capSpine1C7"
+    },
+    {
+     "child": 8,
+     "name": null,
+     "seed": true,
+     "knob": "capSpine1C8"
+    },
+    {
+     "child": 9,
+     "name": "BACK (lower)",
+     "seed": false,
+     "knob": "capSpine1C9"
+    },
+    {
+     "child": 10,
+     "name": null,
+     "seed": true,
+     "knob": "capSpine1C10"
+    }
+   ],
+   "nifChildCount": {
+    "human": 11,
+    "argonian": 11,
+    "khajiit": 11,
+    "draenei": 11
+   }
+  },
+  {
+   "slot": 6,
+   "key": "spine2",
+   "node": "NPC Spine2 [Spn2]",
+   "nodeLeft": null,
+   "knobPrefix": "capSpine2",
+   "hasLeftTwin": false,
+   "namedRange": 19,
+   "children": [
+    {
+     "child": 0,
+     "name": "chest ring",
+     "seed": false,
+     "knob": "capSpine2"
+    },
+    {
+     "child": 1,
+     "name": "lat R",
+     "seed": false,
+     "knob": "capSpine2C1"
+    },
+    {
+     "child": 2,
+     "name": "lat L",
+     "seed": false,
+     "knob": "capSpine2C2"
+    },
+    {
+     "child": 3,
+     "name": "front rib R",
+     "seed": false,
+     "knob": "capSpine2C3"
+    },
+    {
+     "child": 4,
+     "name": "front rib L",
+     "seed": false,
+     "knob": "capSpine2C4"
+    },
+    {
+     "child": 5,
+     "name": "lower chest",
+     "seed": false,
+     "knob": "capSpine2C5"
+    },
+    {
+     "child": 6,
+     "name": "trapezius R",
+     "seed": false,
+     "knob": "capSpine2C6"
+    },
+    {
+     "child": 7,
+     "name": "trapezius L",
+     "seed": false,
+     "knob": "capSpine2C7"
+    },
+    {
+     "child": 8,
+     "name": "collarbone R",
+     "seed": false,
+     "knob": "capSpine2C8"
+    },
+    {
+     "child": 9,
+     "name": "collarbone L",
+     "seed": false,
+     "knob": "capSpine2C9"
+    },
+    {
+     "child": 10,
+     "name": "sternum / cleavage",
+     "seed": false,
+     "knob": "capSpine2C10"
+    },
+    {
+     "child": 11,
+     "name": "BREAST R",
+     "seed": false,
+     "knob": "capSpine2C11"
+    },
+    {
+     "child": 12,
+     "name": "BREAST L",
+     "seed": false,
+     "knob": "capSpine2C12"
+    },
+    {
+     "child": 13,
+     "name": "shoulder cap R",
+     "seed": false,
+     "knob": "capSpine2C13"
+    },
+    {
+     "child": 14,
+     "name": "shoulder cap L",
+     "seed": false,
+     "knob": "capSpine2C14"
+    },
+    {
+     "child": 15,
+     "name": null,
+     "seed": true,
+     "knob": "capSpine2C15"
+    },
+    {
+     "child": 16,
+     "name": null,
+     "seed": true,
+     "knob": "capSpine2C16"
+    },
+    {
+     "child": 17,
+     "name": "BACK (upper)",
+     "seed": false,
+     "knob": "capSpine2C17"
+    },
+    {
+     "child": 18,
+     "name": null,
+     "seed": true,
+     "knob": "capSpine2C18"
+    }
+   ],
+   "nifChildCount": {
+    "human": 19,
+    "argonian": 19,
+    "khajiit": 19,
+    "draenei": 19
+   }
+  },
+  {
+   "slot": 7,
+   "key": "neck",
+   "node": "NPC Neck [Neck]",
+   "nodeLeft": null,
+   "knobPrefix": "capNeck",
+   "hasLeftTwin": false,
+   "namedRange": 1,
+   "children": [
+    {
+     "child": 0,
+     "name": "neck / throat",
+     "seed": false,
+     "knob": "capNeck"
+    }
+   ],
+   "nifChildCount": {
+    "human": 0,
+    "argonian": 0,
+    "khajiit": 0,
+    "draenei": 0
+   },
+   "shape": "bhkCapsuleShape (single capsule, NOT a list)",
+   "addressingNote": "Addressed as child 0 by convention; the body has no list children at all."
+  },
+  {
+   "slot": 8,
+   "key": "thighR",
+   "node": "NPC R Thigh [RThg]",
+   "nodeLeft": "NPC L Thigh [LThg]",
+   "knobPrefix": "capThigh",
+   "hasLeftTwin": true,
+   "namedRange": 7,
+   "children": [
+    {
+     "child": 0,
+     "name": "thigh rod",
+     "seed": false,
+     "knob": "capThigh"
+    },
+    {
+     "child": 1,
+     "name": "upper thigh / groin",
+     "seed": false,
+     "knob": "capThighC1"
+    },
+    {
+     "child": 2,
+     "name": "hip-glute fold",
+     "seed": false,
+     "knob": "capThighC2"
+    },
+    {
+     "child": 3,
+     "name": "upper thigh",
+     "seed": false,
+     "knob": "capThighC3"
+    },
+    {
+     "child": 4,
+     "name": "mid thigh",
+     "seed": false,
+     "knob": "capThighC4"
+    },
+    {
+     "child": 5,
+     "name": "lower thigh",
+     "seed": false,
+     "knob": "capThighC5"
+    },
+    {
+     "child": 6,
+     "name": "knee",
+     "seed": false,
+     "knob": "capThighC6"
+    }
+   ],
+   "nifChildCount": {
+    "human": 7,
+    "argonian": 7,
+    "khajiit": 7,
+    "draenei": 7
+   }
+  },
+  {
+   "slot": 9,
+   "key": "calfR",
+   "node": "NPC R Calf [RClf]",
+   "nodeLeft": "NPC L Calf [LClf]",
+   "knobPrefix": "capCalf",
+   "hasLeftTwin": true,
+   "namedRange": 5,
+   "children": [
+    {
+     "child": 0,
+     "name": "calf rod",
+     "seed": false,
+     "knob": "capCalf"
+    },
+    {
+     "child": 1,
+     "name": "upper calf",
+     "seed": false,
+     "knob": "capCalfC1"
+    },
+    {
+     "child": 2,
+     "name": "calf belly",
+     "seed": false,
+     "knob": "capCalfC2"
+    },
+    {
+     "child": 3,
+     "name": "shin (lower)",
+     "seed": false,
+     "knob": "capCalfC3"
+    },
+    {
+     "child": 4,
+     "name": "knee rear",
+     "seed": false,
+     "knob": "capCalfC4"
+    }
+   ],
+   "nifChildCount": {
+    "human": 5,
+    "argonian": 5,
+    "khajiit": 5,
+    "draenei": 5
+   }
+  },
+  {
+   "slot": 10,
+   "key": "footR",
+   "node": "NPC R Foot [Rft ]",
+   "nodeLeft": "NPC L Foot [Lft ]",
+   "knobPrefix": "capFoot",
+   "hasLeftTwin": true,
+   "namedRange": 4,
+   "children": [
+    {
+     "child": 0,
+     "name": "sole (inner)",
+     "seed": false,
+     "knob": "capFoot"
+    },
+    {
+     "child": 1,
+     "name": "sole (outer)",
+     "seed": false,
+     "knob": "capFootC1"
+    },
+    {
+     "child": 2,
+     "name": "arch",
+     "seed": false,
+     "knob": "capFootC2"
+    },
+    {
+     "child": 3,
+     "name": "ankle lock",
+     "seed": false,
+     "knob": "capFootC3"
+    }
+   ],
+   "nifChildCount": {
+    "human": 4,
+    "argonian": 4,
+    "khajiit": 4,
+    "draenei": 4
+   }
+  },
+  {
+   "slot": 11,
+   "key": "com",
+   "node": "NPC COM [COM ]",
+   "nodeLeft": null,
+   "knobPrefix": "capCom",
+   "hasLeftTwin": false,
+   "namedRange": 32,
+   "children": [
+    {
+     "child": 0,
+     "name": "orifice ring (base)",
+     "seed": false,
+     "knob": "capCom"
+    },
+    {
+     "child": 1,
+     "name": "orifice ring (mid)",
+     "seed": false,
+     "knob": "capComC1"
+    },
+    {
+     "child": 2,
+     "name": "orifice ring (upper)",
+     "seed": false,
+     "knob": "capComC2"
+    },
+    {
+     "child": 3,
+     "name": "inner pelvis wall R",
+     "seed": false,
+     "knob": "capComC3"
+    },
+    {
+     "child": 4,
+     "name": "inner pelvis wall L",
+     "seed": false,
+     "knob": "capComC4"
+    },
+    {
+     "child": 5,
+     "name": "pubic mound",
+     "seed": false,
+     "knob": "capComC5"
+    },
+    {
+     "child": 6,
+     "name": "groin crease R",
+     "seed": false,
+     "knob": "capComC6"
+    },
+    {
+     "child": 7,
+     "name": "groin crease L",
+     "seed": false,
+     "knob": "capComC7"
+    },
+    {
+     "child": 8,
+     "name": "front hip R",
+     "seed": false,
+     "knob": "capComC8"
+    },
+    {
+     "child": 9,
+     "name": "front hip L",
+     "seed": false,
+     "knob": "capComC9"
+    },
+    {
+     "child": 10,
+     "name": "rear centreline R",
+     "seed": false,
+     "knob": "capComC10"
+    },
+    {
+     "child": 11,
+     "name": "rear centreline L",
+     "seed": false,
+     "knob": "capComC11"
+    },
+    {
+     "child": 12,
+     "name": "upper glute R",
+     "seed": false,
+     "knob": "capComC12"
+    },
+    {
+     "child": 13,
+     "name": "upper glute L",
+     "seed": false,
+     "knob": "capComC13"
+    },
+    {
+     "child": 14,
+     "name": "inner rail R",
+     "seed": false,
+     "knob": "capComC14"
+    },
+    {
+     "child": 15,
+     "name": "inner rail L",
+     "seed": false,
+     "knob": "capComC15"
+    },
+    {
+     "child": 16,
+     "name": "BUTT CHEEK R",
+     "seed": false,
+     "knob": "capComC16"
+    },
+    {
+     "child": 17,
+     "name": "BUTT CHEEK L",
+     "seed": false,
+     "knob": "capComC17"
+    },
+    {
+     "child": 18,
+     "name": "hip R",
+     "seed": false,
+     "knob": "capComC18"
+    },
+    {
+     "child": 19,
+     "name": "hip L",
+     "seed": false,
+     "knob": "capComC19"
+    },
+    {
+     "child": 20,
+     "name": "rear centreline R (twin)",
+     "seed": false,
+     "knob": "capComC20"
+    },
+    {
+     "child": 21,
+     "name": "CLITORIS",
+     "seed": false,
+     "knob": "capComC21"
+    },
+    {
+     "child": 22,
+     "name": "vaginal opening R",
+     "seed": false,
+     "knob": "capComC22"
+    },
+    {
+     "child": 23,
+     "name": "vaginal opening L",
+     "seed": false,
+     "knob": "capComC23"
+    },
+    {
+     "child": 24,
+     "name": "cervix R",
+     "seed": false,
+     "knob": "capComC24"
+    },
+    {
+     "child": 25,
+     "name": "cervix L",
+     "seed": false,
+     "knob": "capComC25"
+    },
+    {
+     "child": 26,
+     "name": "uterus R",
+     "seed": false,
+     "knob": "capComC26"
+    },
+    {
+     "child": 27,
+     "name": "uterus L",
+     "seed": false,
+     "knob": "capComC27"
+    },
+    {
+     "child": 28,
+     "name": "anus R",
+     "seed": false,
+     "knob": "capComC28"
+    },
+    {
+     "child": 29,
+     "name": "anus L",
+     "seed": false,
+     "knob": "capComC29"
+    },
+    {
+     "child": 30,
+     "name": "rectum R",
+     "seed": false,
+     "knob": "capComC30"
+    },
+    {
+     "child": 31,
+     "name": "rectum L",
+     "seed": false,
+     "knob": "capComC31"
+    }
+   ],
+   "nifChildCount": {
+    "human": 32,
+    "argonian": 32,
+    "khajiit": 32,
+    "draenei": 32
+   }
+  }
+ ],
+ "knobPrefixNote": "knobPrefix and child knob values are PREFIXES: the real tuning keys are <knob>Enable / <knob>AX / AY / AZ / BX / BY / BZ / R. Verified present in the shipped PPB_tuning.txt."
 }

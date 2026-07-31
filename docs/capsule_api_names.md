@@ -41,8 +41,8 @@ Never resolve an unnamed index to a human name.
 
 | Child | Name | Tuning knob |
 |---|---|---|
-| C0 | forearm (elbow half) | `capForearm` |
-| C1 | forearm (wrist half) | `capForearmC1` |
+| C0 | forearm (elbow half) | `capFore` |
+| C1 | forearm (wrist half) | `capForeC1` |
 
 ## Slot 2 - `upperarm` (`NPC R UpperArm [RUar]`)
 
@@ -50,10 +50,10 @@ Never resolve an unnamed index to a human name.
 
 | Child | Name | Tuning knob |
 |---|---|---|
-| C0 | upper arm (shoulder half) | `capUpperarm` |
-| C1 | upper arm (elbow half) | `capUpperarmC1` |
-| C2 | deltoid / shoulder cap | `capUpperarmC2` |
-| C3 | upper arm (elbow half, inner twin) | `capUpperarmC3` |
+| C0 | upper arm (shoulder half) | `capUpper` |
+| C1 | upper arm (elbow half) | `capUpperC1` |
+| C2 | deltoid / shoulder cap | `capUpperC2` |
+| C3 | upper arm (elbow half, inner twin) | `capUpperC3` |
 
 ## Slot 3 - `head` (`NPC Head [Head]`)
 
@@ -87,14 +87,14 @@ Never resolve an unnamed index to a human name.
 
 | Child | Name | Tuning knob |
 |---|---|---|
-| C0 | waist ring | `capSpine` |
-| C1 | lower belly R | `capSpineC1` |
-| C2 | lower belly L | `capSpineC2` |
-| C3 | front waist band | `capSpineC3` |
-| C4 | lower abdomen | `capSpineC4` |
-| C5 | lower back R | `capSpineC5` |
-| C6 | lower back L | `capSpineC6` |
-| C7 | flank R | `capSpineC7` |
+| C0 | waist ring | `capSpine0` |
+| C1 | lower belly R | `capSpine0C1` |
+| C2 | lower belly L | `capSpine0C2` |
+| C3 | front waist band | `capSpine0C3` |
+| C4 | lower abdomen | `capSpine0C4` |
+| C5 | lower back R | `capSpine0C5` |
+| C6 | lower back L | `capSpine0C6` |
+| C7 | flank R | `capSpine0C7` |
 
 ## Slot 5 - `spine1` (`NPC Spine1 [Spn1]`)
 

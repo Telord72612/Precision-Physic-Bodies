@@ -1,0 +1,374 @@
+# Integrating with the PPB Touch API
+
+**Precision Physic Bodies (PPB) tells your mod when the player touches an NPC, where, with what,
+and for how long.** This document is everything you need to consume it. No prior PPB knowledge
+assumed.
+
+There are three ways in, and they are equivalent in what they report:
+
+| You are writing | Use | Effort |
+|---|---|---|
+| A Papyrus script | **Mod events** — `RegisterForModEvent("PPB_TouchStart", ...)` | 10 lines |
+| A Papyrus script that polls | **Natives** — script `PPB_Touch`, 12 global functions | 15 lines |
+| An SKSE (C++) plugin | **The native interface** — copy `src/PpbTouchAPI.h` | 30 lines |
+
+Start with the mod events. Move to the native interface only if you need callbacks at frame rate,
+live capsule geometry, or to avoid the Papyrus VM.
+
+---
+
+## 1. What a contact tells you
+
+Five things, which were the whole point of the design:
+
+| | Meaning | Example |
+|---|---|---|
+| **WHO** | the touched NPC | the event's `sender`, an `Actor` |
+| **WHERE** | the body part, at three levels of detail | `Face` / `In mouth` / `palate` |
+| **BY WHO** | the toucher | the player (see *Coverage*, below) |
+| **WITH WHAT** | how they touched | `FINGER`, `FIST`, `PALM`, `GRAB`, `WEAPON:Iron Sword`, `OBJECT:Apple` |
+| **DURATION** | how long the contact has lasted | `6.11` seconds |
+
+Plus a distance in game units — **negative means inside the capsule**, so it doubles as a
+penetration depth.
+
+### The three levels of WHERE
+
+```
+Region       Face          13 of these. The coarse bucket, and what the digest groups by.
+SubRegion    In mouth      33 of these. The finer bucket, and the depth ladder.
+Capsule      palate        107 of these. The exact named capsule.
+```
+
+The full list of all 107 capsules with their region, sub-region, depth and override behaviour is
+in **`PPB_Touch_API_Contact_List.xlsx`** (shipped alongside this file). Read it once; it will
+answer most of your questions faster than this document will.
+
+### The depth ladder — the part people get wrong
+
+Within the mouth and within the intimate chain, sub-regions are ordered shallow → deep, and each
+level **overrides** the ones below it:
+
+```
+Face surface  <  Mouth opening  <  In mouth  <  Mouth wall
+0 surface        1 opening         2 inside     3 deepest
+```
+
+A cheek or a chin reports **`Face surface`**. Those capsules participate in mouth detection, but
+only *in conjunction* — the mouth gate needs the palate AND both cheeks at once. On its own, a
+cheek touch is a face touch and nothing more. **Do not treat a cheek contact as "near her mouth".**
+
+The **palate** reports `In mouth`. If it registers, something *is* inside her mouth, and that
+outranks any simultaneous lip or cheek reading.
+
+The **throat wall** reports `Mouth wall` and outranks even the palate.
+
+The intimate chain works the same way: `opening` → `deep` → `deepest` for both tracts.
+
+If you only care *how far in*, ignore the names and read the depth number:
+
+```papyrus
+If PPB_Touch.GetContactDepth(i) >= 2      ; 2 = inside, 3 = deepest
+```
+
+---
+
+## 2. Papyrus — mod events (the easy path)
+
+```papyrus
+Scriptname MyTouchWatcher extends ReferenceAlias
+
+Event OnPlayerLoadGame()
+    RegisterForModEvent("PPB_TouchStart", "OnPpbTouchStart")
+    RegisterForModEvent("PPB_TouchEnd",   "OnPpbTouchEnd")
+EndEvent
+
+; strArg = "WAND|SOURCE|BODYPART|SKELETON"
+; numArg = surface distance in units on Start (negative = inside)
+;          the contact's total DURATION in seconds on End
+Event OnPpbTouchStart(String eventName, String strArg, Float numArg, Form sender)
+    Actor victim = sender as Actor
+    String[] f = StringUtil.Split(strArg, "|")     ; PapyrusUtil, or split by hand
+    ; f[0] = "L" or "R"      f[1] = "FINGER"
+    ; f[2] = "Face(cheek L)" f[3] = "human"
+    Debug.Notification(victim.GetDisplayName() + ": " + f[1] + " on " + f[2])
+EndEvent
+
+Event OnPpbTouchEnd(String eventName, String strArg, Float numArg, Form sender)
+    If numArg > 3.0
+        Debug.Notification("held for " + numArg + "s")
+    EndIf
+EndEvent
+```
+
+Three events fire per contact: `PPB_TouchStart`, then `PPB_Touch` repeatedly while it holds
+(at `apiHz`, default 4/s), then `PPB_TouchEnd`.
+
+> **Caprica users:** the compiler rejects new event declarations in non-native scripts. Declare
+> your `OnPpbTouchStart` (empty body) in an imported ancestor stub so your script's copy is an
+> override. Bethesda's compiler does not need this.
+
+### Registering the callback
+
+`RegisterForModEvent` must be re-run every game load. Put it in `OnPlayerLoadGame()` on a
+player-alias script, or `OnInit()` plus `OnPlayerLoadGame()`. A quest script never receives
+`OnPlayerLoadGame` — use a `ReferenceAlias` filled with the player.
+
+---
+
+## 3. Papyrus — the polling natives
+
+For the sub-region, the depth, or when you would rather ask than listen. The script is
+`PPB_Touch` (already compiled and shipped — you do not need the source to call it):
+
+```papyrus
+Int n = PPB_Touch.GetContactCount()
+Int i = 0
+While i < n
+    Actor  who      = PPB_Touch.GetContactActor(i)
+    String region   = PPB_Touch.GetContactRegion(i)      ; "Face"
+    String sub      = PPB_Touch.GetContactSubRegion(i)   ; "In mouth"
+    Int    depth    = PPB_Touch.GetContactDepth(i)       ; 2
+    String part     = PPB_Touch.GetContactBodyPart(i)    ; "Face(palate)"
+    String source   = PPB_Touch.GetContactSource(i)      ; "FINGER"
+    String wand     = PPB_Touch.GetContactWand(i)        ; "L" or "R"
+    Float  duration = PPB_Touch.GetContactDuration(i)    ; seconds
+    Float  distU    = PPB_Touch.GetContactDistance(i)    ; negative = inside
+    i += 1
+EndWhile
+```
+
+**Indices are not stable between polls.** The list is a snapshot refreshed at `apiHz`; read
+everything you need for a contact in one pass, then move on. Do not cache index `3` and expect it
+to be the same contact next tick.
+
+Full function list: `GetContactCount`, `GetContactActor`, `GetContactBodyPart`,
+`GetContactSource`, `GetContactWand`, `GetContactSkeleton`, `GetContactDuration`,
+`GetContactDistance`, `GetContactPacked`, `GetContactRegion`, `GetContactSubRegion`,
+`GetContactDepth`.
+
+---
+
+## 4. SKSE C++ — the native interface
+
+Copy **`src/PpbTouchAPI.h`** into your project. It is deliberately self-contained: no CommonLib
+types, no SKSE types, actors addressed by FormID. It compiles under CommonLibSSE, CommonLibVR or
+classic skse64.
+
+### Acquiring it
+
+The same request/reply pattern HIGGS and PLANCK use. Any time at or after `kPostLoad`:
+
+```cpp
+#include "PpbTouchAPI.h"
+PPBAPI::IPpbTouchInterface1* g_ppb = nullptr;
+
+void AcquirePPB() {
+    PPBAPI::PpbMessage msg{};
+    SKSE::GetMessagingInterface()->Dispatch(
+        PPBAPI::PpbMessage::kGetTouchInterface, &msg, sizeof(msg), "PPB");
+    if (msg.GetApiFunction)
+        g_ppb = static_cast<PPBAPI::IPpbTouchInterface1*>(msg.GetApiFunction(1));
+    logger::info("PPB touch API: {}", g_ppb ? "acquired" : "not present");
+}
+```
+
+`GetApiFunction` null ⇒ PPB is not installed. `GetApiFunction(1)` returning null ⇒ PPB does not
+speak revision 1 (it will, for the foreseeable future). **Both are normal.** Ship a fallback path;
+never assume PPB is there.
+
+### Receiving contacts
+
+Either register a callback:
+
+```cpp
+void OnTouch(const PPBAPI::PpbTouchContact* c, int phase) {
+    if (phase != PPBAPI::kPhaseStart) return;
+    logger::info("{:08X} {} / {} / {} by {} for {:.2f}s at {:.2f}u",
+                 c->actorFormId,
+                 g_ppb->RegionName(c->region),        // "Face"
+                 g_ppb->SubRegionName(c->subRegion),  // "In mouth"
+                 c->bodyPart,                         // "Face(palate)"
+                 (int)c->sourceKind, c->durationS, c->distU);
+    if (c->depth >= PPBAPI::kDepthInside) { /* something went in */ }
+}
+g_ppb->AddTouchCallback(&OnTouch);
+```
+
+...or poll a snapshot whenever it suits you:
+
+```cpp
+PPBAPI::PpbTouchContact buf[16];
+int n = g_ppb->GetContacts(buf, 16);
+```
+
+The contact pointer handed to a callback is valid **only for the duration of the call** — copy
+what you need. Callbacks fire on the **main thread**, at most at `apiHz`. Do not block in them.
+
+### The rest of the interface
+
+```cpp
+GetBuildNumber()                          // version probe
+IsDriven(formId)                          // is this actor covered at all?
+GetSkeleton(formId, out, cap)             // "human" / "argonian" / "khajiit" / "draenei"
+GetContacts(out, max)                     // digest snapshot
+GetRawContacts(out, max)                  // verbose snapshot (see §6)
+ReadCapsule(formId, slot, left, child, a, b, &r)   // live world geometry, game units
+CapsuleName(slot, child)                  // "palate"
+ChildCount(formId, slot)                  // live child count of a slot
+RegionOf(slot, child) / RegionName(r)
+SubRegionOf(slot, child) / SubRegionName(s) / SubRegionDepth(s)
+```
+
+`ReadCapsule` is the one worth knowing about beyond touch: it hands you the live world-space
+endpoints and radius of any capsule on any driven NPC, already carrying that NPC's scale, body
+shape and pose. If you need to know where a body part physically *is*, that is the call.
+
+---
+
+## 5. Coverage — read this before you ship
+
+**PPB drives female NPCs of mapped races**: the human catch-all (which covers elf, orc and most
+custom races on a typical load order), Argonian, Khajiit, Draenei, plus anything the user adds to
+`PPB_Skeletons_Added_Race.ini`.
+
+**Males, children and creatures are not covered.** They answer `IsDriven() == false` and never
+appear in the contact stream. If your mod needs those, route them to your own fallback — do not
+assume silence means "nothing happened".
+
+**The toucher is the player.** NPC-vs-NPC touch is a planned revision-2 feature; `toucherFormId`
+is `0x14` today and you should not hardcode that assumption in a way that breaks later.
+
+**Hover counts as contact.** The default threshold is 1.0 unit (~1 cm), so a near-miss registers
+briefly. If you want presses only, filter on `distU < 0`.
+
+---
+
+## 6. Two streams — digest and raw
+
+A real touch wanders. A finger on someone's face crosses five capsules in six seconds without
+resting half a second on any one of them. Reporting each capsule either floods you or — with a
+naive per-capsule dwell filter — reports **nothing at all**.
+
+So there are two streams, and you pick:
+
+| | **DIGEST** (default) | **RAW** (opt-in) |
+|---|---|---|
+| events | `PPB_TouchStart` / `PPB_Touch` / `PPB_TouchEnd` | `PPB_TouchRawStart` / `PPB_TouchRaw` / `PPB_TouchRawEnd` |
+| one contact per | (actor, hand, **region**) | (actor, hand, source class) |
+| BODYPART | `Face(cheek L)` | `cheek L` |
+| dwell gate | accumulated time **in the region** | per capsule |
+| native | `GetContacts()` | `GetRawContacts()` |
+| callbacks | yes | no — poll |
+
+**Use the digest.** It is what you want ~95% of the time: one `Face(cheek L) dur=6.11s` event for
+a whole visit, naming the capsule dwelt on longest.
+
+Two deliberate properties of the digest:
+
+* **Changing hand pose does not restart the contact.** Going finger → fist mid-touch is one
+  continuous contact; `SOURCE` reports the pose held longest.
+* **`distU` is the deepest penetration reached during the visit**, not the current frame. For a
+  summary event, "how far did it get" is the useful number. Raw carries live distance.
+
+The raw stream ships **off** (`apiRawEvents 0` in `PPB_tuning.txt`) because it is chatty. Ask
+users to enable it only if your mod genuinely needs per-capsule transitions.
+
+---
+
+## 7. Dwell — why you may see nothing
+
+Tracking is always full-rate. **Emission** is gated: a contact must linger before it is reported
+at all. A contact that never qualifies emits nothing — no Start, no End, and it never appears in
+the snapshot.
+
+| Region | Default | Why |
+|---|---|---|
+| Intimate | 0.5 s | an insertion is already deliberate |
+| Tail / Hair | 1.0 s | |
+| everything else | 1.0 s | limbs, torso |
+| Face | 1.5 s | brushes are common; meaning needs intent |
+| Pelvis | 2.0 s | the most brushed-in-passing region |
+
+These are host-side knobs (`apiDwell*` in `PPB_tuning.txt`), not per-consumer. If your mod needs a
+faster trigger, document it and let the user lower the knob — do not expect PPB to filter per
+subscriber.
+
+**If you are testing and seeing no events, this is almost always why.** Hold the touch for two
+full seconds.
+
+---
+
+## 8. Gotchas worth knowing up front
+
+**Self-touch is impossible by construction.** An NPC's own hair or tail can never trigger her own
+body: garment rigs are never probe *sources*, only targets. Not a threshold — a property of the
+design.
+
+**A held weapon or object suppresses that hand's bare-hand contacts.** Your palm is wrapped around
+the grip, so those were phantom `FIST` events beside every knife touch. The *other* hand is
+unaffected, and `GRAB` is unaffected.
+
+**Hair is declared but never emitted.** `kSlotHair` exists in the header with a warning. Hair
+strands drape the face and head, so they would win the nearest-surface race against cheeks and
+shadow every face touch. The host can enable it (`apiHairTarget`); write code that tolerates never
+seeing it.
+
+**Vanilla tails are not touchable.** Every NPC carries dormant `TailBone01..05` nodes, but without
+an SMP rig nothing can drive them. Only HDT-SMP tails produce tail contacts.
+
+**Tail position is thirds, not chord indices.** `base` / `mid` / `tip` are computed from the
+chord's position in the chain, so `tip` means the same place on a 4-chord foxtail and a 14-chord
+fluffy tail.
+
+**Broad weapons read generously.** The blade segment comes from the equipped form's bound box, so
+an axe's radius is ~23 units where a sword's is slim. Expect axes and hammers to register early.
+
+**M'rissi reports `skeleton=human`.** Her race is repointed to the human PPB skeleton and her
+foxtail is an equipped rig, not skeleton anatomy. Not a bug.
+
+**The event string is four fields.** Split on the first three `|` if you want to be bulletproof
+against exotic `OBJECT:` names. There is an opt-in host knob (`apiSubRegionInEvent`) that appends
+the sub-region as a fifth field — it ships **off** precisely so this contract does not move under
+you. Get the sub-region from the natives or the C++ struct instead.
+
+---
+
+## 9. Versioning contract
+
+**The vtable is append-only.** Methods are never reordered, removed, or re-signatured. New
+functionality is appended at the end, or arrives as an `IPpbTouchInterface2`.
+
+**There is deliberately no virtual destructor.** Slot 0 is `GetBuildNumber`, forever. (The
+HDT-SMP v1/v2 split taught the ecosystem what a destructor-at-slot-0 mismatch does: the engine
+calls your destructor once per event.)
+
+**`PpbTouchContact` is a frozen 160-byte POD** and grows only into its reserved tail. Do not read
+`_reserved`; do not assume it stays zero.
+
+**Enum values are frozen; new ones append.** Do not assume the numeric spacing between sub-region
+families is stable — switch on the names, or use `SubRegionDepth()`.
+
+This is why regions, raw contacts, the tail pseudo-slot and the whole sub-region layer were all
+added without a revision bump. A plugin built against the first release of this header still runs
+against today's PPB.
+
+---
+
+## 10. Reference
+
+| File | What it is |
+|---|---|
+| `src/PpbTouchAPI.h` | the consumer contract — copy this into your project |
+| `PPB_Touch_API_Contact_List.xlsx` | all 107 capsules: region, sub-region, depth, overrides |
+| `docs/16_Public_Touch_API.md` | the as-built design record and why each decision was made |
+| `docs/15_Capsule_Body_Part_Map.md` | the capsule naming table and how it was verified |
+| `Scripts/Source/PPB_Touch.psc` | the Papyrus declarations, with per-function notes |
+
+Host-side knobs live in `SKSE/Plugins/PPB_tuning.txt` and hot-reload at ~1 Hz. The ones a consumer
+cares about: `apiTouch` (master), `apiHz` (event rate), `apiEvents` / `apiRawEvents` (streams),
+`apiDwell*` (the gates above), `apiTouchU` (hover threshold), `apiHairTarget`, `apiLog`
+(log every Start/End to `My Games/Skyrim VR/SKSE/PPB.log` — turn this on first when debugging).
+
+Questions, or a case the API cannot express: open an issue at
+<https://github.com/Telord72612/Precision-Physic-Bodies>.

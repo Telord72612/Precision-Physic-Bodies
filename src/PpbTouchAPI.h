@@ -45,7 +45,8 @@
 //  ── THREADING CONTRACT ───────────────────────────────────────────────────────────────
 //  * All interface methods are MAIN-THREAD ONLY, and cheap (snapshot reads).
 //  * Touch callbacks fire on the MAIN thread, at most at the configured event rate
-//    (apiHz, default 20/s). Do not block in them.
+//    (apiHz, which SHIPS AT 4/s - it is a host knob, do not assume a rate). Do not
+//    block in them.
 //  * Papyrus: PPB also fires mod events (below) and exposes polling natives
 //    (script "PPB_Touch"), both safe from any Papyrus context.
 //
@@ -125,6 +126,60 @@ namespace PPBAPI {
         kRegionFoot, kRegionTail, kRegionHair,
     };
 
+    // ── SUB-REGIONS (2026-07-31) ─────────────────────────────────────────────────────────
+    // A finer bucket than Region, and the one that answers "how far in did it get". Region
+    // says Face; SubRegion distinguishes a cheek from a fingertip on the palate.
+    //
+    // ★ THE DEPTH LADDER — this is the point of the enum, not a nicety.
+    // Within the mouth and within the intimate chain, values are ordered SHALLOW -> DEEP and
+    // each level OVERRIDES the ones below it:
+    //     Face surface  <  Mouth opening  <  In mouth  <  Mouth wall
+    //     external      <  opening        <  deep      <  deepest
+    // A cheek or a chin is an ordinary FACE TOUCH on its own — those capsules only signify
+    // "mouth" in conjunction (the mouth gate needs the palate AND both cheeks at once). But a
+    // touch on the PALATE means something IS inside her mouth, full stop, and outranks any
+    // simultaneous lip/cheek reading. The THROAT WALL outranks even that. SubRegionDepth()
+    // collapses this to a 0..3 number if you only care "how deep", not "where".
+    //
+    // Values are frozen; new sub-regions APPEND. Do not assume the numeric spacing between
+    // families is stable across revisions — switch on the names, or use SubRegionDepth().
+    enum SubRegion : int {
+        kSubNone = 0,
+        // head — depth ladder runs kSubFaceSurface -> kSubMouthOpening -> kSubInMouth -> kSubMouthWall
+        kSubHead,             // cranium, occiput
+        kSubHeadEar,          // temple / ear side (the EAR capsules on beast heads)
+        kSubFaceSurface,      // cheekbone, nose, cheeks, chins — a face touch on its own
+        kSubMouthOpening,     // the lip ring: at the mouth, not inside it
+        kSubInMouth,          // palate — a touch here means something IS inside
+        kSubInMouthDeep,      // under-jaw / deep floor of the cavity
+        kSubMouthWall,        // throat wall: the end of the cavity, outranks everything
+        kSubNeck,
+        // torso
+        kSubShoulderCap, kSubRibCage, kSubBreast, kSubBelly, kSubWaist,
+        // arms
+        kSubShoulder, kSubUpperArm, kSubForearm, kSubPalm,
+        // pelvis — kSubOrificeRing is OUTSIDE the intimate chain (region Pelvis, not Intimate)
+        kSubPelvis, kSubOrificeRing, kSubGlute,
+        // intimate chain — ordered by depth within each tract
+        kSubIntimateExternal,                       // clitoris
+        kSubVaginalOpening, kSubVaginalDeep, kSubVaginalDeepest,
+        kSubAnalOpening, kSubAnalDeep,
+        // legs
+        kSubThigh, kSubCalf, kSubFoot,
+        // garments — tail reports thirds of the chord chain, so "tip" means the same place
+        // on a 4-chord foxtail and a 14-chord fluffy tail
+        kSubTailBase, kSubTailMid, kSubTailTip, kSubHair,
+    };
+
+    // SubRegionDepth() buckets. Only meaningful on the mouth and intimate chains; every
+    // other sub-region answers kDepthSurface.
+    enum SubRegionDepthLevel : int {
+        kDepthSurface = 0,   // outside: skin, a face touch, a hip
+        kDepthOpening = 1,   // at the entrance: lips, vaginal/anal opening
+        kDepthInside  = 2,   // unambiguously inside: palate, cervix, rectum
+        kDepthDeepest = 3,   // the far wall: throat, uterus
+    };
+
     // One live contact. Fixed 160-byte POD; the reserved tail lets future revisions add
     // fields without moving anything.
     struct PpbTouchContact {
@@ -142,7 +197,12 @@ namespace PPBAPI {
         char          bodyPart[48];  // named body part (or "<slot>.C<n>")
         char          skeleton[12];  // "human" / "argonian" / "khajiit" / "draenei"
         char          sourceName[48];// weapon/object base name for kSourceWeapon/Object, else ""
-        unsigned char _reserved[24]; // future fields; zero today
+        // ── appended 2026-07-31 out of the reserved tail (the sanctioned growth path) ──
+        // Both are self-describing so you never need a second call to classify a contact.
+        unsigned char region;        // Region of the reported part (digest: the contact's own)
+        unsigned char subRegion;     // SubRegion of the reported part
+        unsigned char depth;         // SubRegionDepthLevel — 0 surface .. 3 deepest
+        unsigned char _reserved[21]; // future fields; zero today
     };
     static_assert(sizeof(PpbTouchContact) == 160, "PpbTouchContact layout is frozen");
 
@@ -182,6 +242,17 @@ namespace PPBAPI {
         virtual int  RegionOf(int slot, int child) = 0;                                  // 09
         // Human-readable region name ("Face", "Intimate", ...); static string, never freed.
         virtual const char* RegionName(int region) = 0;                                  // 10
+        // ── appended 2026-07-31 ──────────────────────────────────────────────────────────
+        // SubRegion of a (slot, child) — the finer bucket, and the depth ladder. 0 = unknown.
+        // Garment chords: pass kSlotTail/kSlotHair with the chord index; tail resolves to
+        // base/mid/tip using the LIVE chord count of the nearest rig.
+        virtual int  SubRegionOf(int slot, int child) = 0;                               // 11
+        // Human-readable sub-region name ("Face surface", "In mouth", "Mouth wall",
+        // "Intimate - vaginal (deep)", "Tail - tip", ...); static string, never freed.
+        virtual const char* SubRegionName(int subRegion) = 0;                            // 12
+        // How far in: SubRegionDepthLevel, 0 surface .. 3 deepest. Use this when you only
+        // care whether something went inside, not exactly where.
+        virtual int  SubRegionDepth(int subRegion) = 0;                                  // 13
     };
 
     // The messaging request. Dispatch to sender "PPB" with this struct as data; PPB fills
