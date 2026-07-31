@@ -1,133 +1,289 @@
-# 16 — The Public Touch API (as built, 2026-07-30)
+# 16 — The Public Touch API (as built and verified, 2026-07-30)
 
-**Status: VERIFIED IN VR, 2026-07-30 — every source kind, from real receipts.** Four test
-sessions same-day; the verified matrix and the fixes each session forced are in §Verification
-at the bottom. `apiLog` stays 1 on the dev machine; the packager refuses to ship it on.
+**Module of the Precision Physic Bodies technical reference.**
+Scope: PPB's contact-reporting API for other mods — what it emits, how it decides, every
+design rule and why, and the measured evidence behind each. VRTouchEvents is the first
+consumer; its handbook (`Report/VRTouchEvents Module/13`) carries an AS-BUILT note because the
+shipped names differ from its draft.
 
-## What it is
-
-The five-variable contact report the user specified, exposed three ways:
-
-| variable | delivery |
-|---|---|
-| **WHO** (touched NPC) | event `sender` = the Actor; native `actorFormId`; Papyrus `GetContactActor(i)` |
-| **WHERE** (capsule) | the 107-name map via `NpcFinger::PartName`, side-prefixed on limb slots; unnamed children fall back to `<slot>.C<n>` — never silently dropped |
-| **BY WHO** | the player, always, in revision 1 (`toucherFormId = 0x14`); NPC touchers are the planned rev-2 pillar |
-| **WITH WHAT** | `FINGER / PALM / FIST / HAND / GRAB / WEAPON:<name> / OBJECT:<name>` |
-| **DURATION** | seconds since contact began; `PPB_TouchEnd`'s `numArg` IS the final duration |
-
-**Channels:** ① mod events `PPB_TouchStart` / `PPB_Touch` (continuous at `apiHz`) / `PPB_TouchEnd`,
-`strArg = "WAND|SOURCE|BODYPART|SKELETON"`; ② Papyrus polling natives, class `PPB_Touch` (9
-functions, snapshot-backed); ③ the native interface `PPBAPI::IPpbTouchInterface1` acquired via
-the HIGGS request/reply pattern (`PpbMessage::kGetTouchInterface = 'PPBT'` dispatched to sender
-`"PPB"`). The consumer contract lives in **`src/PpbTouchAPI.h`** — a deliberately self-contained
-header (FormIDs only, no CommonLib types) with the versioning rules written into it: append-only
-vtable, **no virtual destructor** (slot 0 is `GetBuildNumber`, forever — the HDT-SMP v1/v2
-listener lesson), and a frozen 160-byte `PpbTouchContact` POD with a reserved tail.
-
-## How it works (files)
-
-* `src/PpbApi.cpp` — the engine. Roster of driven actors filled by `NpcFinger::OnPreDrive`
-  (`NoteDriven`, same-frame-only pointers — the `g_gt.best` pattern), consumed by `PpbApi::OnFrame`
-  on the HIGGS PostVrikPostHiggs callback, throttled to `apiHz` (default 20).
-* Probes per tick: the 4 HandBox boxes per hand (tips for the index pair, centres for slab/plate),
-  the HIGGS weapon body (`NpcFinger::WeaponPointU`, new export), and the HIGGS-held object
-  (worldBound centre + radius; a grabbed *Actor* is never an OBJECT — it becomes GRAB).
-* Targets: 12 slots × sides × live children via `GrabDiag::ReadCapsuleWorldUSide`. Detection =
-  point-to-segment minus radius. **Two-level culling**: actor gate (any probe within 160 u of the
-  actor), then slot gate (child 0 within 60 u stands proxy), then children.
-* **Contact identity = (actor, wand, source class)** — the capsule updates live while the hand
-  slides, the contact and its duration survive the slide. Mark-sweep per tick; hysteresis
-  (`apiTouchU` enter, `+apiExitPadU` exit).
-* Classifier: GRAB if HIGGS holds *this* actor with that hand; FIST if the index-distal tip sits
-  within `apiFistTipPalmU` of the palm plate; FINGER if an index box made the nearest contact;
-  PALM if the plate did; else HAND.
-* `SkeletonOf` mirrors PPBHook's `oursPPB` idiom (female + race skeleton path contains `\PPB\`),
-  then classifies khajiit / draenei / argonian(beast) / human. `DismemberGuard::IsExcluded`
-  actors answer not-driven — the doc-13 exclusion contract.
-* Snapshot: 4-deep rotation (TargetBuf pattern); natives read it from VM threads lock-free.
-* Teardown: `PpbApi::ClearOnLoad()` at kPreLoadGame — contacts never survive a load, no phantom
-  End events.
-
-## Self-touch is structurally impossible (the user's worry)
-
-An NPC's own hair/tail capsules can never trigger her own body: garment rigs are **never probe
-sources** — only the player's hands, weapon and held object are. Not a threshold; a property of
-the design. (Tails ARE targets since same-day rev 1.1 — pseudo-slot 100. Hair stays out by
-the same logic that protects self-touch: it drapes the face and would shadow head touches.)
-
-## Knobs
-
-`apiTouch 1 · apiHz 4 (user: "4hz is perfect") · apiTouchU 1.0 · apiExitPadU 0.75 ·
-apiMaxActors 3 · apiRangeU 300 · apiFistTipPalmU 2 (measured; see fix ladder) · apiEvents 1 ·
-apiLog 0 · apiHairTarget 0` — all live (PK_NOSNAP).
-
-## Verification plan (first session)
-
-1. `API: touch interface handed to ...` only appears if some plugin asks — absence is normal.
-2. Touch Lydia with a fingertip → `API START <id> R|FINGER|<part>|human d=…` then, on release,
-   `API END … dur=…s`. Slide across her arm → part changes in the continuous stream, duration keeps
-   counting.
-3. Fist, open palm, grab her, poke with a sword, press a held apple against her — each should
-   reclassify. FIST threshold (`apiFistTipPalmU 7`) is a guess pending VR feel.
-4. `cgf "PPB_Touch.GetContactCount"` in the console while touching → ≥ 1.
-
-## Known limits (rev 1, all deliberate)
-
-Player-as-toucher only (NPC touchers = rev 2) · TAIL chords are targets (pseudo-slot 100,
-base/mid/tip); hair is declared but gated off (`apiHairTarget`) · weapon = form-bound blade
-segment (see fix ladder below) · `PPB_Touch.psc` compiled with Caprica (needs
-`--flags tools/Caprica/TESV_Papyrus_Flags.flg` — the vanilla flg is not in the VR install's
-loose files).
+> **Status: VERIFIED IN VR** across five same-day sessions. Every source kind, tails, weapons,
+> multi-actor, sliding, penetration depth. The digest layer, dwell filter, sensor priority and
+> held-hand suppression are **built and deployed but not yet exercised in VR** — they landed
+> after the last test session. Verification matrix in §9.
 
 ---
 
-## Verification (2026-07-30, four same-day VR sessions) — ALL PASSED
+## 1. What it delivers
 
-| item | receipt evidence |
+Five variables per contact, the user's original spec:
+
+| variable | how it arrives |
 |---|---|
-| FINGER | `R\|FINGER\|CLITORIS d=0.70u dur=3.31s vrik=I1.00/M0.00` — the pointing pose from live VRIK state |
-| PALM | `L\|PALM\|cheekbone R vrik=I1.00/M0.49` and tail strokes at `I1.00/M1.00` |
+| **WHO** — the touched NPC | event `sender` = the Actor; `actorFormId` natively; `PPB_Touch.GetContactActor(i)` |
+| **WHERE** — the body part | named from the 107-capsule map; digest reads `Region(longest part)` |
+| **BY WHO** — the toucher | the player in revision 1 (`toucherFormId = 0x14`); NPC touchers are rev 2 |
+| **WITH WHAT** | `FINGER / PALM / FIST / HAND / GRAB / WEAPON:<name> / OBJECT:<name>` |
+| **DURATION** | seconds since the contact began; `PPB_TouchEnd`'s `numArg` **is** the final duration |
+
+Three channels, three audiences:
+
+1. **Papyrus mod events** — the drop-in path. `strArg = "WAND|SOURCE|BODYPART|SKELETON"`.
+2. **Papyrus polling natives** — script class `PPB_Touch`, 9 `GetContact*` functions, snapshot-backed.
+3. **Native SKSE interface** — `PPBAPI::IPpbTouchInterface1`, acquired with the HIGGS
+   request/reply pattern: dispatch `PpbMessage::kGetTouchInterface` (`'PPBT'`) to sender `"PPB"`.
+
+The consumer contract is **`src/PpbTouchAPI.h`** — self-contained (FormIDs only, no CommonLib
+types), so any SKSE library can copy it in.
+
+---
+
+## 2. TWO STREAMS — the key architectural decision
+
+A real touch wanders. A finger on a face crosses five capsules in six seconds without resting
+half a second on any one. Per-capsule reporting either floods the consumer or — with a naive
+per-capsule dwell filter — says **nothing at all**. Both failure modes were real: the flood was
+observed, and the silence was a defect I shipped for about an hour before the user caught it.
+
+So there are two streams and the author picks:
+
+| | DIGEST (default) | RAW (`apiRawEvents`, ships off) |
+|---|---|---|
+| events | `PPB_TouchStart` / `PPB_Touch` / `PPB_TouchEnd` | `PPB_TouchRawStart` / `PPB_TouchRaw` / `PPB_TouchRawEnd` |
+| identity | `(actor, wand, REGION)` | `(actor, wand, source class)` |
+| BODYPART | `Face(cheek L)` | bare capsule name |
+| dwell gate | per REGION (accumulated) | per capsule |
+| native | `GetContacts()` (slot 03) | `GetRawContacts()` (slot 08) |
+| Papyrus natives | yes | via raw events |
+| callbacks | yes | no — poll `GetRawContacts()` |
+
+**Digest identity deliberately excludes the source class**, per the user: *"switching from index
+to fist should not restart the contact."* Time is accumulated per part **and** per source; the
+report names whichever of each was held longest. So the canonical case reads:
+
+```
+R|FINGER|Face(cheek L)|human   dur=6.11s
+```
+
+one event for the whole visit, naming the capsule dwelt on longest and the pose held longest.
+
+**Digest `distU` is the DEEPEST penetration reached during the visit**, not the current frame —
+for a summary event "how far did it get" is the useful number. Raw carries live distance.
+
+---
+
+## 3. Regions
+
+13 regions (`PPBAPI::Region`): Face, Neck, Chest, Belly, Waist, Pelvis, **Intimate**, Arm, Hand,
+Leg, Foot, Tail, Hair. Mapped by `RegionOfPart(slot, child)`; exposed to consumers as
+`RegionOf()` / `RegionName()`.
+
+**Intimate is split out of Pelvis on purpose.** "Touched her hip" and "inserted" must not look
+alike to a consumer, so COM children 21–31 form their own region with their own dwell class.
+
+---
+
+## 4. Detection — what it is and is NOT
+
+**Pure geometry on bodies PPB owns.** Point-to-capsule-surface (or segment-to-capsule for a
+blade), every tick, at `apiHz`. There are **no Havok contact listeners**, so consuming this costs
+no physics time — and, critically, **capsule motion is not the signal**. A user reasonably asked
+"if the collision capsule moves, that records a contact, right?" — no. Havok collision and this
+API are separate systems observing the same moment. The blade *pushed* her (Havok) while the API
+saw nothing, because the API was measuring from the wrong point (see §6).
+
+**Self-touch is structurally impossible.** An NPC's own hair/tail capsules can never trigger her
+own body, because garment rigs are never *probe sources* — only the player's hands, weapon and
+held object are. Not a tuned threshold; a property of the design.
+
+**Probes** (per tick, per hand): the 4 HandBox boxes (tips for the index pair, centres for slab
+and palm plate), the wielded weapon as a **segment**, the HIGGS-held object (worldBound centre +
+radius). A grabbed *Actor* never becomes an OBJECT — it becomes GRAB.
+
+**Targets**: 12 body slots × sides × live children, plus tail chords (pseudo-slot 100). Hair
+(101) is declared but **gated off** — see §8.
+
+**Two-level culling**: actor gate (any probe within 160u of the actor centre; segment probes test
+both endpoints and the midpoint), then slot gate (child 0 within 60u stands proxy for the slot),
+then children.
+
+---
+
+## 5. Source classification — VRIK first, geometry second
+
+```
+GRAB    HIGGS is holding THIS actor with THIS hand
+VRIK    getFingerPos(hand, finger): 0 = closed .. 1 = open
+          index open  + middle closed → FINGER
+          index closed+ middle closed → FIST
+          index open  + middle open   → PALM
+          (0.45/0.55 dead band: mid-transition falls through to geometry, no flicker)
+geometry which box led the contact: index (0/1) → FINGER, plate (3) → PALM, slab (2) → FIST
+```
+
+The VRIK layer exists because **geometry alone could not do it**, and the road there is
+instructive (§9 fix ladder). `VrikInterface.h` vendors the interface with the vtable copied
+verbatim from prog's published header and **truncated after slot 13** — PPB calls only
+`getBuildNumber` (0) and `getFingerPos` (11); never call past the truncation without
+re-vendoring.
+
+**HIGGS's own `GetFingerValues` is a dead end** — source-checked: it returns
+`grabbedFingerValues`, the grab-wrap pose, meaningful only while holding something.
+
+**Held-hand suppression** (`apiSuppressHeldHand`, on): a hand holding a weapon or object stops
+reporting bare-hand contacts — your palm is on the grip, so those were phantom `FIST` events
+beside every knife touch. **The other hand is unaffected.** GRAB is unaffected too, since
+grabbing an actor never sets the object probe.
+
+---
+
+## 6. The weapon — three readers, each forced by evidence
+
+Worth reading as a method, not just a result.
+
+1. **Body position** → missed. HIGGS's weapon rigid body sits at the **hilt, in your fist**;
+   touching a neck with the blade leaves the hilt ~40–70u away.
+2. **Walk the collision shape** → missed. A one-shot census logged what the shape actually is:
+   a `kList` whose three children are **`kConvexTransform` (12)** wrappers — a type CommonLibVR
+   has no header for. Guessing that layout is how plugins CTD, so that road was refused.
+3. **The equipped FORM's bound box** → shipped. `TESBoundObject::boundData` is a stable public
+   structure in the same model space the collision body transforms; its long axis is the blade
+   segment, its second extent the radius. **No Havok layout guessing at all.**
+
+A second weapon carried a plain `kBox` and used the direct shape path, so both branches are live.
+Contacts now register anywhere along the edge, with real depth (`d=-10.06u` measured).
+
+**Caveat**: a broad weapon has a broad bound — the axe's radius came out 23u, so axes and hammers
+read generously. Swords are slim. Cap the radius if it feels eager.
+
+---
+
+## 7. Emission filtering — the dwell system
+
+The user's framing: *"if the player touch 20 capsule in one interaction, only the one he linger a
+certain amount of time get sent thru the API. It's not so much that we don't track them, it's
+more about having them sent."*
+
+Tracking is always full-rate. **Emission** is gated:
+
+| class | knob | default | reasoning |
+|---|---|---|---|
+| Intimate | `apiDwellSensorS` | 0.5s | insertion is already deliberate |
+| default | `apiDwellS` | 1.0s | limbs, torso |
+| Tail/Hair | `apiDwellTailS` | 1.0s | |
+| Face | `apiDwellHeadS` | 1.5s | brushes are common; meaning needs intent |
+| Pelvis | `apiDwellComS` | 2.0s | the most brushed-in-passing region |
+
+A contact that never qualifies emits **nothing** — no Start, no End, and it never appears in the
+Papyrus snapshot. In the digest stream the gate is on **accumulated region time**, which is what
+makes the wandering-face case work. In raw it is per capsule.
+
+This is a **host-side global filter**, not per-consumer. Per-consumer thresholds would mean each
+mod registering its own; deferred deliberately — one place to tune, and no way for two consumers
+to disagree about what happened.
+
+### Interior-sensor priority
+
+The general race keeps the **most-penetrated** capsule, so a big thigh capsule at `-11u` always
+beat an `r=0.3` orifice sensor whose depth cannot exceed about `-0.3`. Measured consequence: a
+5-second knife insertion reported `L upper thigh d=-11.43u` and **no sensor was ever named**.
+
+Fix: interior sensors run a **separate race that overrides** the general winner, and among
+sensors the deepest wins — so WHERE literally answers "how far it reached"
+(`vaginal opening` → `cervix` → `uterus`).
+
+---
+
+## 8. Coverage and scope contract
+
+* **Female NPCs of mapped races only** — human catch-all, Argonian, Khajiit, Draenei, plus
+  `PPB_Skeletons_Added_Race.ini`. Males, children, creatures answer `IsDriven() = false`.
+  Consumers must route those to a fallback (VRTE keeps CBPC for exactly this).
+* `DismemberGuard::IsExcluded` actors are outside every per-actor system → not driven.
+* **Tails are targets; hair is not.** `kSlotHair` is declared in the public header with an
+  explicit "consumers may never see this" warning. Hair drapes the face and would win the
+  nearest-surface race against cheeks, shadowing face touch — the user's call, and correct.
+* M'rissi reports `skeleton=human`: her race is repointed to the human PPB skeleton and her
+  foxtail is an equipped rig, not skeleton anatomy. Not a bug.
+* Hover is a first-class output: `apiTouchU 1.0` means ~1cm near-misses register briefly.
+  Consumers wanting presses only should filter `distU < 0`.
+
+---
+
+## 9. Verification — five VR sessions, and the fix ladder
+
+### Verified from receipts
+
+| item | evidence |
+|---|---|
+| FINGER | `L\|FINGER\|CLITORIS d=0.70u dur=3.31s vrik=I1.00/M0.00` |
+| PALM | `L\|PALM\|cheekbone R vrik=I1.00/M0.49`; tail strokes at `I1.00/M1.00` |
 | FIST | `L\|FIST\|chin L vrik=I0.00/M0.00` |
-| GRAB | `L\|GRAB\|upper glute R → BUTT CHEEK R dur=2.28s`; also her cranium and her hand (`L palm rod`) |
+| GRAB | `L\|GRAB\|upper glute R → BUTT CHEEK R dur=2.28s`; her cranium; her hand |
 | WEAPON | `R\|WEAPON:Iron War Axe\|BREAST R → R upper arm d=-10.06u dur=6.36s` |
-| OBJECT | `R\|OBJECT:Knife\|BUTT CHEEK L → R dur=3.07s`, an 11 s hold, `Apple Dumpling` in session 1 |
-| tail | `PALM\|tail (tip) → tail (base)` both hands; axe slide `tail (base) → … → nose` dur=9.71s |
-| multi-actor | Lydia + M'rissi contacts interleaved in one tick stream |
-| slide identity | contact survives sliding; source reclassifies live (FIST→FINGER mid-touch as the hand opened) |
-| duration | 0.25 s … 10.99 s, End events carrying the total |
-| penetration | hover `+1.0u` through `-11.4u` (blade buried) |
-| wands | L and R proven independently |
+| OBJECT | `R\|OBJECT:Knife\|BUTT CHEEK L → R`, an 11s hold; `Apple Dumpling` |
+| tail | `PALM\|tail (tip) → tail (base)` both hands; axe slide `tail (base) → … → nose` 9.71s |
+| mouth | `MOUTHTOUCH LIPS → ENTER → THROAT REACHED d=1.42u` (separate gate stream, both insertions) |
+| multi-actor | Lydia + M'rissi interleaved in one tick stream |
+| slide identity | contact survives sliding; source reclassifies live (FIST→FINGER mid-touch) |
+| duration | 0.25s … 10.99s | 
+| penetration | `+1.0u` hover through `-11.43u` buried |
+| wands | L and R independently |
 
-### What each session forced (the fix ladder)
+### The fix ladder — five sessions, five diagnoses
 
-1. **Session 1**: everything classified FIST — the curl heuristic's guessed threshold (7u) swallowed
-   every gesture. GRAB/OBJECT/slide/duration all proven anyway.
-2. **Session 2**: curl receipts revealed the values VARY (3.7–9.1u) — the "fingers don't
-   articulate" diagnosis was WRONG, an artifact of one grip held through session 1. Box-led
-   classification (index/plate/slab nearest) proved out live via the `apiFistTipPalmU 2` knob.
-3. **Session 3**: VRIK layer live — `getFingerPos` (0=closed..1=open, the controller-driven
-   state; vfunc 11 of the vendored `VrikInterface.h`) classifies first, geometry falls back.
-   Values are binary-clean (`I1.00/M0.00`). HIGGS's own `GetFingerValues` was a dead end — it
-   reports the GRAB-WRAP pose, only meaningful while holding.
-4. **Session 4**: weapons + tail. The weapon needed THREE readers, each forced by evidence:
-   the body position sits at the HILT (miss #1); the shape is a LIST whose children are
-   `kConvexTransform` (12) wrappers with no CommonLibVR header (miss #2, census-logged); the
-   shipped answer reads the equipped FORM's bound box (`TESBoundObject::boundData`, stable
-   public CommonLib) — long axis = blade segment in the same model space the collision body
-   transforms. A second weapon carried a plain `kBox` (4) and used the direct shape path.
+1. **Everything classified FIST.** The curl heuristic's *guessed* 7u threshold swallowed every
+   gesture. GRAB/OBJECT/slide/duration proven anyway.
+2. **Curl values VARY (3.7–9.1u).** My "the fingers don't articulate" diagnosis was **wrong** —
+   an artifact of one grip held through session 1. Box-led classification proved out via a knob,
+   no rebuild.
+3. **VRIK layer.** The user's own suggestion — read the controller state instead of inferring it.
+   Values are binary-clean.
+4. **Weapon + tail.** The three-reader weapon saga (§6); tail chords added as pseudo-slot 100
+   after the user caught that garments were never targets.
+5. **Insertion + spam.** Sensor priority (the masking bug), the dwell filter, regions/digest,
+   held-hand suppression.
 
-### Known caveats (accepted, documented)
+**The pattern worth keeping**: every one of these was settled by making the plugin *log what it
+actually saw* — curl values, weapon shape type, list child types — and then building against the
+answer. Three guesses were replaced by three measurements.
 
-* Broad weapons read a broad probe radius (the axe bound's second extent = 23u) — contacts are
-  generous for axes/hammers. If it feels too eager, cap the radius; swords are slim.
-* Hand and held-object are SEPARATE simultaneous contacts from one wand (per-class identity) —
-  a feature: "pressed the knife in" vs "pressed my knuckles in" are distinguishable.
-* Hover starts: `apiTouchU 1.0` registers ~1 cm near-misses as brief contacts (`back of head
-  d=0.70u` while passing). Deliberate — proximity is a first-class output; consumers wanting
-  presses only should filter `distU < 0` or the host can lower `apiTouchU`.
-* M'rissi reports `skeleton=human` — correct: her race is repointed to the human PPB skeleton;
-  the foxtail is an equipped rig, not skeleton anatomy.
-* Hair as a TARGET ships OFF (`apiHairTarget 0`): hair drapes the face, wins the nearest-surface
-  race against cheeks, and would shadow face touch. `kSlotHair` is declared in the public header
-  with a consumers-may-never-see-it warning.
+---
+
+## 10. Files and knobs
+
+| file | role |
+|---|---|
+| `src/PpbTouchAPI.h` | **the consumer contract** — copy into your project |
+| `src/PpbApi.cpp` | the engine (~1035 lines): probes, scan, raw + digest layers, natives, interface |
+| `src/PpbApi.h` | internal hooks: `NoteDriven`, `OnFrame`, `OnPluginMessage`, `RegisterNatives`, `ClearOnLoad` |
+| `src/VrikInterface.h` | vendored VRIK interface (truncated at slot 13) |
+| `scripts/PPB_Touch.psc` | Papyrus declarations (compile with Caprica + `tools/Caprica/TESV_Papyrus_Flags.flg`) |
+
+Wiring: roster from `NpcFinger::OnPreDrive` (same-frame pointers only), tick on the HIGGS
+PostVrikPostHiggs callback, natives registered from `Natives.cpp`, interface answered from
+`main.cpp`'s messaging listener, teardown at `kPreLoadGame`.
+
+Knobs (all live, `PK_NOSNAP`): `apiTouch 1 · apiHz 4 · apiTouchU 1.0 · apiExitPadU 0.75 ·
+apiMaxActors 3 · apiRangeU 300 · apiFistTipPalmU 2 · apiEvents 1 · apiRawEvents 0 ·
+apiSuppressHeldHand 1 · apiHairTarget 0 · apiDwell{S 1.0, HeadS 1.5, ComS 2.0, SensorS 0.5,
+TailS 1.0} · apiLog 0`.
+
+### Versioning contract (do not violate)
+
+The vtable is **append-only** — 11 slots today, never reordered, never re-signatured. There is
+**no virtual destructor**: slot 0 is `GetBuildNumber`, forever. `PpbTouchContact` is a frozen
+160-byte POD with a reserved tail. This is not stylistic: the HDT-SMP v1/v2 split (doc 07) showed
+exactly what a destructor-at-slot-0 mismatch does — the engine calls your destructor once per
+event. Regions, raw contacts and the tail pseudo-slot were all added *by appending*, which is why
+the interface is still revision 1.
+
+---
+
+## 11. Rev 2 — what is deliberately not built
+
+* **NPC touchers.** The whole design is player-as-toucher. NPC-vs-NPC means probing other actors'
+  hand nodes; same maths, but cost scales with the crowd and it needs the rig-budget treatment.
+  AIHands is the natural first source (it already computes NPC finger positions).
+* **Hair as a target** — one knob away, awaiting the user's decision.
+* **Per-consumer dwell thresholds** — see §7.
+* **A blade-radius cap** for broad weapons — see §6.

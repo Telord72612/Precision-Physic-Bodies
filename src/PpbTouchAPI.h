@@ -49,10 +49,21 @@
 //  * Papyrus: PPB also fires mod events (below) and exposes polling natives
 //    (script "PPB_Touch"), both safe from any Papyrus context.
 //
-//  ── PAPYRUS MOD EVENTS ───────────────────────────────────────────────────────────────
+//  ── PAPYRUS MOD EVENTS — TWO STREAMS, pick the one that suits you ────────────────────
+//  DIGEST (recommended — grouped, dwell-filtered, one event per region visit):
 //      "PPB_TouchStart"   numArg = surface distance in game units (negative = inside)
 //      "PPB_Touch"        numArg = distance, re-sent at apiHz while contact holds
 //      "PPB_TouchEnd"     numArg = the contact's total DURATION in seconds
+//    BODYPART reads "Region(longest part)" e.g. "Face(cheek L)". One contact per
+//    (actor, wand, REGION): wandering across five face capsules is ONE event, and the
+//    part reported is whichever you spent longest on. Changing your hand pose mid-touch
+//    (finger -> fist) does NOT restart it either; SOURCE reports the pose you held longest.
+//
+//  RAW (verbose — every capsule, every source class, no grouping):
+//      "PPB_TouchRawStart" / "PPB_TouchRaw" / "PPB_TouchRawEnd"
+//    Same strArg shape, BODYPART is the bare capsule name. Use this if you are building
+//    your own aggregation. Host can disable either stream (apiEvents / apiRawEvents).
+//
 //  sender = the touched NPC (Actor). strArg is a '|'-packed string, split on '|':
 //      "WAND|SOURCE|BODYPART|SKELETON"
 //       WAND     ∈ L / R
@@ -96,6 +107,22 @@ namespace PPBAPI {
         kPhaseEnd      = 0,
         kPhaseStart    = 1,
         kPhaseContinue = 2,
+    };
+
+    // ── REGIONS (2026-07-30) ─────────────────────────────────────────────────────────────
+    // The DIGEST stream groups capsules into anatomical regions, because a real touch wanders:
+    // a finger on someone's face crosses five capsules in six seconds without resting a half
+    // second on any one of them. Per-capsule reporting either floods you or (with a dwell
+    // filter) says nothing at all. A digest contact is therefore identified by
+    // (actor, wand, REGION) and reports the part it spent the LONGEST on:
+    //     "R|FINGER|Face(cheek L)|human"
+    // Intimate is deliberately its own region, not part of Pelvis: "touched her hip" and
+    // "inserted" are categorically different events for a consumer.
+    enum Region : int {
+        kRegionNone = 0,
+        kRegionFace, kRegionNeck, kRegionChest, kRegionBelly, kRegionWaist,
+        kRegionPelvis, kRegionIntimate, kRegionArm, kRegionHand, kRegionLeg,
+        kRegionFoot, kRegionTail, kRegionHair,
     };
 
     // One live contact. Fixed 160-byte POD; the reserved tail lets future revisions add
@@ -147,6 +174,14 @@ namespace PPBAPI {
         // Register a touch callback (main thread; fires alongside the mod events, same
         // rate limit). Returns false if the callback table is full.
         virtual bool AddTouchCallback(PpbTouchCallback cb) = 0;                          // 07
+        // ── appended 2026-07-30 (revision 1 stays revision 1: append-only, never reordered) ──
+        // The RAW stream: one contact per (actor, wand, source class), every capsule, no
+        // region grouping. GetContacts() above is the DIGEST. Most consumers want the digest.
+        virtual int  GetRawContacts(PpbTouchContact* out, int max) = 0;                  // 08
+        // Region of a (slot, child) — see Region. 0 = unknown.
+        virtual int  RegionOf(int slot, int child) = 0;                                  // 09
+        // Human-readable region name ("Face", "Intimate", ...); static string, never freed.
+        virtual const char* RegionName(int region) = 0;                                  // 10
     };
 
     // The messaging request. Dispatch to sender "PPB" with this struct as data; PPB fills

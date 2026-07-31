@@ -1030,3 +1030,85 @@ Rules earned:
   bounding boxes agreeing to four decimals (v 0.0255/0.0256 â†’ 0.9902/0.9902) â€” a layout
   fingerprint that a handful of landmarks could never establish.
 
+
+## * MAKE THE PLUGIN LOG WHAT IT SAW, THEN BUILD AGAINST THE ANSWER (2026-07-30, the session's method)
+Five separate dead ends this day were each settled the same way â€” not by reasoning harder, but by
+adding a ONE-SHOT log of the thing being guessed at, then building against what came back:
+
+| guess that failed | the log that settled it | the answer |
+|---|---|---|
+| "the fist threshold is ~7u" | print the measured curl on every receipt | values span 3.7-9.1u; 7 sits mid-range |
+| "the fingers don't articulate" | the same receipts, second session | they DO â€” session 1 was one grip held throughout |
+| "the weapon shape is a capsule" | `hkpShapeType=` one-shot | it is a LIST |
+| "walk the list for a capsule child" | census the child types | three `kConvexTransform` (12), no public header |
+| "SMP Flex is a bone-rename no-op" | dump `*ail*` nodes on a pinned actor | `hdtA_1CF71480_HDTS TailBone09.003` |
+
+**Every one of those guesses was plausible.** The cost of being wrong was a wasted VR session each
+time; the cost of the log line was three minutes. Corollary earned twice: **a one-shot diagnostic
+that names an unknown TYPE (shape id, child types, interface version) is worth more than any
+amount of reading**, because it converts "what could it be" into "what it is".
+
+Second corollary: **a capped diagnostic that reaches its cap has stopped being a measurement.**
+The leash logger capped at 3 lines per hand and hit the cap, so the log could not distinguish
+"fired 6 times" from "fires every frame". Add a running total to any capped log.
+
+## * DO NOT DEFEND A DESIGN THE USER IS QUESTIONING (2026-07-30, three times)
+Three times today the user pushed back on something I had shipped, and three times they were right
+and I had rationalised it:
+
+* **hand + held-object both reporting from one wand.** I called it "a feature â€” consumers can tell
+  the two apart". The user: your palm is on the grip, it is noise. Correct â€” suppressed.
+* **per-capsule dwell filtering.** I built exactly what was asked, but the user's own face example
+  exposed that it emits NOTHING for a real wandering touch. The fix (region accumulation) is
+  strictly better than the spec I implemented.
+* **"can you just check what HIGGS hand are doing?"** I had already concluded geometry was the only
+  option. VRIK exposes the controller-driven finger pose directly; one interface call replaced two
+  sessions of heuristics.
+
+The pattern: I optimised the thing I had built instead of asking whether it was the right thing.
+When the user proposes a mechanism, PRICE IT before defending the current one.
+
+## * A CODE DEFAULT THAT DISAGREES WITH THE SHIPPED FILE IS A BUG (2026-07-30, four instances)
+`touchProbe` (code 1 / shipped 0), `npcFingerLog` (1 / 0), `handBoxRebuildFrac` (0 meaning 2%),
+`apiFistTipPalmU` (code 7 / shipped 2). Each is invisible on the dev machine â€” the tuning file
+masks it â€” and each hits any user whose file is missing or partial. **Rule: the compiled default
+IS a shipping default. Align it with the shipped file, and check what the knob's ZERO means.**
+
+## * A NON-ZERO STRUCT INITIALISER CAN COST MEGABYTES (2026-07-30)
+Adding `float lastD2 = FLT_MAX` to `FingerRig` grew the DLL by **1.28 MB** (1,870,336 â†’
+3,154,944). It was the only non-zero default in the struct, so `g_rigs[8]` â€” each holding
+`FingerBody bodies[200]` â€” moved out of `.bss` (zero-init, no file bytes) into `.data` (literal
+bytes on disk, dirty pages at load). Fixed with an all-zero sentinel (`0.f` + a `bool valid`).
+**Any sentinel in a large static array must be zero-valued.** Diagnose with
+`dumpbin /HEADERS` and compare `.data` raw size.
+
+## * SPLIT THE QUERY FROM THE COMMIT (2026-07-30, caught by adversarial review before shipping)
+`GarmentBudgetAllows()` was used as a per-frame branch predicate AND evicted rigs as a side
+effect â€” so any driven NPC in range destroyed a live 200-chord wig rig it would never use, the
+victim rebuilt ~200 frames later, and the cycle repeated, leaking the whole rig each time
+(never-free convention). **A predicate must not mutate lifecycle.** Split into `GarmentInRange()`
+(pure, gates the cheap probe) and `GarmentBudgetAcquire()` (commits, called only once a table has
+actually resolved and a create will definitely happen).
+
+Related, same review: **do not treat "unknown" as "least valuable".** The eviction picked
+never-driven rigs as the preferred victim with the hysteresis skipped â€” which selected the rig
+born *that frame*. Stamp state at birth so "unknown" is unreachable, and refuse rather than guess
+when it happens anyway.
+
+## * WHEN A TOOL KEEPS CORRUPTING THE FILE, CHANGE TOOLS (2026-07-30)
+Bash heredocs carrying Python that carries C++ mangled the source four times: swallowed escape
+levels turning `\n` into raw newlines inside string literals, an unterminated-literal parse error,
+and once a **literal NUL byte** written into a char constant (`'\0'` â†’ `'^@'`), which then survived
+a naive scrub as `''`. Each cost a build cycle. **Use the Edit tool for source edits, or write the
+patch script to a FILE and run it.** Reserve heredocs for text with no escapes. When a file
+mutates under you (a linter reformatting between read and write), patch by line position or bytes
+rather than fighting exact-match strings.
+
+## * A GENERATED RECORD MUST BE VERIFIED AGAINST THE BINARY (2026-07-30)
+The capsule-name record for the public API is produced by PARSING `ProposedPartName()` and then
+checking every emitted name against the strings in the shipped `PPB.dll`, aborting on mismatch.
+Writing it by hand is how it drifts â€” and the first hand-written draft of the GENERATOR invented
+node names (`"NPC Hand [Hand]"`) that do not exist; the real ones are `kSlotNode[12]` in
+`CapFix.cpp` (`"NPC R Hand [RHnd]"`, and `"NPC R Foot [Rft ]"` with a load-bearing trailing
+space). **Copy such tables verbatim from source; never retype from memory.**
+

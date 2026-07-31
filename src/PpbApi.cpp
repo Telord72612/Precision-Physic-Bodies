@@ -142,14 +142,52 @@ namespace {
         std::uint8_t  wand = 0;                 // 0=R 1=L
         std::uint8_t  cls  = 0;                 // SourceClass
         std::uint64_t startMs = 0;
-        PpbTouchContact pub{};                  // the published view (refreshed every tick)
+        // ── DWELL FILTER state (2026-07-30, user spec) ─────────────────────────────────
+        // "if the player touch 20 capsule in one interaction, only the one he linger a
+        // certain amount of time get sent thru the API. It's not so much that we don't
+        // track them, it's more about having them sent." Tracking is full-rate; EMISSION
+        // (events, callbacks, the Papyrus snapshot) only carries a body part after the
+        // probe lingered on it past that part's dwell class. A contact that never
+        // qualifies anywhere emits NOTHING — no Start, no End.
+        int           candSlot = -1, candChild = -1;   // the part currently being lingered on
+        std::uint8_t  candLeft = 0;
+        std::uint64_t candSinceMs = 0;
+        bool          emitted = false;          // a qualified Start has gone out
+        PpbTouchContact pub{};                  // the published view (qualified parts only)
     };
     Contact g_contacts[kMaxContacts];
 
+    // ── DIGEST LAYER (2026-07-30, user spec) ────────────────────────────────────────────
+    // Identity is (actor, wand, REGION) — deliberately NOT the source class, because
+    // "switching from index to fist should not restart the contact". Time is accumulated
+    // per part and per source; the report names whichever of each was held LONGEST. So a
+    // six-second face touch that crosses five capsules, half a second each, reads:
+    //     R|FINGER|Face(cheek L)|human  dur=6.11s
+    // The raw layer above is untouched and still publishes everything, on its own events.
+    constexpr int kMaxDigest   = 12;   // live region-contacts (≤ regions × wands in practice)
+    constexpr int kMaxPartAcc  = 16;   // distinct capsules remembered per region visit
+    struct DigestContact {
+        bool          live = false, seen = false, emitted = false;
+        std::uint32_t actorId = 0;
+        std::uint8_t  wand = 0;
+        int           region = 0;
+        std::uint64_t startMs = 0;
+        float         inRegionS = 0.f;             // accumulated time, the dwell gate
+        struct PartAcc { int slot, child; std::uint8_t left; float secs; };
+        PartAcc       parts[kMaxPartAcc]{};
+        int           nParts = 0;
+        float         srcSecs[8]{};                // accumulated seconds per SourceKind
+        float         deepestU = 1e9f;             // most-negative distU seen this visit
+        PpbTouchContact pub{};
+    };
+    DigestContact g_digest[kMaxDigest];
+
     // ── Papyrus snapshot (main thread writes, VM threads read) ──────────────
     struct Snapshot { int n = 0; PpbTouchContact c[kMaxContacts]{}; };
-    Snapshot         g_snap[4];
+    Snapshot         g_snap[4];        // DIGEST — what the Papyrus natives read
     std::atomic<int> g_snapActive{ 0 };
+    Snapshot         g_snapRaw[4];     // RAW
+    std::atomic<int> g_snapRawActive{ 0 };
 
     // ── consumer callbacks ──────────────────────────────────────────────────
     PPBAPI::PpbTouchCallback g_cbs[kMaxCallbacks]{};
@@ -201,6 +239,77 @@ namespace {
         case PPBAPI::kSourceObject: return "OBJECT";
         }
         return "?";
+    }
+
+    // ── REGION MAP (2026-07-30) ─────────────────────────────────────────────────────────
+    // Which anatomical region a capsule belongs to. Drives the DIGEST stream: a contact is
+    // (actor, wand, region), so a finger wandering five capsules across a face stays ONE
+    // event instead of five (or, under a per-capsule dwell filter, none at all — the defect
+    // this replaces). Intimate is split out of Pelvis deliberately: "touched her hip" and
+    // "inserted" must not look alike to a consumer.
+    int RegionOfPart(int slot, int child)
+    {
+        if (slot == PPBAPI::kSlotTail) return PPBAPI::kRegionTail;
+        if (slot == PPBAPI::kSlotHair) return PPBAPI::kRegionHair;
+        switch (slot) {
+        case 0:  return PPBAPI::kRegionHand;
+        case 1: case 2: return PPBAPI::kRegionArm;
+        case 3:  return PPBAPI::kRegionFace;
+        case 4:  return PPBAPI::kRegionWaist;
+        case 5:  return PPBAPI::kRegionBelly;
+        case 6:  return PPBAPI::kRegionChest;
+        case 7:  return PPBAPI::kRegionNeck;
+        case 8: case 9: return PPBAPI::kRegionLeg;
+        case 10: return PPBAPI::kRegionFoot;
+        case 11: return (child >= 21 && child <= 31) ? PPBAPI::kRegionIntimate
+                                                     : PPBAPI::kRegionPelvis;
+        }
+        return PPBAPI::kRegionNone;
+    }
+
+    const char* RegionLabel(int region)
+    {
+        switch (region) {
+        case PPBAPI::kRegionFace:     return "Face";
+        case PPBAPI::kRegionNeck:     return "Neck";
+        case PPBAPI::kRegionChest:    return "Chest";
+        case PPBAPI::kRegionBelly:    return "Belly";
+        case PPBAPI::kRegionWaist:    return "Waist";
+        case PPBAPI::kRegionPelvis:   return "Pelvis";
+        case PPBAPI::kRegionIntimate: return "Intimate";
+        case PPBAPI::kRegionArm:      return "Arm";
+        case PPBAPI::kRegionHand:     return "Hand";
+        case PPBAPI::kRegionLeg:      return "Leg";
+        case PPBAPI::kRegionFoot:     return "Foot";
+        case PPBAPI::kRegionTail:     return "Tail";
+        case PPBAPI::kRegionHair:     return "Hair";
+        }
+        return "?";
+    }
+
+    // Dwell class per REGION for the digest stream (the raw stream keeps per-part dwell).
+    float DwellSForRegion(int region)
+    {
+        switch (region) {
+        case PPBAPI::kRegionIntimate: return ObjectHold::ApiDwellSensorS();
+        case PPBAPI::kRegionPelvis:   return ObjectHold::ApiDwellComS();
+        case PPBAPI::kRegionFace:     return ObjectHold::ApiDwellHeadS();
+        case PPBAPI::kRegionTail:
+        case PPBAPI::kRegionHair:     return ObjectHold::ApiDwellTailS();
+        }
+        return ObjectHold::ApiDwellS();
+    }
+
+    // Dwell class per body part — how long the probe must linger before that part is
+    // SENT through the API. All live knobs; 0 = instant. Sensors get the shortest dwell
+    // (an insertion is deliberate); the pelvis the longest (incidental brushes are common).
+    float DwellSFor(int slot, int child)
+    {
+        if (slot == 11 && child >= 21 && child <= 31) return ObjectHold::ApiDwellSensorS();
+        if (slot == 11)                               return ObjectHold::ApiDwellComS();
+        if (slot == 3)                                return ObjectHold::ApiDwellHeadS();
+        if (slot >= 100)                              return ObjectHold::ApiDwellTailS();
+        return ObjectHold::ApiDwellS();
     }
 
     // BODYPART string: named children get the map name (side-prefixed on sided slots);
@@ -285,6 +394,14 @@ namespace {
                     }
                 }
             }
+            // ── HELD-HAND SUPPRESSION (2026-07-30, user spec) ────────────────────────────
+            // If THIS hand holds a weapon or an object, its bare-hand boxes are noise: your
+            // palm is on the grip, so every knife contact came with a phantom FIST contact
+            // from the same wand (seen in the session-4 log and wrongly defended as a
+            // feature). The OTHER hand is untouched — one-handed use keeps full hand data.
+            // GRAB is unaffected: grabbing an ACTOR never sets hp.object (actors are skipped).
+            if (ObjectHold::ApiSuppressHeldHand() && (hp.weapon.live || hp.object.live))
+                for (int b = 0; b < 4; ++b) hp.boxes[b].live = false;
         }
     }
 
@@ -299,6 +416,9 @@ namespace {
 
     void ScanActor(RE::Actor* actor, Hit out[2][kClsCount])
     {
+        // Interior-sensor race — filled by the body-slot loop, applied as an override at
+        // the bottom of this function. See the isSensor comment in the loop.
+        Hit sens[2][kClsCount]{};
         // actor-level cull: any live probe within reach of the actor's center?  Segment
         // probes (the weapon blade) test BOTH endpoints and the midpoint — a blade tip can
         // be in range while the hilt is not.
@@ -352,6 +472,14 @@ namespace {
                 for (int ch = 0; ch < nCh; ++ch) {
                     if (ch > 0 && !GrabDiag::ReadCapsuleWorldUSide(actor, slot, left, ch, a, b, &r))
                         continue;
+                    // Interior sensors (COM C21..C31: the pelvic orifice chain) compete in a
+                    // SEPARATE race that overrides the general one below. Without this they can
+                    // never be reported: the general race keeps the most-penetrated capsule,
+                    // and a big thigh capsule at d=-11u always beats an r=0.3 sensor whose d
+                    // bottoms out near -0.3 (user-verified miss: a 5s knife insertion reported
+                    // "L upper thigh d=-11.43", zero sensor names). Among sensors the deepest
+                    // wins — so WHERE literally answers "how far it reached".
+                    const bool isSensor = (slot == 11 && ch >= 21 && ch <= 31);
                     for (int hand = 0; hand < 2; ++hand) {
                         const HandProbes& hp = g_hp[hand];
                         for (int bx = 0; bx < 4; ++bx) {
@@ -360,6 +488,11 @@ namespace {
                             Hit& h = out[hand][kClsHand];
                             if (d < h.dist) { h.found = true; h.dist = d; h.slot = slot;
                                               h.child = ch; h.left = left; h.viaBox = bx; }
+                            if (isSensor) {
+                                Hit& sh = sens[hand][kClsHand];
+                                if (d < sh.dist) { sh.found = true; sh.dist = d; sh.slot = slot;
+                                                   sh.child = ch; sh.left = left; sh.viaBox = bx; }
+                            }
                         }
                         if (hp.weapon.live) {
                             const float d = (hp.weapon.seg
@@ -369,12 +502,22 @@ namespace {
                             Hit& h = out[hand][kClsWeapon];
                             if (d < h.dist) { h.found = true; h.dist = d; h.slot = slot;
                                               h.child = ch; h.left = left; }
+                            if (isSensor) {
+                                Hit& sh = sens[hand][kClsWeapon];
+                                if (d < sh.dist) { sh.found = true; sh.dist = d; sh.slot = slot;
+                                                   sh.child = ch; sh.left = left; }
+                            }
                         }
                         if (hp.object.live) {
                             const float d = SegPointDistU(a, b, hp.object.p) - r - hp.object.pad;
                             Hit& h = out[hand][kClsObject];
                             if (d < h.dist) { h.found = true; h.dist = d; h.slot = slot;
                                               h.child = ch; h.left = left; }
+                            if (isSensor) {
+                                Hit& sh = sens[hand][kClsObject];
+                                if (d < sh.dist) { sh.found = true; sh.dist = d; sh.slot = slot;
+                                                   sh.child = ch; sh.left = left; }
+                            }
                         }
                     }
                 }
@@ -422,6 +565,17 @@ namespace {
                     }
                 }
             }
+        }
+
+        // Interior-sensor override: a probe that reached an orifice sensor reports the
+        // SENSOR, not whatever big capsule it is also buried in. Enter-level threshold —
+        // once inserted, the sensor distance is far below it anyway.
+        {
+            const float touchU = ObjectHold::ApiTouchU();
+            for (int hand = 0; hand < 2; ++hand)
+                for (int cls = 0; cls < kClsCount; ++cls)
+                    if (sens[hand][cls].found && sens[hand][cls].dist <= touchU)
+                        out[hand][cls] = sens[hand][cls];
         }
     }
 
@@ -474,21 +628,29 @@ namespace {
                           c.bodyPart, c.skeleton);
     }
 
-    void Emit(const PpbTouchContact& c, int phase)
+    // raw = the verbose per-capsule stream; !raw = the grouped digest stream.
+    void Emit(const PpbTouchContact& c, int phase, bool raw)
     {
-        for (int i = 0; i < g_cbN; ++i)
-            if (g_cbs[i]) g_cbs[i](&c, phase);
-        if (ObjectHold::ApiEventsEnabled()) {
+        // Native callbacks receive the DIGEST only — a C++ consumer wanting everything can
+        // poll GetRawContacts(). Keeps callback traffic to the meaningful events.
+        if (!raw)
+            for (int i = 0; i < g_cbN; ++i)
+                if (g_cbs[i]) g_cbs[i](&c, phase);
+        const bool evOn = raw ? ObjectHold::ApiRawEventsEnabled() : ObjectHold::ApiEventsEnabled();
+        if (evOn) {
             RE::TESForm* sender = RE::TESForm::LookupByID(c.actorFormId);
             char packed[192];
             PackStr(c, packed, sizeof packed);
-            const char* name = phase == PPBAPI::kPhaseStart ? "PPB_TouchStart"
-                             : phase == PPBAPI::kPhaseEnd   ? "PPB_TouchEnd" : "PPB_Touch";
+            const char* name =
+                raw ? (phase == PPBAPI::kPhaseStart ? "PPB_TouchRawStart"
+                     : phase == PPBAPI::kPhaseEnd   ? "PPB_TouchRawEnd" : "PPB_TouchRaw")
+                    : (phase == PPBAPI::kPhaseStart ? "PPB_TouchStart"
+                     : phase == PPBAPI::kPhaseEnd   ? "PPB_TouchEnd" : "PPB_Touch");
             const float num = phase == PPBAPI::kPhaseEnd ? c.durationS : c.distU;
             SKSE::ModCallbackEvent ev{ name, packed, num, sender };
             SKSE::GetModCallbackEventSource()->SendEvent(&ev);
         }
-        if (ObjectHold::ApiLogEnabled() && phase != PPBAPI::kPhaseContinue) {
+        if (ObjectHold::ApiLogEnabled() && phase != PPBAPI::kPhaseContinue && !raw) {
             char packed[192];
             PackStr(c, packed, sizeof packed);
             // curl = the FIST calibration receipt: index-tip-to-palm distance for the hand
@@ -504,12 +666,19 @@ namespace {
 
     void PublishSnapshot()
     {
-        const int next = (g_snapActive.load(std::memory_order_relaxed) + 1) & 3;
-        Snapshot& s = g_snap[next];
-        s.n = 0;
+        const int rn = (g_snapRawActive.load(std::memory_order_relaxed) + 1) & 3;
+        Snapshot& r = g_snapRaw[rn];
+        r.n = 0;
         for (const Contact& ct : g_contacts)
-            if (ct.live && s.n < kMaxContacts) s.c[s.n++] = ct.pub;
-        g_snapActive.store(next, std::memory_order_release);
+            if (ct.live && ct.emitted && r.n < kMaxContacts) r.c[r.n++] = ct.pub;
+        g_snapRawActive.store(rn, std::memory_order_release);
+
+        const int dn = (g_snapActive.load(std::memory_order_relaxed) + 1) & 3;
+        Snapshot& d = g_snap[dn];
+        d.n = 0;
+        for (const DigestContact& dc : g_digest)
+            if (dc.live && dc.emitted && d.n < kMaxContacts) d.c[d.n++] = dc.pub;
+        g_snapActive.store(dn, std::memory_order_release);
     }
 
 }  // namespace
@@ -584,16 +753,23 @@ namespace PpbApi {
                         ct->startMs = now;
                     }
                     ct->seen = true;
+                    // ── DWELL: the candidate part must be lingered on before it is sent ──
+                    if (h.slot != ct->candSlot || h.child != ct->candChild ||
+                        (h.left ? 1 : 0) != ct->candLeft) {
+                        ct->candSlot = h.slot; ct->candChild = h.child;
+                        ct->candLeft = h.left ? 1 : 0;
+                        ct->candSinceMs = now;
+                    }
+                    const bool qualified =
+                        (float)(now - ct->candSinceMs) / 1000.f >= DwellSFor(h.slot, h.child);
+
                     PpbTouchContact& p = ct->pub;
                     p.actorFormId   = roster[ai].id;
                     p.toucherFormId = 0x14;
-                    p.slot = h.slot; p.child = h.child;
-                    p.leftTwin = h.left ? 1 : 0;
                     p.wand = (std::uint8_t)hand;
                     p.distU = h.dist;
                     p.durationS = (float)(now - ct->startMs) / 1000.f;
                     std::snprintf(p.skeleton, sizeof p.skeleton, "%s", skel);
-                    BodyPartName(h.slot, h.left, h.child, p.bodyPart, sizeof p.bodyPart);
                     const HandProbes& hp = g_hp[hand];
                     if (cls == kClsWeapon) {
                         p.sourceKind = PPBAPI::kSourceWeapon;
@@ -605,9 +781,104 @@ namespace PpbApi {
                         p.sourceKind = ClassifyHand(actor, hand, h);
                         p.sourceName[0] = '\0';
                     }
-                    Emit(p, ex ? PPBAPI::kPhaseContinue : PPBAPI::kPhaseStart);
+                    if (qualified) {
+                        // the WHERE fields advance only to qualified parts
+                        p.slot = h.slot; p.child = h.child;
+                        p.leftTwin = h.left ? 1 : 0;
+                        BodyPartName(h.slot, h.left, h.child, p.bodyPart, sizeof p.bodyPart);
+                        if (!ct->emitted) { ct->emitted = true; Emit(p, PPBAPI::kPhaseStart, true); }
+                        else              Emit(p, PPBAPI::kPhaseContinue, true);
+                    } else if (ct->emitted) {
+                        // still touching, sliding over an unqualified part: keep the stream
+                        // alive with the LAST QUALIFIED part in the WHERE fields
+                        Emit(p, PPBAPI::kPhaseContinue, true);
+                    }
+                    // never emitted + never qualified = silence, by design
+
+                    // ── DIGEST: accumulate into the (actor, wand, region) contact ──────
+                    {
+                        const int reg = RegionOfPart(h.slot, h.child);
+                        DigestContact* dc = nullptr;
+                        for (DigestContact& d : g_digest)
+                            if (d.live && d.actorId == roster[ai].id && d.wand == hand &&
+                                d.region == reg) { dc = &d; break; }
+                        if (!dc) {
+                            for (DigestContact& d : g_digest) if (!d.live) { dc = &d; break; }
+                            if (dc) {
+                                *dc = DigestContact{};
+                                dc->live = true; dc->actorId = roster[ai].id;
+                                dc->wand = (std::uint8_t)hand; dc->region = reg;
+                                dc->startMs = now;
+                            }
+                        }
+                        if (dc) {
+                            dc->seen = true;
+                            const float dt = 1.f / (hz < 1.f ? 1.f : hz);   // one tick of time
+                            dc->inRegionS += dt;
+                            if (h.dist < dc->deepestU) dc->deepestU = h.dist;
+                            // per-part accumulation — the longest-held part is the report
+                            int pi = -1;
+                            for (int k = 0; k < dc->nParts; ++k)
+                                if (dc->parts[k].slot == h.slot && dc->parts[k].child == h.child &&
+                                    dc->parts[k].left == (h.left ? 1 : 0)) { pi = k; break; }
+                            if (pi < 0 && dc->nParts < kMaxPartAcc) {
+                                pi = dc->nParts++;
+                                dc->parts[pi] = { h.slot, h.child, (std::uint8_t)(h.left ? 1 : 0), 0.f };
+                            }
+                            if (pi >= 0) dc->parts[pi].secs += dt;
+                            // per-source accumulation — the longest-held pose is the report,
+                            // so finger->fist mid-touch does NOT restart or flip-flop
+                            const std::uint8_t sk = p.sourceKind;
+                            if (sk < 8) dc->srcSecs[sk] += dt;
+                        }
+                    }
                 }
             }
+        }
+
+        // ── DIGEST emit + sweep ─────────────────────────────────────────────────────
+        for (DigestContact& dc : g_digest) {
+            if (!dc.live) continue;
+            // resolve the report: longest-held part, longest-held source
+            int bi = -1; float bs = -1.f;
+            for (int k = 0; k < dc.nParts; ++k)
+                if (dc.parts[k].secs > bs) { bs = dc.parts[k].secs; bi = k; }
+            int bk = PPBAPI::kSourceHand; float bks = -1.f;
+            for (int k = 0; k < 8; ++k) if (dc.srcSecs[k] > bks) { bks = dc.srcSecs[k]; bk = k; }
+            PpbTouchContact& p = dc.pub;
+            p.actorFormId = dc.actorId; p.toucherFormId = 0x14;
+            p.wand = dc.wand;
+            p.sourceKind = (std::uint8_t)bk;
+            p.durationS = (float)(now - dc.startMs) / 1000.f;
+            // skeleton: resolved from the actor — this sweep runs OUTSIDE the roster
+            // loop, so the per-actor `skel` string is not in scope here.
+            if (auto* da = RE::TESForm::LookupByID<RE::Actor>(dc.actorId))
+                if (const char* sk2 = SkeletonOf(da))
+                    std::snprintf(p.skeleton, sizeof p.skeleton, "%s", sk2);
+            p.distU = dc.deepestU;              // digest reports how FAR it got, not this frame
+            // carry the live source name for WEAPON/OBJECT reports
+            if (bk == PPBAPI::kSourceWeapon)      std::snprintf(p.sourceName, sizeof p.sourceName, "%s", g_hp[dc.wand & 1].weapon.name);
+            else if (bk == PPBAPI::kSourceObject) std::snprintf(p.sourceName, sizeof p.sourceName, "%s", g_hp[dc.wand & 1].object.name);
+            else p.sourceName[0] = '\0';
+            if (bi >= 0) {
+                p.slot = dc.parts[bi].slot; p.child = dc.parts[bi].child;
+                p.leftTwin = dc.parts[bi].left;
+                char part[48];
+                BodyPartName(p.slot, p.leftTwin != 0, p.child, part, sizeof part);
+                std::snprintf(p.bodyPart, sizeof p.bodyPart, "%s(%s)",
+                              RegionLabel(dc.region), part);
+            }
+            const bool qual = dc.inRegionS >= DwellSForRegion(dc.region);
+            if (dc.seen) {
+                if (qual) {
+                    if (!dc.emitted) { dc.emitted = true; Emit(p, PPBAPI::kPhaseStart, false); }
+                    else              Emit(p, PPBAPI::kPhaseContinue, false);
+                }
+            } else {
+                if (dc.emitted) Emit(p, PPBAPI::kPhaseEnd, false);
+                dc.live = false;
+            }
+            dc.seen = false;
         }
 
         // sweep: contacts not refreshed this tick have ended (source left, actor left
@@ -615,8 +886,8 @@ namespace PpbApi {
         for (Contact& ct : g_contacts) {
             if (!ct.live || ct.seen) continue;
             ct.pub.durationS = (float)(now - ct.startMs) / 1000.f;
-            Emit(ct.pub, PPBAPI::kPhaseEnd);
-            ct.live = false;
+            if (ct.emitted) Emit(ct.pub, PPBAPI::kPhaseEnd, true);   // dwell filter: silent contacts
+            ct.live = false;                                   // end silently too
         }
 
         PublishSnapshot();
@@ -625,6 +896,7 @@ namespace PpbApi {
     void ClearOnLoad()
     {
         for (Contact& ct : g_contacts) ct.live = false;
+        for (DigestContact& dc : g_digest) dc.live = false;
         g_rosterN = 0;
         PublishSnapshot();
     }
@@ -671,6 +943,15 @@ namespace PpbApi {
             g_cbs[g_cbN++] = cb;
             return true;
         }
+        int GetRawContacts(PpbTouchContact* out, int max) override {
+            if (!out || max < 1) return 0;
+            const Snapshot& s = g_snapRaw[g_snapRawActive.load(std::memory_order_acquire)];
+            const int n = s.n < max ? s.n : max;
+            std::memcpy(out, s.c, sizeof(PpbTouchContact) * (size_t)n);
+            return n;
+        }
+        int RegionOf(int slot, int child) override { return RegionOfPart(slot, child); }
+        const char* RegionName(int region) override { return RegionLabel(region); }
     };
     static TouchInterfaceImpl g_iface;
 

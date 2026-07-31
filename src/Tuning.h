@@ -446,9 +446,28 @@ namespace ObjectHold {
         float apiExitPadU      = 0.75f;  // hysteresis: existing contact survives out to touch+pad
         float apiMaxActors     = 3.f;    // nearest driven actors scanned per tick
         float apiRangeU        = 300.f;  // roster range (matches the ghost tracker's reach)
-        float apiFistTipPalmU  = 7.f;    // index-tip-to-palm distance below which the hand = FIST
+        // Geometric FIST fallback, used only when VRIK is absent (VRIK's getFingerPos is the
+        // primary classifier). 2, not the original guessed 7: measured curl on a real rig
+        // spans 3.7-9.1u, so 7 sits mid-range and misclassifies. Code default now MATCHES the
+        // shipped tuning value — a code default that disagrees with the shipped file is the
+        // trap that bit touchProbe and npcFingerLog earlier the same day.
+        float apiFistTipPalmU  = 2.f;
         float apiEvents        = 1.f;    // 1 = fire the Papyrus mod events (natives always work)
         float apiLog           = 0.f;    // 1 = log START/END lines (debug; ships off)
+        // Dwell filter (2026-07-30, user spec): a body part is only SENT through the API
+        // after the probe lingered on it this long (seconds). Tracking is unaffected; a
+        // contact that never qualifies emits nothing at all. 0 = instant.
+        float apiDwellS        = 1.0f;   // default class (limbs, torso rings, etc.)
+        float apiDwellHeadS    = 1.5f;   // the face — brushes are common, meaning needs intent
+        float apiDwellComS     = 2.0f;   // pelvis/butt — the most brushed-in-passing slot
+        float apiDwellSensorS  = 0.5f;   // interior sensors — insertion is already deliberate
+        float apiDwellTailS    = 1.0f;   // tail chords
+        float apiRawEvents     = 0.f;    // 1 = also fire the verbose PPB_TouchRaw* events (one
+                                         // per capsule per source class). Ships OFF: the digest
+                                         // stream is what consumers want; raw is opt-in.
+        float apiSuppressHeldHand = 1.f; // 1 = a hand holding a weapon/object stops reporting
+                                         // bare-hand contacts (your palm is on the grip). The
+                                         // OTHER hand is unaffected.
         float apiHairTarget    = 0.f;    // 1 = hair chords are touch TARGETS too. Ships OFF:
                                          // hair drapes the face/head, so it wins the nearest-
                                          // capsule race against cheeks and shadows face touch.
@@ -1015,6 +1034,13 @@ namespace ObjectHold {
     float    ApiFistTipPalmU();         // fist-detection tip-to-palm distance
     bool     ApiEventsEnabled();        // mod-event emission
     bool     ApiLogEnabled();           // debug START/END logging
+    float    ApiDwellS();               // dwell filter: default class
+    float    ApiDwellHeadS();           // dwell filter: head slot
+    float    ApiDwellComS();            // dwell filter: pelvis slot (non-sensor)
+    float    ApiDwellSensorS();         // dwell filter: interior sensors C21-31
+    float    ApiDwellTailS();           // dwell filter: tail pseudo-slot
+    bool     ApiRawEventsEnabled();     // verbose PPB_TouchRaw* stream (ships off)
+    bool     ApiSuppressHeldHand();     // mute a hand that is holding something
     bool     ApiHairTarget();           // hair chords as touch targets (ships off)
     float    NpcRigRangeU();            // garment-rig create/keep range in game units (0 = unlimited)
     float    NpcRigRangeHystU();        // extra slack before a range destroy (anti-thrash)

@@ -1186,6 +1186,25 @@ apiEvents 1
 # apiHairTarget: hair chords as touch TARGETS. OFF — hair drapes the face, so it would win
 # the nearest-capsule race against cheeks and shadow face touch. Tails are always targets.
 apiHairTarget 0
+# apiRawEvents: also fire the VERBOSE PPB_TouchRaw* events (one per capsule per source
+# class, no region grouping). OFF — the digest stream is what consumers want; raw is for
+# mod authors building their own aggregation. The native interface exposes raw either way
+# via GetRawContacts(), so turning this on is only about Papyrus.
+apiRawEvents 0
+# apiSuppressHeldHand: a hand HOLDING a weapon or object stops reporting bare-hand
+# contacts (your palm is on the grip, so those were phantom FIST events alongside every
+# knife touch). The OTHER hand is unaffected.
+apiSuppressHeldHand 1
+# ── DWELL FILTER (2026-07-30): a body part is only SENT through the API (events,
+# callbacks, Papyrus snapshot) after the probe LINGERED on it this many seconds.
+# Tracking is unaffected — this is emission-side, so brushing 20 capsules in one
+# interaction sends only the parts you stayed on. A contact that never qualifies
+# anywhere emits nothing at all (no Start, no End). 0 = instant. All live.
+apiDwellS 1.0
+apiDwellHeadS 1.5
+apiDwellComS 2.0
+apiDwellSensorS 0.5
+apiDwellTailS 1.0
 # apiLog: START/END receipt lines in PPB.log. ON for this dev session (first in-game
 # verification); the packager refuses to ship it on.
 apiLog 1
