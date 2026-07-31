@@ -53,13 +53,14 @@ listener lesson), and a frozen 160-byte `PpbTouchContact` POD with a reserved ta
 
 An NPC's own hair/tail capsules can never trigger her own body: garment rigs are **never probe
 sources** — only the player's hands, weapon and held object are. Not a threshold; a property of
-the design. (Corollary: garment capsules are also not *targets* in rev 1 — touching her wig
-reports nothing. Candidate for rev 2 alongside NPC touchers.)
+the design. (Tails ARE targets since same-day rev 1.1 — pseudo-slot 100. Hair stays out by
+the same logic that protects self-touch: it drapes the face and would shadow head touches.)
 
 ## Knobs
 
-`apiTouch 1 · apiHz 20 · apiTouchU 1.0 · apiExitPadU 0.75 · apiMaxActors 3 · apiRangeU 300 ·
-apiFistTipPalmU 7 · apiEvents 1 · apiLog 0` — all live (PK_NOSNAP).
+`apiTouch 1 · apiHz 4 (user: "4hz is perfect") · apiTouchU 1.0 · apiExitPadU 0.75 ·
+apiMaxActors 3 · apiRangeU 300 · apiFistTipPalmU 2 (measured; see fix ladder) · apiEvents 1 ·
+apiLog 0 · apiHairTarget 0` — all live (PK_NOSNAP).
 
 ## Verification plan (first session)
 
@@ -73,10 +74,11 @@ apiFistTipPalmU 7 · apiEvents 1 · apiLog 0` — all live (PK_NOSNAP).
 
 ## Known limits (rev 1, all deliberate)
 
-Player-as-toucher only · body capsules only (no garment targets) · weapon contact uses HIGGS's
-weapon *body* which sits at the hilt (blade-tip contact reads coarse) · `PPB_Touch.psc` compiled
-with Caprica (needs `--flags tools/Caprica/TESV_Papyrus_Flags.flg` — the vanilla flg is not in
-the VR install's loose files).
+Player-as-toucher only (NPC touchers = rev 2) · TAIL chords are targets (pseudo-slot 100,
+base/mid/tip); hair is declared but gated off (`apiHairTarget`) · weapon = form-bound blade
+segment (see fix ladder below) · `PPB_Touch.psc` compiled with Caprica (needs
+`--flags tools/Caprica/TESV_Papyrus_Flags.flg` — the vanilla flg is not in the VR install's
+loose files).
 
 ---
 
