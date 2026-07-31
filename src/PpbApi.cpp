@@ -545,8 +545,23 @@ namespace {
             // from the same wand (seen in the session-4 log and wrongly defended as a
             // feature). The OTHER hand is untouched — one-handed use keeps full hand data.
             // GRAB is unaffected: grabbing an ACTOR never sets hp.object (actors are skipped).
-            if (ObjectHold::ApiSuppressHeldHand() && (hp.weapon.live || hp.object.live))
-                for (int b = 0; b < 4; ++b) hp.boxes[b].live = false;
+            //
+            // ★ INDEX EXCEPTION (2026-07-31, user: "send a line for each hand IF both are in
+            // contact"): full muting made a holding hand INVISIBLE — with a weapon carried
+            // all session, that wand could never report a touch, so two-hand interactions
+            // read one-handed. But the grip noise is the PALM and SLAB (they ride the grip);
+            // a deliberately EXTENDED index is a poke. VRIK separates the two from the
+            // controller itself: gripping keeps the index on the trigger (reads closed),
+            // pointing it off-trigger reads open. So while holding: palm+slab always muted,
+            // index boxes stay live only while VRIK says the finger is extended.
+            // VRIK absent (-1) fails closed = the old full mute. apiSuppressHeldHand 2 =
+            // strict full mute (the pre-exception behaviour) for consumers that want it.
+            if (ObjectHold::ApiSuppressHeldHand() && (hp.weapon.live || hp.object.live)) {
+                hp.boxes[2].live = hp.boxes[3].live = false;      // slab + palm = grip noise
+                const bool idxOpen = hp.vrikIndex > 0.55f;
+                if (ObjectHold::ApiSuppressHeldHandStrict() || !idxOpen)
+                    hp.boxes[0].live = hp.boxes[1].live = false;  // index pair
+            }
         }
     }
 

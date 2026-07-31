@@ -305,9 +305,16 @@ advances; re-resolve your body part on every event, not just Start.
 body: garment rigs are never probe *sources*, only targets. Not a threshold — a property of the
 design.
 
-**A held weapon or object suppresses that hand's bare-hand contacts.** Your palm is wrapped around
-the grip, so those were phantom `FIST` events beside every knife touch. The *other* hand is
-unaffected, and `GRAB` is unaffected.
+**Both hands report independently — every contact carries its own wand.** Two hands on the same
+NPC are two parallel contact streams (even on the same region), so read the `L`/`R` field rather
+than assuming one toucher.
+
+**A held weapon or object suppresses that hand's palm/fist contacts — but not a deliberate poke.**
+Your palm is wrapped around the grip, so palm and fist reads from a holding hand were phantom
+noise and stay muted. The index finger is the exception (2026-07-31): while VRIK reads it as
+extended, the holding hand's fingertip reports normally — so a hand carrying a knife can still
+poke, and two-hand interactions stay two streams. The *other* hand is always unaffected, and
+`GRAB` is unaffected. `apiSuppressHeldHand 2` restores the strict full mute.
 
 **Hair is declared but never emitted.** `kSlotHair` exists in the header with a warning. Hair
 strands drape the face and head, so they would win the nearest-surface race against cheeks and

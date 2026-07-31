@@ -743,6 +743,7 @@ namespace ObjectHold {
     float ApiWeaponRMaxU() { return g_tune.apiWeaponRMaxU; }
     bool  ApiSubRegionInEvent() { return g_tune.apiSubRegionInEvent > 0.5f; }
     bool  ApiSuppressHeldHand() { return g_tune.apiSuppressHeldHand > 0.5f; }
+    bool  ApiSuppressHeldHandStrict() { return g_tune.apiSuppressHeldHand > 1.5f; }
     bool  ApiHairTarget()       { return g_tune.apiHairTarget > 0.5f; }
     float NpcRigRangeU()        { return g_tune.npcRigRangeU     < 0.f ? 0.f : g_tune.npcRigRangeU; }
     float NpcRigRangeHystU()    { return g_tune.npcRigRangeHystU < 0.f ? 0.f : g_tune.npcRigRangeHystU; }

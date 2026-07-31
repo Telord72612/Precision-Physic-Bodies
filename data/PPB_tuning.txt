@@ -1204,6 +1204,9 @@ apiSubRegionInEvent 0
 # apiSuppressHeldHand: a hand HOLDING a weapon or object stops reporting bare-hand
 # contacts (your palm is on the grip, so those were phantom FIST events alongside every
 # knife touch). The OTHER hand is unaffected.
+# 1 = smart: a holding hand's palm/slab are muted (grip noise) but its INDEX boxes stay live
+#     while VRIK reads the finger as extended - so a weapon hand can still poke and BOTH hands
+#     report when both touch. 2 = strict full mute (pre-2026-07-31). 0 = off.
 apiSuppressHeldHand 1
 # ── DWELL FILTER (2026-07-30): a body part is only SENT through the API (events,
 # callbacks, Papyrus snapshot) after the probe LINGERED on it this many seconds.

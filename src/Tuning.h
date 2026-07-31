@@ -1055,7 +1055,8 @@ namespace ObjectHold {
     bool     ApiRawEventsEnabled();     // verbose PPB_TouchRaw* stream (ships off)
     float    ApiWeaponRMaxU();          // blade-radius cap (6u; 0 = uncapped)
     bool     ApiSubRegionInEvent();     // append the sub-region as a 5th packed field (off)
-    bool     ApiSuppressHeldHand();     // mute a hand that is holding something
+    bool     ApiSuppressHeldHand();
+    bool     ApiSuppressHeldHandStrict();   // knob=2: full mute, no index exception     // mute a hand that is holding something
     bool     ApiHairTarget();           // hair chords as touch targets (ships off)
     float    NpcRigRangeU();            // garment-rig create/keep range in game units (0 = unlimited)
     float    NpcRigRangeHystU();        // extra slack before a range destroy (anti-thrash)
