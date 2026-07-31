@@ -1165,3 +1165,18 @@ passengers are noise vs that target; (2) a log line is evidence of geometry, not
 citing a contact as verification, ask what the hand was DOING (the user knows; the log does not);
 (3) any radius inherited from a bound box needs a sanity cap — bounds encode extent, not contact
 surface.
+
+## * EVERY PRIORITY PROMOTION MUST ANSWER "CAN THIS BE REACHED FROM OUTSIDE?" (2026-07-31, same-day regression)
+Promoting the throat wall (head C10) into the priority race fixed insertion naming and, the same
+day, made an axe pressed on the OUTSIDE of her neck report "Face(throat wall)" (d 0.21 -> -0.84
+in the scripted session) — because C10 sits close behind the exterior throat surface and priority
+means winning. I had asked the outside-exposure question for C11 (under-jaw, excluded for exactly
+this) and not for C10, because C10 "is the end of the mouth" — anatomy-inside does not mean
+geometry-unreachable. FIX = the mouth gate's own discriminator, reused: from inside the cavity the
+palate is near, from outside the throat it is far, so C10 counts as priority only when the probe
+is also within mouthDeepPalU of C9 (per-probe, all three classes; the palate is cached as C9 is
+read before C10 in the child loop). **Rules:** (1) a priority/override promotion is a claim that
+every win is TRUE — test each promoted capsule from the OUTSIDE, not just the inside it was
+promoted for; (2) when one capsule cannot discriminate, AND it with a second (the user's original
+mouth-gate architecture: one capsule is never proof); (3) a scripted session — the user narrating
+what they did — turns a log into ground truth and found in minutes what free-form testing missed.

@@ -270,6 +270,27 @@ contacts are the positional detail.
 | penetration | `+1.0u` hover through `-11.43u` buried |
 | wands | L and R independently |
 
+### The scripted session (2026-07-31 17:16) — user-scripted ground truth
+
+The user narrated their touches, making the log gradeable line by line. All matched: breast
+(PALM), fist-to-face (FIST at vrik I0/M0), L-grab-her-hand WHILE R-finger poked her other hand
+(two parallel wand streams), axe-to-belly (Waist, hover), L-grab-head 6.61s. Fixes verified in
+the same pass: axe depths bounded by the radius cap (deepest -9.23 on a deliberate press),
+no phantom weapon lines, border flapping gone (exit grace), zero errors.
+
+**★ R-grab-to-neck produced `R|GRAB|Neck(neck / throat)` d=0.13u** — the neck capsule WINS a
+choke grab (alternating with `Chest(trapezius L)`, which the grab hand also covers). This
+answers VRTE's Phase-0 question (their report 16 §8.2 expected the opposite): their
+neck+GRAB choke arming condition is viable.
+
+**★ And it caught a same-day regression: the axe on her NECK reported `Face(throat wall)`**
+(d 0.21 → -0.84). C10 sits close behind the exterior throat surface, so the morning's priority
+promotion let an OUTSIDE press claim the mouth's deepest rung — the exact false positive C11
+was excluded for. Fixed with the throat inside-test: C10 only counts as priority when the probe
+is also within `mouthDeepPalU` of the palate (the mouth gate's own inside/outside asymmetry —
+from outside the throat the palate is far). The gate itself was never fooled (zero MOUTHTOUCH
+lines); only the capsule naming lied.
+
 ### The fix ladder — five sessions, five diagnoses
 
 1. **Everything classified FIST.** The curl heuristic's *guessed* 7u threshold swallowed every

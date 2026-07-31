@@ -637,9 +637,16 @@ namespace {
                 }
                 if (!slotNear) continue;
 
+                // palate cache for the throat wall's inside-test (C9 is read before C10)
+                float c9a[3]{}, c9b[3]{}, c9r = 0.f; bool c9ok = false;
                 for (int ch = 0; ch < nCh; ++ch) {
                     if (ch > 0 && !GrabDiag::ReadCapsuleWorldUSide(actor, slot, left, ch, a, b, &r))
                         continue;
+                    if (slot == 3 && ch == 9) {
+                        c9a[0]=a[0]; c9a[1]=a[1]; c9a[2]=a[2];
+                        c9b[0]=b[0]; c9b[1]=b[1]; c9b[2]=b[2];
+                        c9r = r; c9ok = true;
+                    }
                     // PRIORITY (interior) capsules compete in a SEPARATE race that overrides the
                     // general one below. Without this they can never be reported: the general
                     // race keeps the most-penetrated capsule, and a BIG capsule always beats a
@@ -661,6 +668,23 @@ namespace {
                     // promoting it would let a chin scritch outrank the face.
                     const bool isSensor = (slot == 11 && ch >= 21 && ch <= 31)   // pelvic chain
                                        || (slot == 3  && (ch == 9 || ch == 10)); // palate, throat
+                    // ★ THROAT INSIDE-TEST (2026-07-31, user-caught same day the throat joined
+                    // the priority set): C10 sits close behind the EXTERIOR throat surface, so
+                    // an axe pressed on her neck from outside reached it (d 0.21 -> -0.84) and
+                    // priority made it WIN — "Face(throat wall)" for an outside neck press, the
+                    // exact false positive C11 was excluded for. The discriminator is the mouth
+                    // gate's own deep-hold asymmetry: from INSIDE the cavity the palate is near;
+                    // from outside the throat it is far. So the throat only counts as a priority
+                    // capsule when the probe is ALSO within mouthDeepPalU of the palate. One
+                    // capsule is never proof — the user's original mouth-gate architecture.
+                    const bool  isThroat = slot == 3 && ch == 10;
+                    const float deepPal  = ObjectHold::MouthDeepPalU();
+                    auto nearPalate = [&](const float* pt, const float* q2) {
+                        if (!c9ok) return false;
+                        const float dp = (q2 ? SegSegDistU(c9a, c9b, pt, q2)
+                                             : SegPointDistU(c9a, c9b, pt)) - c9r;
+                        return dp < deepPal;
+                    };
                     for (int hand = 0; hand < 2; ++hand) {
                         const HandProbes& hp = g_hp[hand];
                         for (int bx = 0; bx < 4; ++bx) {
@@ -669,7 +693,7 @@ namespace {
                             Hit& h = out[hand][kClsHand];
                             if (d < h.dist) { h.found = true; h.dist = d; h.slot = slot;
                                               h.child = ch; h.left = left; h.viaBox = bx; }
-                            if (isSensor) {
+                            if (isSensor && (!isThroat || nearPalate(hp.boxes[bx].p, nullptr))) {
                                 Hit& sh = sens[hand][kClsHand];
                                 if (d < sh.dist) { sh.found = true; sh.dist = d; sh.slot = slot;
                                                    sh.child = ch; sh.left = left; sh.viaBox = bx; }
@@ -683,7 +707,8 @@ namespace {
                             Hit& h = out[hand][kClsWeapon];
                             if (d < h.dist) { h.found = true; h.dist = d; h.slot = slot;
                                               h.child = ch; h.left = left; }
-                            if (isSensor) {
+                            if (isSensor && (!isThroat ||
+                                             nearPalate(hp.weapon.p, hp.weapon.seg ? hp.weapon.q : nullptr))) {
                                 Hit& sh = sens[hand][kClsWeapon];
                                 if (d < sh.dist) { sh.found = true; sh.dist = d; sh.slot = slot;
                                                    sh.child = ch; sh.left = left; }
@@ -694,7 +719,7 @@ namespace {
                             Hit& h = out[hand][kClsObject];
                             if (d < h.dist) { h.found = true; h.dist = d; h.slot = slot;
                                               h.child = ch; h.left = left; }
-                            if (isSensor) {
+                            if (isSensor && (!isThroat || nearPalate(hp.object.p, nullptr))) {
                                 Hit& sh = sens[hand][kClsObject];
                                 if (d < sh.dist) { sh.found = true; sh.dist = d; sh.slot = slot;
                                                    sh.child = ch; sh.left = left; }
