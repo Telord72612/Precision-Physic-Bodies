@@ -440,7 +440,8 @@ namespace ObjectHold {
         // Player-as-toucher contact reporting: mod events (PPB_TouchStart/Touch/TouchEnd),
         // Papyrus natives (PPB_Touch.GetContact*), and the native IPpbTouchInterface1.
         float apiTouch         = 1.f;    // master switch for the contact engine
-        float apiHz            = 20.f;   // tick + event rate per second (user: 20+, not 4)
+        float apiHz            = 4.f;    // tick + event rate per second (user 2026-07-30: "4hz is
+                                         // perfect, faster is wasted resource")
         float apiTouchU        = 1.0f;   // surface distance that counts as CONTACT (game units)
         float apiExitPadU      = 0.75f;  // hysteresis: existing contact survives out to touch+pad
         float apiMaxActors     = 3.f;    // nearest driven actors scanned per tick
@@ -448,6 +449,9 @@ namespace ObjectHold {
         float apiFistTipPalmU  = 7.f;    // index-tip-to-palm distance below which the hand = FIST
         float apiEvents        = 1.f;    // 1 = fire the Papyrus mod events (natives always work)
         float apiLog           = 0.f;    // 1 = log START/END lines (debug; ships off)
+        float apiHairTarget    = 0.f;    // 1 = hair chords are touch TARGETS too. Ships OFF:
+                                         // hair drapes the face/head, so it wins the nearest-
+                                         // capsule race against cheeks and shadows face touch.
         float npcRigRangeU     = 700.f;  // ~10 m (game unit ≈ 1.43 cm)
         float npcRigRangeHystU = 100.f;  // extra slack before a range destroy (anti-thrash)
         float npcRigMaxActors  = 2.f;    // the "two closest" budget
@@ -1011,6 +1015,7 @@ namespace ObjectHold {
     float    ApiFistTipPalmU();         // fist-detection tip-to-palm distance
     bool     ApiEventsEnabled();        // mod-event emission
     bool     ApiLogEnabled();           // debug START/END logging
+    bool     ApiHairTarget();           // hair chords as touch targets (ships off)
     float    NpcRigRangeU();            // garment-rig create/keep range in game units (0 = unlimited)
     float    NpcRigRangeHystU();        // extra slack before a range destroy (anti-thrash)
     int      NpcRigMaxActors();         // how many ACTORS may hold garment rigs (0 = unlimited)

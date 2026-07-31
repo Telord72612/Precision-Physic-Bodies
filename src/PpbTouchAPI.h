@@ -79,6 +79,19 @@ namespace PPBAPI {
         kSourceObject = 6,   // a HIGGS-held object (sourceName = the object's base name)
     };
 
+    // GARMENT pseudo-slots (2026-07-30): garment contacts report through the same contact
+    // stream with these values in PpbTouchContact::slot. child = the chord index along the
+    // chain (0 = root). BODYPART strings: "tail (base)" / "tail (mid)" / "tail (tip)", "hair".
+    // Real body slots stay 0..11; these are additive.
+    // ⚠ kSlotHair is DECLARED but NOT EMITTED by default: hair strands drape the face and
+    // head, so they would win the nearest-capsule race against cheeks and shadow face
+    // touches. The host can enable it (apiHairTarget knob); consumers must tolerate never
+    // seeing it.
+    enum PseudoSlot : int {
+        kSlotTail = 100,
+        kSlotHair = 101,
+    };
+
     enum Phase : int {
         kPhaseEnd      = 0,
         kPhaseStart    = 1,

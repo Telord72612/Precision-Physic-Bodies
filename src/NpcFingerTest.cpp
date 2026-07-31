@@ -2868,6 +2868,41 @@ namespace NpcFinger {
     // false for every actor that isn't carrying the live tbl-0 finger rig — the cheap path.
     const char* PartName(int slot, int child) { return ProposedPartName(slot, child); }
 
+    // ── TOUCH-API GARMENT READS (2026-07-30) ────────────────────────────────────────────
+    // The API's rev-1 targets were only the 12 body slots; tails and hair are follower
+    // rigs and never reported (user caught it same day). kind 0 = tail (tbl 1..6, i.e.
+    // any garment table below kHairBase), kind 1 = hair (tbl >= kHairBase). tbl 0 is the
+    // finger rig — never a target. One live rig per kind per actor by construction
+    // (the auto-probe's have[]/haveHair checks).
+    static FingerRig* FindGarmentRig(std::uint32_t actorId, int kind)
+    {
+        for (int k = 0; k < kMaxRigs; ++k) {
+            FingerRig& r = g_rigs[k];
+            if (!r.live || r.actorId != actorId || r.tbl == 0) continue;
+            const bool isHair = r.tbl >= kHairBase;
+            if ((kind == 1) == isHair) return &r;
+        }
+        return nullptr;
+    }
+
+    int GarmentChords(std::uint32_t actorId, int kind)
+    {
+        FingerRig* r = FindGarmentRig(actorId, kind);
+        return r ? PairTable(r->tbl).n : 0;
+    }
+
+    bool GarmentChordU(std::uint32_t actorId, int kind, int chord,
+                       float aOutU[3], float bOutU[3], float* rOutU)
+    {
+        FingerRig* r = FindGarmentRig(actorId, kind);
+        if (!r) return false;
+        const int n = PairTable(r->tbl).n;
+        if (chord < 0 || chord >= n || chord >= kMaxChords) return false;
+        hkpRigidBody* hk = HkOf(r->bodies[chord].bodyMem);
+        if (!hk) return false;
+        return GrabDiag::ReadCapsuleWorldFromBody(hk, aOutU, bOutU, rOutU);
+    }
+
     bool WeaponPointU(bool left, float outU[3])
     {
         auto* hig = Interop::GetHiggs();

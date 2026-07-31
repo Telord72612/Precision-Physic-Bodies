@@ -105,6 +105,31 @@ namespace Interop {
     }
 
 
+    Vrik::IVrikInterface001* g_vrik = nullptr;
+
+    void AcquireVrik()
+    {
+        if (g_vrik) return;  // idempotent
+        if (!::GetModuleHandleA("vrik.dll")) {
+            logger::info("PPB VRIK interface=ABSENT (vrik.dll not loaded) - touch-API hand pose "
+                         "falls back to box geometry");
+            return;
+        }
+        auto* msging = SKSE::GetMessagingInterface();
+        if (!msging) return;
+        Vrik::VrikMessage vm;
+        // dataLen = sizeof(pointer), mirroring HIGGS's own known-working VRIK call verbatim
+        msging->Dispatch(Vrik::VrikMessage::kMessage_GetInterface, static_cast<void*>(&vm),
+                         sizeof(Vrik::VrikMessage*), "VRIK");
+        if (!vm.getApiFunction) { logger::info("PPB VRIK interface=FAILED (no reply)"); return; }
+        g_vrik = static_cast<Vrik::IVrikInterface001*>(vm.getApiFunction(1));
+        if (g_vrik)
+            logger::info("PPB VRIK interface=OK build={} - finger-pose classification live "
+                         "(getFingerPos: 0=closed 1=open)", g_vrik->getBuildNumber());
+        else
+            logger::info("PPB VRIK interface=FAILED (getApiFunction(1) null)");
+    }
+
     void AcquireHiggs()
     {
         if (g_higgs) return;  // idempotent
@@ -143,6 +168,7 @@ namespace Interop {
 
     bool HasHiggs() { return g_higgs != nullptr; }
     Higgs::IHiggsInterface001* GetHiggs() { return g_higgs; }
+    Vrik::IVrikInterface001* GetVrik() { return g_vrik; }
 
     bool IsActorGrabbedByPlayer(RE::Actor* actor)
     {

@@ -21,6 +21,14 @@ namespace GrabDiag {
     // Sided variant (left = the L-twin node); SlotHasLeftTwin says which slots have one.
     bool ReadCapsuleWorldUSide(RE::Actor* a, int slot, bool left, int child, float aOut[3], float bOut[3], float* rOut);
     bool SlotHasLeftTwin(int slot);
+    // World capsule of a RAW hkpRigidBody (void* to keep SDK/RE types out of the header).
+    // The body's shape must be a plain capsule — exactly what PPB's garment chord bodies
+    // are. Used by the touch API to read tail/hair chords. false = null/not a capsule.
+    bool ReadCapsuleWorldFromBody(void* hkpBody, float aOutU[3], float bOutU[3], float* rOutU);
+    // The wielded weapon's collision SEGMENT (hilt->tip axis + radius, world game units),
+    // read off HIGGS's weapon rigid body. Falls back to a zero-length segment at the body
+    // position when the shape is unreadable. false = no weapon body at all.
+    bool WeaponSegmentU(bool left, float aOutU[3], float bOutU[3], float* rOutU);
     bool SlotBodyPoseU(RE::Actor* a, int slot, float posOutU[3], float rotOut[9]);
     const char* SlotLabel(int slot);                 // "hand","forearm",... "com" (12 slots)
     int  SlotLiveChildren(RE::Actor* a, int slot);   // list child count; 0 = single capsule/none

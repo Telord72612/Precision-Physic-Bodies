@@ -1,4 +1,5 @@
 #pragma once
+#include "VrikInterface.h"
 
 namespace RE { class Actor; }
 namespace Higgs { struct IHiggsInterface001; }
@@ -42,6 +43,11 @@ namespace Interop {
     // for a BodyScale::Region (0..6): sum(additive keys) - sum(antonym keys), 0 = at the zero-
     // slider capsule base. 0.0f whenever SKEE is absent or the actor has no morphs yet (skip).
     void AcquireSkee();
+    // VRIK finger-pose handshake (touch API, 2026-07-30): getFingerPos is the live
+    // controller-driven hand pose the FIST/PALM/FINGER classifier needs. Idempotent;
+    // call at kPostPostLoad + kDataLoaded like the others.
+    void AcquireVrik();
+    Vrik::IVrikInterface001* GetVrik();         // nullptr until acquired
     bool HasSkee();
     SKEE::IBodyMorphInterface* GetSkee();
     bool  SkeeHasMorphs(RE::Actor* actor);          // true once the actor's OBody/skin morphs are applied

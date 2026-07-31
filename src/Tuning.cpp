@@ -113,7 +113,7 @@ namespace ObjectHold {
                     PK_NOSNAP(npcRigRangeU), PK_NOSNAP(npcRigRangeHystU), PK_NOSNAP(npcRigMaxActors),
                     PK_NOSNAP(apiTouch), PK_NOSNAP(apiHz), PK_NOSNAP(apiTouchU), PK_NOSNAP(apiExitPadU),
                     PK_NOSNAP(apiMaxActors), PK_NOSNAP(apiRangeU), PK_NOSNAP(apiFistTipPalmU),
-                    PK_NOSNAP(apiEvents), PK_NOSNAP(apiLog),
+                    PK_NOSNAP(apiEvents), PK_NOSNAP(apiLog), PK_NOSNAP(apiHairTarget),
                     PK_NOSNAP(higgsPokeFix),
                     PK_NOSNAP(npcFingerTipU), PK_NOSNAP(npcFingerMassKg), PK_NOSNAP(npcGarmentMassKg), PK_NOSNAP(npcTailMassKg), PK_NOSNAP(npcSilentVelMS), PK_NOSNAP(npcGarmentMat), PK_NOSNAP(npcFingerAlpha),
                     PK_NOSNAP(npcFingerCurlGain), PK_NOSNAP(npcFingerCurlDecay), PK_NOSNAP(npcFingerCurlMax), PK_NOSNAP(npcFingerCurlMode), PK_NOSNAP(npcFingerCurlLagGate),
@@ -729,6 +729,7 @@ namespace ObjectHold {
     float ApiFistTipPalmU()     { return g_tune.apiFistTipPalmU < 0.f ? 0.f : g_tune.apiFistTipPalmU; }
     bool  ApiEventsEnabled()    { return g_tune.apiEvents > 0.5f; }
     bool  ApiLogEnabled()       { return g_tune.apiLog > 0.5f; }
+    bool  ApiHairTarget()       { return g_tune.apiHairTarget > 0.5f; }
     float NpcRigRangeU()        { return g_tune.npcRigRangeU     < 0.f ? 0.f : g_tune.npcRigRangeU; }
     float NpcRigRangeHystU()    { return g_tune.npcRigRangeHystU < 0.f ? 0.f : g_tune.npcRigRangeHystU; }
     int   NpcRigMaxActors()     { const int n = (int)(g_tune.npcRigMaxActors + 0.5f); return n < 0 ? 0 : n; }

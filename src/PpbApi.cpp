@@ -68,6 +68,42 @@ namespace {
         return std::sqrt(dx*dx + dy*dy + dz*dz);
     }
 
+    // Closest distance between two segments (Ericson, clamped) — the weapon-blade probe.
+    inline float SegSegDistU(const float p1[3], const float q1[3],
+                             const float p2[3], const float q2[3])
+    {
+        const float d1[3] = { q1[0]-p1[0], q1[1]-p1[1], q1[2]-p1[2] };
+        const float d2[3] = { q2[0]-p2[0], q2[1]-p2[1], q2[2]-p2[2] };
+        const float r[3]  = { p1[0]-p2[0], p1[1]-p2[1], p1[2]-p2[2] };
+        const float A = d1[0]*d1[0] + d1[1]*d1[1] + d1[2]*d1[2];
+        const float E = d2[0]*d2[0] + d2[1]*d2[1] + d2[2]*d2[2];
+        const float F = d2[0]*r[0] + d2[1]*r[1] + d2[2]*r[2];
+        float sN = 0.f, tN = 0.f;
+        if (A <= 1e-8f && E <= 1e-8f) {
+            // both degenerate: point-point
+        } else if (A <= 1e-8f) {
+            tN = F / E; tN = tN < 0.f ? 0.f : (tN > 1.f ? 1.f : tN);
+        } else {
+            const float C = d1[0]*r[0] + d1[1]*r[1] + d1[2]*r[2];
+            if (E <= 1e-8f) {
+                sN = -C / A; sN = sN < 0.f ? 0.f : (sN > 1.f ? 1.f : sN);
+            } else {
+                const float B = d1[0]*d2[0] + d1[1]*d2[1] + d1[2]*d2[2];
+                const float den = A * E - B * B;
+                sN = den > 1e-8f ? (B * F - C * E) / den : 0.f;
+                sN = sN < 0.f ? 0.f : (sN > 1.f ? 1.f : sN);
+                tN = (B * sN + F) / E;
+                if (tN < 0.f)      { tN = 0.f; sN = -C / A; }
+                else if (tN > 1.f) { tN = 1.f; sN = (B - C) / A; }
+                sN = sN < 0.f ? 0.f : (sN > 1.f ? 1.f : sN);
+            }
+        }
+        const float c1[3] = { p1[0]+d1[0]*sN, p1[1]+d1[1]*sN, p1[2]+d1[2]*sN };
+        const float c2[3] = { p2[0]+d2[0]*tN, p2[1]+d2[1]*tN, p2[2]+d2[2]*tN };
+        const float dx = c1[0]-c2[0], dy = c1[1]-c2[1], dz = c1[2]-c2[2];
+        return std::sqrt(dx*dx + dy*dy + dz*dz);
+    }
+
     // ── per-frame roster (OnPreDrive fills, OnFrame consumes — same frame only) ──
     struct RosterEntry { RE::Actor* actor; std::uint32_t id; float d2; };
     RosterEntry g_roster[kMaxRoster];
@@ -77,8 +113,10 @@ namespace {
     enum SourceClass : int { kClsHand = 0, kClsWeapon = 1, kClsObject = 2, kClsCount = 3 };
     struct Probe {
         bool  live = false;
-        float p[3]{};        // probe point, world game units
-        float pad  = 0.f;    // extra surface (object bound radius)
+        bool  seg  = false;  // true: the probe is the SEGMENT p->q (weapon blade axis)
+        float p[3]{};        // probe point (or segment start), world game units
+        float q[3]{};        // segment end (seg only)
+        float pad  = 0.f;    // extra surface (object bound radius / weapon capsule radius)
         char  name[48]{};    // weapon/object base name
     };
     struct HandProbes {
@@ -86,6 +124,13 @@ namespace {
         Probe weapon;
         Probe object;
         bool  curled = false;   // index distal tip near the palm plate = fist
+        float curlDistU = -1.f; // measured tip->palm distance (calibration receipt for apiLog)
+        // VRIK live finger pose (0 = closed .. 1 = open); -1 = VRIK absent. THE authoritative
+        // gesture source (user 2026-07-30: "my hand are in a fist or with the index sticking
+        // out cause im pushing certain button on the controller — a check on that is all
+        // that is needed") — geometry could not discriminate (constant curl, see below).
+        float vrikIndex = -1.f;
+        float vrikMiddle = -1.f;
     };
     HandProbes g_hp[2];      // [0]=R, [1]=L (HandBox hand indexing)
 
@@ -111,6 +156,8 @@ namespace {
     int g_cbN = 0;
 
     std::uint64_t g_lastTickMs = 0;
+    int g_garmentChordN[2] = { 0, 0 };   // this-scan chord counts (tail, hair) for naming
+
 
     // ── skeleton classification ─────────────────────────────────────────────
     // Mirrors PPBHook's oursPPB check: the FEMALE skeleton model path of the actor's race.
@@ -160,6 +207,14 @@ namespace {
     // unnamed fall back to "<slot>.C<n>" so a touch is NEVER silently dropped.
     void BodyPartName(int slot, bool left, int child, char* out, size_t cap)
     {
+        // Garment pseudo-slots: WHERE = the region along the chain, not a map name.
+        if (slot == PPBAPI::kSlotTail || slot == PPBAPI::kSlotHair) {
+            if (slot == PPBAPI::kSlotHair) { std::snprintf(out, cap, "hair"); return; }
+            const int n = g_garmentChordN[0] > 0 ? g_garmentChordN[0] : 1;
+            const char* seg = child * 3 < n ? "base" : (child * 3 < n * 2 ? "mid" : "tip");
+            std::snprintf(out, cap, "tail (%s)", seg);
+            return;
+        }
         const char* nm = NpcFinger::PartName(slot, child);
         const bool sided = GrabDiag::SlotHasLeftTwin(slot);
         if (nm) {
@@ -184,16 +239,29 @@ namespace {
                                          : HandBox::BoxCenterWorldU(hand, b, p);
                 hp.boxes[b].live = ok;
             }
-            // curl: index DISTAL tip riding at the palm plate = fist
+            // curl: index DISTAL tip riding at the palm plate = fist. The distance is kept
+            // as a CALIBRATION RECEIPT — apiLog prints it on every hand START/END so the
+            // fist threshold gets set from measured open-vs-fist numbers, not guessed:
+            // the first session classified an open hand as FIST on the guessed default (7).
             if (hp.boxes[1].live && hp.boxes[3].live) {
                 const float dx = hp.boxes[1].p[0] - hp.boxes[3].p[0];
                 const float dy = hp.boxes[1].p[1] - hp.boxes[3].p[1];
                 const float dz = hp.boxes[1].p[2] - hp.boxes[3].p[2];
-                hp.curled = (dx*dx + dy*dy + dz*dz)
-                          < ObjectHold::ApiFistTipPalmU() * ObjectHold::ApiFistTipPalmU();
+                hp.curlDistU = std::sqrt(dx*dx + dy*dy + dz*dz);
+                hp.curled = hp.curlDistU < ObjectHold::ApiFistTipPalmU();
             }
             const bool isLeft = hand == 1;
-            if (NpcFinger::WeaponPointU(isLeft, hp.weapon.p)) {
+            if (auto* vrik = Interop::GetVrik()) {
+                hp.vrikIndex  = vrik->getFingerPos(isLeft, 1);
+                hp.vrikMiddle = vrik->getFingerPos(isLeft, 2);
+            }
+            // Weapon = the blade SEGMENT (hilt->tip + radius) read off HIGGS's weapon body.
+            // The first probe was the body POSITION, which sits at the HILT — prodding with
+            // the blade tip never registered (user-verified miss, 2026-07-30). The point
+            // fallback inside WeaponSegmentU covers unreadable shapes; its one-shot log
+            // names the shape actually carried.
+            if (GrabDiag::WeaponSegmentU(isLeft, hp.weapon.p, hp.weapon.q, &hp.weapon.pad)) {
+                hp.weapon.seg  = true;
                 hp.weapon.live = true;
                 // name = the equipped weapon in that hand (display name; may be empty)
                 if (auto* pl = RE::PlayerCharacter::GetSingleton()) {
@@ -231,18 +299,30 @@ namespace {
 
     void ScanActor(RE::Actor* actor, Hit out[2][kClsCount])
     {
-        // actor-level cull: any live probe within reach of the actor's center?
+        // actor-level cull: any live probe within reach of the actor's center?  Segment
+        // probes (the weapon blade) test BOTH endpoints and the midpoint — a blade tip can
+        // be in range while the hilt is not.
         const auto ap = actor->GetPosition();
+        const float apf[3] = { ap.x, ap.y, ap.z };
+        auto probeNear = [](const Probe* pr, const float t[3], float rangeU) {
+            auto near1 = [&](const float* pt) {
+                const float dx = pt[0]-t[0], dy = pt[1]-t[1], dz = pt[2]-t[2];
+                return dx*dx + dy*dy + dz*dz < rangeU * rangeU;
+            };
+            if (near1(pr->p)) return true;
+            if (!pr->seg) return false;
+            if (near1(pr->q)) return true;
+            const float mid[3] = { (pr->p[0]+pr->q[0])*0.5f, (pr->p[1]+pr->q[1])*0.5f,
+                                   (pr->p[2]+pr->q[2])*0.5f };
+            return near1(mid);
+        };
         bool anyNear = false;
         for (int hand = 0; hand < 2 && !anyNear; ++hand) {
             const HandProbes& hp = g_hp[hand];
             const Probe* all[6] = { &hp.boxes[0], &hp.boxes[1], &hp.boxes[2], &hp.boxes[3],
                                     &hp.weapon, &hp.object };
-            for (const Probe* pr : all) {
-                if (!pr->live) continue;
-                const float dx = pr->p[0]-ap.x, dy = pr->p[1]-ap.y, dz = pr->p[2]-ap.z;
-                if (dx*dx + dy*dy + dz*dz < kActorCullU * kActorCullU) { anyNear = true; break; }
-            }
+            for (const Probe* pr : all)
+                if (pr->live && probeNear(pr, apf, kActorCullU)) { anyNear = true; break; }
         }
         if (!anyNear) return;
 
@@ -260,8 +340,12 @@ namespace {
                     const HandProbes& hp = g_hp[hand];
                     const Probe* all[6] = { &hp.boxes[0], &hp.boxes[1], &hp.boxes[2],
                                             &hp.boxes[3], &hp.weapon, &hp.object };
-                    for (const Probe* pr : all)
-                        if (pr->live && SegPointDistU(a, b, pr->p) < kSlotCullU) { slotNear = true; break; }
+                    for (const Probe* pr : all) {
+                        if (!pr->live) continue;
+                        const float d = pr->seg ? SegSegDistU(a, b, pr->p, pr->q)
+                                                : SegPointDistU(a, b, pr->p);
+                        if (d < kSlotCullU) { slotNear = true; break; }
+                    }
                 }
                 if (!slotNear) continue;
 
@@ -278,7 +362,10 @@ namespace {
                                               h.child = ch; h.left = left; h.viaBox = bx; }
                         }
                         if (hp.weapon.live) {
-                            const float d = SegPointDistU(a, b, hp.weapon.p) - r;
+                            const float d = (hp.weapon.seg
+                                                ? SegSegDistU(a, b, hp.weapon.p, hp.weapon.q)
+                                                : SegPointDistU(a, b, hp.weapon.p))
+                                            - r - hp.weapon.pad;
                             Hit& h = out[hand][kClsWeapon];
                             if (d < h.dist) { h.found = true; h.dist = d; h.slot = slot;
                                               h.child = ch; h.left = left; }
@@ -289,6 +376,49 @@ namespace {
                             if (d < h.dist) { h.found = true; h.dist = d; h.slot = slot;
                                               h.child = ch; h.left = left; }
                         }
+                    }
+                }
+            }
+        }
+
+        // ── GARMENT TARGETS (2026-07-30): TAIL chords compete in the same nearest-capsule
+        // race as the body slots (pseudo-slot 100). HAIR (101) is knob-gated OFF by default
+        // — user decision same day: hair chords DRAPE the head and shoulders, so in a
+        // nearest-surface race a finger aimed at a cheek lands on a hair chord and face
+        // touches misreport. apiHairTarget 1 adds hair anyway (live knob).
+        // GRAB never classifies here unless HIGGS holds the ACTOR itself.
+        const std::uint32_t gid = actor->GetFormID();
+        const int kindMax = ObjectHold::ApiHairTarget() ? 2 : 1;
+        for (int kind = 0; kind < kindMax; ++kind) {
+            const int n = NpcFinger::GarmentChords(gid, kind);
+            g_garmentChordN[kind] = n;
+            for (int ch = 0; ch < n; ++ch) {
+                float a[3], b[3], r;
+                if (!NpcFinger::GarmentChordU(gid, kind, ch, a, b, &r)) continue;
+                const int pseudo = kind == 0 ? PPBAPI::kSlotTail : PPBAPI::kSlotHair;
+                for (int hand = 0; hand < 2; ++hand) {
+                    const HandProbes& hp = g_hp[hand];
+                    for (int bx = 0; bx < 4; ++bx) {
+                        if (!hp.boxes[bx].live) continue;
+                        const float d = SegPointDistU(a, b, hp.boxes[bx].p) - r;
+                        Hit& h = out[hand][kClsHand];
+                        if (d < h.dist) { h.found = true; h.dist = d; h.slot = pseudo;
+                                          h.child = ch; h.left = false; h.viaBox = bx; }
+                    }
+                    if (hp.weapon.live) {
+                        const float d = (hp.weapon.seg
+                                            ? SegSegDistU(a, b, hp.weapon.p, hp.weapon.q)
+                                            : SegPointDistU(a, b, hp.weapon.p))
+                                        - r - hp.weapon.pad;
+                        Hit& h = out[hand][kClsWeapon];
+                        if (d < h.dist) { h.found = true; h.dist = d; h.slot = pseudo;
+                                          h.child = ch; h.left = false; }
+                    }
+                    if (hp.object.live) {
+                        const float d = SegPointDistU(a, b, hp.object.p) - r - hp.object.pad;
+                        Hit& h = out[hand][kClsObject];
+                        if (d < h.dist) { h.found = true; h.dist = d; h.slot = pseudo;
+                                          h.child = ch; h.left = false; }
                     }
                 }
             }
@@ -307,11 +437,28 @@ namespace {
             }
         }
         const HandProbes& hp = g_hp[hand];
+        // VRIK pose first — the live controller-driven hand state (0=closed..1=open).
+        // Index open + middle closed = pointing; both closed = fist; both open = palm.
+        // The 0.45/0.55 band is deliberate hysteresis dead space: mid-transition poses
+        // fall through to the geometric classifiers below rather than flickering.
+        if (hp.vrikIndex >= 0.f && hp.vrikMiddle >= 0.f) {
+            const bool idxOpen    = hp.vrikIndex  > 0.55f, idxClosed = hp.vrikIndex  < 0.45f;
+            const bool midOpen    = hp.vrikMiddle > 0.55f, midClosed = hp.vrikMiddle < 0.45f;
+            if (idxOpen  && midClosed) return PPBAPI::kSourceFinger;
+            if (idxClosed && midClosed) return PPBAPI::kSourceFist;
+            if (idxOpen  && midOpen)   return PPBAPI::kSourcePalm;
+        }
         if (hp.curled) return PPBAPI::kSourceFist;
-        // "clearly nearest" = the winning box beats every other box class by 1u (the
-        // handbook margin). viaBox 0/1 = index → FINGER; 3 = palm plate → PALM; else HAND.
+        // Which box led the contact IS the gesture (2026-07-30, measured): on this rig the
+        // curl distance is a CONSTANT ~3.7-4.3u for every gesture — the game hand's fingers
+        // do not articulate — so tip-to-palm geometry cannot tell fist from open hand. But
+        // the leading box can: a poke leads with an index box (0/1), an open-palm press
+        // leads with the palm plate (3), and a knuckle press leads with the FIST SLAB (2),
+        // which spans the middle/ring/pinky proximal row — exactly the surface a fist
+        // presses with. The curl path above stays for rigs that DO articulate.
         if (h.viaBox == 0 || h.viaBox == 1) return PPBAPI::kSourceFinger;
         if (h.viaBox == 3)                  return PPBAPI::kSourcePalm;
+        if (h.viaBox == 2)                  return PPBAPI::kSourceFist;
         return PPBAPI::kSourceHand;
     }
 
@@ -344,9 +491,14 @@ namespace {
         if (ObjectHold::ApiLogEnabled() && phase != PPBAPI::kPhaseContinue) {
             char packed[192];
             PackStr(c, packed, sizeof packed);
-            logger::info("API {} {:08X} {} d={:.2f}u dur={:.2f}s",
+            // curl = the FIST calibration receipt: index-tip-to-palm distance for the hand
+            // this contact rode. Do one open-hand touch and one fist touch, read the two
+            // numbers, set apiFistTipPalmU between them. -1 = boxes not live.
+            logger::info("API {} {:08X} {} d={:.2f}u dur={:.2f}s curl={:.1f}u vrik=I{:.2f}/M{:.2f}",
                          phase == PPBAPI::kPhaseStart ? "START" : "END",
-                         c.actorFormId, packed, c.distU, c.durationS);
+                         c.actorFormId, packed, c.distU, c.durationS,
+                         g_hp[c.wand & 1].curlDistU,
+                         g_hp[c.wand & 1].vrikIndex, g_hp[c.wand & 1].vrikMiddle);
         }
     }
 

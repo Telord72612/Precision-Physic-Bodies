@@ -3,6 +3,7 @@
 #include "Tuning.h"    // ObjectHold::CapFixGen/CapFixSlot/CapFixChildSlot/CapFixSet/CapAutoFitEnabled/CapMirrorLEnabled
 #include "PivFix.h"    // ObjectHold::PivReadJointLocal — the joint-ball reader for the capsule auto-fit
 #include "Interop.h"   // Interop::IsActorGrabbedByPlayer — the auto-fit grab gate (2026-07-07)
+#include "HiggsInterface.h"  // GetWeaponRigidBody — WeaponSegmentU (touch API, 2026-07-30)
 #include "NpcFingerTest.h"   // NpcFinger::UpdateMeshMarkers — the Route B band markers (2026-07-18)
 #include "DismemberGuard.h"  // IsExcluded — the dead/dismembered latch gate (2026-07-28)
 
@@ -13,6 +14,7 @@
 #include <cstdio>
 #include <cstring>
 #include <unordered_map>
+#include <atomic>
 #include <xmmintrin.h>   // _mm_store_ps
 
 namespace logger = SKSE::log;
@@ -2576,6 +2578,184 @@ namespace GrabDiag {
         return body ? body->GetRigidBody() : nullptr;
     }
     bool SlotHasLeftTwin(int slot) { return slot >= 0 && slot < 12 && kSlotNodeL[slot] != nullptr; }
+
+    // Raw-body capsule read (touch API): the same transform math as ReadCapsuleWorldUSide,
+    // but addressed by the hkpRigidBody pointer itself — for bodies PPB created directly
+    // (garment chords), which have no slot/node address.
+    bool ReadCapsuleWorldFromBody(void* hkpBody, float aOutU[3], float bOutU[3], float* rOutU)
+    {
+        auto* hkp = static_cast<RE::hkpRigidBody*>(hkpBody);
+        if (!hkp || (reinterpret_cast<std::uintptr_t>(hkp) & 7) != 0) return false;
+        auto* col = hkp->GetCollidableRW();
+        const RE::hkpShape* shape = col ? col->shape : nullptr;
+        if (!shape || shape->type != RE::hkpShapeType::kCapsule) return false;
+        const auto* cap = static_cast<const RE::hkpCapsuleShape*>(shape);
+        alignas(16) float t[4], c0[4], c1[4], c2[4];
+        const auto& ms = hkp->motion.motionState.transform;
+        _mm_store_ps(t,  ms.translation.quad);
+        _mm_store_ps(c0, ms.rotation.col0.quad);
+        _mm_store_ps(c1, ms.rotation.col1.quad);
+        _mm_store_ps(c2, ms.rotation.col2.quad);
+        float pos[3], R[9];
+        for (int i = 0; i < 3; ++i) pos[i] = t[i] * kHavokToSkyrim;
+        R[0]=c0[0]; R[1]=c1[0]; R[2]=c2[0];
+        R[3]=c0[1]; R[4]=c1[1]; R[5]=c2[1];
+        R[6]=c0[2]; R[7]=c1[2]; R[8]=c2[2];
+        alignas(16) float va[4], vb[4];
+        _mm_store_ps(va, cap->vertexA.quad);
+        _mm_store_ps(vb, cap->vertexB.quad);
+        for (int i = 0; i < 3; ++i) {
+            aOutU[i] = pos[i] + (R[i*3+0]*va[0] + R[i*3+1]*va[1] + R[i*3+2]*va[2]) * kHavokToSkyrim;
+            bOutU[i] = pos[i] + (R[i*3+0]*vb[0] + R[i*3+1]*vb[1] + R[i*3+2]*vb[2]) * kHavokToSkyrim;
+        }
+        if (rOutU) *rOutU = cap->radius * kHavokToSkyrim;
+        return true;
+    }
+
+    // ── WEAPON SEGMENT (2026-07-30, touch API rev 1.1) ──────────────────────────────────
+    // The API's first weapon probe was the weapon BODY position — which sits at the HILT, in
+    // the player's fist. Prodding an NPC with the blade TIP therefore never registered (the
+    // physical push is Havok collision, a different system — the API is geometry-only and was
+    // measuring from the wrong point). This reads the weapon's actual collision shape and
+    // returns its long axis as a world segment, so blade contact measures blade-to-capsule.
+    // Shape coverage: capsule (exact), list (first capsule child), box (long axis, second
+    // extent as radius). Anything else falls back to a zero-length segment at the body
+    // position — and the ONE-SHOT log below records what shape the weapon actually carried,
+    // so extending coverage is an evidence decision, not a guess.
+    bool WeaponSegmentU(bool left, float aOutU[3], float bOutU[3], float* rOutU)
+    {
+        auto* hig = Interop::GetHiggs();
+        if (!hig) return false;
+        auto* ni = hig->GetWeaponRigidBody(left);
+        if (!ni) return false;
+        // bhkRigidBody wrapper -> hkpRigidBody at +0x10 (the PortBhkRigidBody layout,
+        // static_assert'd in NpcFingerTest.cpp; same read HkOf does there).
+        auto* hkp = *reinterpret_cast<RE::hkpRigidBody**>(reinterpret_cast<std::uintptr_t>(ni) + 0x10);
+        if (!hkp || (reinterpret_cast<std::uintptr_t>(hkp) & 7) != 0) return false;
+        auto* col = hkp->GetCollidableRW();
+        const RE::hkpShape* shape = col ? col->shape : nullptr;
+
+        // body world transform (the ReadCapsuleWorldUSide math)
+        alignas(16) float t[4], c0[4], c1[4], c2[4];
+        const auto& ms = hkp->motion.motionState.transform;
+        _mm_store_ps(t,  ms.translation.quad);
+        _mm_store_ps(c0, ms.rotation.col0.quad);
+        _mm_store_ps(c1, ms.rotation.col1.quad);
+        _mm_store_ps(c2, ms.rotation.col2.quad);
+        float pos[3], R[9];
+        for (int i = 0; i < 3; ++i) pos[i] = t[i] * kHavokToSkyrim;
+        R[0]=c0[0]; R[1]=c1[0]; R[2]=c2[0];
+        R[3]=c0[1]; R[4]=c1[1]; R[5]=c2[1];
+        R[6]=c0[2]; R[7]=c1[2]; R[8]=c2[2];
+        auto toWorld = [&](const float v[3], float out[3]) {
+            for (int i = 0; i < 3; ++i)
+                out[i] = pos[i] + (R[i*3+0]*v[0] + R[i*3+1]*v[1] + R[i*3+2]*v[2]) * kHavokToSkyrim;
+        };
+        // Same rotation, but for vectors already in GAME units (the weapon form's bound box).
+        auto toWorldU = [&](const float v[3], float out[3]) {
+            for (int i = 0; i < 3; ++i)
+                out[i] = pos[i] + (R[i*3+0]*v[0] + R[i*3+1]*v[1] + R[i*3+2]*v[2]);
+        };
+        // LAST RESORT before the hilt point (2026-07-30, census-driven): this machine's weapon
+        // list holds three kConvexTransform children — a wrapper CommonLibVR has no header for,
+        // and guessing its layout is how plugins crash. The equipped weapon FORM's bound box is
+        // a stable public structure in the same model space the collision body transforms, so
+        // its long axis IS the blade segment: no Havok layout guessing at all.
+        auto tryBoundSegment = [&]() -> bool {
+            auto* pl = RE::PlayerCharacter::GetSingleton();
+            auto* frm = pl ? pl->GetEquippedObject(left) : nullptr;
+            auto* bo  = frm ? frm->As<RE::TESBoundObject>() : nullptr;
+            if (!bo) return false;
+            const auto& bd = bo->boundData;
+            float mn[3] = { (float)bd.boundMin.x, (float)bd.boundMin.y, (float)bd.boundMin.z };
+            float mx[3] = { (float)bd.boundMax.x, (float)bd.boundMax.y, (float)bd.boundMax.z };
+            float ext[3], ctr[3];
+            for (int i = 0; i < 3; ++i) { ext[i] = (mx[i] - mn[i]) * 0.5f; ctr[i] = (mx[i] + mn[i]) * 0.5f; }
+            int ax = 0;
+            if (ext[1] > ext[ax]) ax = 1;
+            if (ext[2] > ext[ax]) ax = 2;
+            if (ext[ax] < 2.f) return false;               // degenerate bound — not a real blade
+            float ea[3] = { ctr[0], ctr[1], ctr[2] }, eb[3] = { ctr[0], ctr[1], ctr[2] };
+            ea[ax] -= ext[ax]; eb[ax] += ext[ax];
+            toWorldU(ea, aOutU); toWorldU(eb, bOutU);
+            float second = 0.f;
+            for (int i = 0; i < 3; ++i) if (i != ax && ext[i] > second) second = ext[i];
+            if (rOutU) *rOutU = second > 0.5f ? second : 0.5f;
+            static std::atomic<int> s_boundLogged{ 0 };
+            if (s_boundLogged.exchange(1, std::memory_order_relaxed) == 0)
+                logger::info("API weapon probe: FORM-BOUND blade segment (axis={} len={:.0f}u "
+                             "r={:.1f}u) — the collision children are kConvexTransform wrappers "
+                             "with no readable header", ax, ext[ax] * 2.f, second);
+            return true;
+        };
+        auto fallbackPoint = [&]() {
+            if (tryBoundSegment()) return true;
+            for (int i = 0; i < 3; ++i) { aOutU[i] = pos[i]; bOutU[i] = pos[i]; }
+            if (rOutU) *rOutU = 0.f;
+            return true;
+        };
+
+        static std::atomic<int> s_shapeLogged{ 0 };
+        const int st = shape ? (int)shape->type : -1;
+        if (s_shapeLogged.exchange(1, std::memory_order_relaxed) == 0)
+            logger::info("API weapon shape: hkpShapeType={} ({}) — capsule/list/box are read as a "
+                         "segment, others fall back to the hilt point", st,
+                         st == (int)RE::hkpShapeType::kCapsule ? "capsule" :
+                         st == (int)RE::hkpShapeType::kList    ? "list" :
+                         st == (int)RE::hkpShapeType::kBox     ? "box" : "OTHER");
+        if (!shape) return fallbackPoint();
+
+        const RE::hkpCapsuleShape* cap = nullptr;
+        if (shape->type == RE::hkpShapeType::kCapsule) {
+            cap = static_cast<const RE::hkpCapsuleShape*>(shape);
+        } else if (shape->type == RE::hkpShapeType::kList) {
+            auto* list = static_cast<const RE::hkpListShape*>(shape);
+            // Evidence log (2026-07-30): the weapon body IS a list on this machine, yet no
+            // capsule child was found and the probe silently degraded to the hilt point —
+            // the blade-vs-neck test produced nothing. One-shot census of the child types
+            // so the next reader extension is built against what weapons actually carry.
+            static std::atomic<int> s_kidsLogged{ 0 };
+            if (s_kidsLogged.exchange(1, std::memory_order_relaxed) == 0) {
+                char kids[96]; int kn = 0;
+                for (const auto& ci : list->childInfo) {
+                    if (kn > (int)sizeof(kids) - 8) break;
+                    kn += std::snprintf(kids + kn, sizeof(kids) - kn, "%s%d",
+                                        kn ? " " : "", ci.shape ? (int)ci.shape->type : -1);
+                }
+                logger::info("API weapon list children: {} type(s) = [{}] "
+                             "(capsule=5 box=4 convexVerts=6 convexTranslate=11 convexTransform=12)",
+                             list->childInfo.size(), kids);
+            }
+            for (const auto& ci : list->childInfo)
+                if (ci.shape && ci.shape->type == RE::hkpShapeType::kCapsule) {
+                    cap = static_cast<const RE::hkpCapsuleShape*>(ci.shape); break;
+                }
+        }
+        if (cap) {
+            alignas(16) float va[4], vb[4];
+            _mm_store_ps(va, cap->vertexA.quad);
+            _mm_store_ps(vb, cap->vertexB.quad);
+            toWorld(va, aOutU); toWorld(vb, bOutU);
+            if (rOutU) *rOutU = cap->radius * kHavokToSkyrim;
+            return true;
+        }
+        if (shape->type == RE::hkpShapeType::kBox) {
+            auto* box = static_cast<const RE::hkpBoxShape*>(shape);
+            alignas(16) float he[4];
+            _mm_store_ps(he, box->halfExtents.quad);
+            int ax = 0;
+            if (he[1] > he[ax]) ax = 1;
+            if (he[2] > he[ax]) ax = 2;
+            float ea[3] = { 0, 0, 0 }, eb[3] = { 0, 0, 0 };
+            ea[ax] = -he[ax]; eb[ax] = he[ax];
+            toWorld(ea, aOutU); toWorld(eb, bOutU);
+            float second = 0.f;
+            for (int i = 0; i < 3; ++i) if (i != ax && he[i] > second) second = he[i];
+            if (rOutU) *rOutU = second * kHavokToSkyrim;
+            return true;
+        }
+        return fallbackPoint();
+    }
 
     bool ReadCapsuleWorldUSide(RE::Actor* actor, int slot, bool left, int child,
                                float aOut[3], float bOut[3], float* rOut)

@@ -57,6 +57,12 @@ namespace NpcFinger {
     // WeaponPointU: world position (game units) of HIGGS's wielded-weapon collision body
     // for that hand. false = no weapon body (nothing wielded / HIGGS absent).
     bool WeaponPointU(bool left, float outU[3]);
+    // Garment chord reads for the touch API. kind: 0 = tail (any live non-hair garment
+    // rig), 1 = hair/wig. Returns the chord count of that actor's live rig of that kind
+    // (0 = no such rig). GarmentChordU reads one chord's world capsule (game units).
+    int  GarmentChords(std::uint32_t actorId, int kind);
+    bool GarmentChordU(std::uint32_t actorId, int kind, int chord,
+                       float aOutU[3], float bOutU[3], float* rOutU);
 
     // MESH-BAND MARKERS (2026-07-18, Route B calibration): up to 7 visible GHOST capsules at
     // the girth-defining vertices so the user verifies band placement by eye. Part-29 layer-56
