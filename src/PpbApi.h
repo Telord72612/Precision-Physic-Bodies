@@ -5,6 +5,14 @@
 // Detection is pure geometry (point-to-capsule-surface); no Havok listeners.
 
 namespace PpbApi {
+    // ── MOUTH GATE bridge (2026-07-31, VRTE report 16 §4.3 / R4) ────────────────────────
+    // The mouth gate in NpcFingerTest.cpp is the AUTHORITATIVE mouth signal: a multi-capsule
+    // AND (palate + both cheeks within gate), per-race child sets for beast heads, and a
+    // finger-only test so a fist mashed into the face cannot open her. It was log-only. The
+    // nearest-capsule race can never express that logic — it picks ONE capsule — so consumers
+    // wanting "is something in her mouth" must read this, not a capsule name.
+    // stage: 0 = LIPS, 1 = ENTER, 2 = THROAT REACHED.  entered = true on rise, false on fall.
+    void EmitMouthStage(RE::Actor* actor, int stage, bool entered, int hand, float distU);
 
     // Per-frame roster: OnPreDrive announces every driven actor (same-frame use only —
     // the pointer is consumed by OnFrame later in the SAME frame, the g_gt.best pattern).

@@ -1206,14 +1206,18 @@ apiSuppressHeldHand 1
 # Tracking is unaffected — this is emission-side, so brushing 20 capsules in one
 # interaction sends only the parts you stayed on. A contact that never qualifies
 # anywhere emits nothing at all (no Start, no End). 0 = instant. All live.
-apiDwellS 1.0
-apiDwellHeadS 1.5
-apiDwellComS 2.0
-apiDwellSensorS 0.5
-apiDwellTailS 1.0
+# 2026-07-31 (VRTE integration): all five dwell gates dropped to 0.25 = ONE TICK at
+# apiHz 4. PPB's dwell is a spam filter, not a semantic gate; VRTE (the consumer) owns
+# a per-part/per-armor delay table that is strictly better tuned. Consumers that want
+# brush filtering should filter on duration themselves.
+apiDwellS 0.25
+apiDwellHeadS 0.25
+apiDwellComS 0.25
+apiDwellSensorS 0.25
+apiDwellTailS 0.25
 # apiLog: START/END receipt lines in PPB.log. ON for this dev session (first in-game
 # verification); the packager refuses to ship it on.
-apiLog 1
+apiLog 0
 npcRigRangeU 700
 npcRigRangeHystU 100
 npcRigMaxActors 2

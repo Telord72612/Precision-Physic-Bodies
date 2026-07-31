@@ -2219,23 +2219,32 @@ namespace NpcFinger {
             const bool stayFront = bestHand >= 0 && bestIn < ObjectHold::MouthExitU();
             if (!stayFront && !deepHold) g_gt.inMouth = false;
         }
-        if (g_gt.inMouth != wasIn)
+        if (g_gt.inMouth != wasIn) {
             logger::info("MOUTHTOUCH {:08X} {} hand={} worstOf3={:.2f}u", a->GetFormID(),
                          g_gt.inMouth ? "ENTER" : "EXIT", bestHand == 0 ? "R" : "L", bestIn);
+            PpbApi::EmitMouthStage(a, 1, g_gt.inMouth, bestHand, bestIn);
+        }
         // THROAT event — "something reached the end of her throat". Future reaction hook
         // (gag phoneme, VRTouchEvents_PPBTouch stage code); log-only for now.
         {
             const bool wasThroat = g_gt.inThroat;
             g_gt.inThroat = g_gt.inMouth && throatBest < ObjectHold::MouthThroatU();
-            if (g_gt.inThroat != wasThroat)
+            if (g_gt.inThroat != wasThroat) {
                 logger::info("MOUTHTOUCH {:08X} THROAT {} d={:.2f}u", a->GetFormID(),
                              g_gt.inThroat ? "REACHED" : "LEFT",
                              throatBest == FLT_MAX ? -1.f : throatBest);
+                PpbApi::EmitMouthStage(a, 2, g_gt.inThroat, bestHand,
+                                       throatBest == FLT_MAX ? -1.f : throatBest);
+            }
         }
         if (anyLips && !g_gt.inMouth && !g_gt.lipsLogged) {
             g_gt.lipsLogged = true;
             logger::info("MOUTHTOUCH {:08X} LIPS (C1+C2+C3 all within {:.2f}u)", a->GetFormID(), gate);
-        } else if (!anyLips) g_gt.lipsLogged = false;
+            PpbApi::EmitMouthStage(a, 0, true, bestHand, gate);
+        } else if (!anyLips) {
+            if (g_gt.lipsLogged) PpbApi::EmitMouthStage(a, 0, false, bestHand, gate);
+            g_gt.lipsLogged = false;
+        }
         // ── WIDE-O BLEND (2026-07-25): "Oh" rounds the lips but barely drops the jaw. A real
         // open mouth is Oh + BigAah underneath. g_gt.phon is a NORMALIZED 0..1 ramp; each
         // channel applies its own max — one motion, two morphs.

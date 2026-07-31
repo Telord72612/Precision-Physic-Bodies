@@ -6,7 +6,7 @@ design rule and why, and the measured evidence behind each. VRTouchEvents is the
 consumer; its handbook (`Report/VRTouchEvents Module/13`) carries an AS-BUILT note because the
 shipped names differ from its draft.
 
-> **Status: VERIFIED IN VR** across five same-day sessions. Every source kind, tails, weapons,
+> **Status: VERIFIED IN VR** across five same-day sessions (2026-07-30). Every source kind, tails, weapons,
 > multi-actor, sliding, penetration depth. The digest layer, dwell filter, sensor priority and
 > held-hand suppression are **built and deployed but not yet exercised in VR** — they landed
 > after the last test session. Verification matrix in §9.
@@ -165,13 +165,22 @@ more about having them sent."*
 
 Tracking is always full-rate. **Emission** is gated:
 
-| class | knob | default | reasoning |
+| class | knob | shipped | history |
 |---|---|---|---|
-| Intimate | `apiDwellSensorS` | 0.5s | insertion is already deliberate |
-| default | `apiDwellS` | 1.0s | limbs, torso |
-| Tail/Hair | `apiDwellTailS` | 1.0s | |
-| Face | `apiDwellHeadS` | 1.5s | brushes are common; meaning needs intent |
-| Pelvis | `apiDwellComS` | 2.0s | the most brushed-in-passing region |
+| Intimate | `apiDwellSensorS` | **0.25s** | was 0.5 |
+| default | `apiDwellS` | **0.25s** | was 1.0 |
+| Tail/Hair | `apiDwellTailS` | **0.25s** | was 1.0 |
+| Face | `apiDwellHeadS` | **0.25s** | was 1.5 |
+| Pelvis | `apiDwellComS` | **0.25s** | was 2.0 |
+
+**2026-07-31 — all five gates dropped to 0.25 s = ONE TICK at `apiHz 4` (user decision, VRTE
+report 16 §2).** The original per-region values were tuned as a spam filter, but the first real
+consumer (VRTE) owns a 17-part x 2-action x 4-armor delay table that is strictly better than five
+constants — and PPB's gates were highest exactly where VRTE's are lowest: its 12 zero-dwell cells
+sat in the 1.0/2.0 s gates, a 3x-20x regression. Doctrine now: **PPB reports as soon as it knows;
+the consumer decides what a meaningful touch is.** Cost accepted: brushes reach consumers (filter
+on `durationS`), and the first reported capsule is the first grazed, not the modal one (raw
+self-corrects next tick). The knobs remain per-class so a user can restore filtering.
 
 A contact that never qualifies emits **nothing** — no Start, no End, and it never appears in the
 Papyrus snapshot. In the digest stream the gate is on **accumulated region time**, which is what
@@ -190,6 +199,30 @@ beat an `r=0.3` orifice sensor whose depth cannot exceed about `-0.3`. Measured 
 Fix: interior sensors run a **separate race that overrides** the general winner, and among
 sensors the deepest wins — so WHERE literally answers "how far it reached"
 (`vaginal opening` → `cervix` → `uterus`).
+
+**2026-07-31 — the mouth chain joined the priority set** (VRTE report 16 §4.3 caught it, code
+verified). The palate (r 1.32) and throat wall (r 0.88) sit INSIDE the cranium (r 5.52) and were
+racing it unprotected — the same masking bug one region over; desk math had the throat LOSING to
+the cranium by ~0.13u. `isSensor` now also covers slot 3 children 9/10. Head C11 (under-jaw) is
+deliberately excluded: GEO-tagged, reachable from OUTSIDE under the jaw — promoting it would let
+a chin scritch outrank the face.
+
+### The mouth gate events (2026-07-31)
+
+The nearest-capsule race can never express the mouth gate's logic (AND-of-three capsules,
+per-race beast child sets, finger-only). So the gate — previously log-only — now re-emits its
+stages as edge-triggered mod events, one per transition, no dwell:
+
+| event | numArg | meaning |
+|---|---|---|
+| `PPB_MouthLips` | 1/0 | at the lips (C1+C2+C3 within gate) / left |
+| `PPB_MouthEnter` | 1/0 | entered the mouth / exited |
+| `PPB_MouthThroat` | 1/0 | reached the end of the cavity / pulled back |
+
+`sender` = the NPC, `strArg` = `"WAND|STAGE"`. Emitted from the gate's own transitions in
+`NpcFingerTest.cpp` via `PpbApi::EmitMouthStage` — the consumer gets the SAME verdict the phoneme
+reaction acts on. This is the authoritative "in her mouth" signal; the capsule-level palate/throat
+contacts are the positional detail.
 
 ---
 

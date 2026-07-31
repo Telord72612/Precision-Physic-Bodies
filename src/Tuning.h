@@ -457,11 +457,11 @@ namespace ObjectHold {
         // Dwell filter (2026-07-30, user spec): a body part is only SENT through the API
         // after the probe lingered on it this long (seconds). Tracking is unaffected; a
         // contact that never qualifies emits nothing at all. 0 = instant.
-        float apiDwellS        = 1.0f;   // default class (limbs, torso rings, etc.)
-        float apiDwellHeadS    = 1.5f;   // the face — brushes are common, meaning needs intent
-        float apiDwellComS     = 2.0f;   // pelvis/butt — the most brushed-in-passing slot
-        float apiDwellSensorS  = 0.5f;   // interior sensors — insertion is already deliberate
-        float apiDwellTailS    = 1.0f;   // tail chords
+        float apiDwellS        = 0.25f;   // default class (limbs, torso rings, etc.)
+        float apiDwellHeadS    = 0.25f;   // the face — brushes are common, meaning needs intent
+        float apiDwellComS     = 0.25f;   // pelvis/butt — the most brushed-in-passing slot
+        float apiDwellSensorS  = 0.25f;   // interior sensors — insertion is already deliberate
+        float apiDwellTailS    = 0.25f;   // tail chords
         float apiSubRegionInEvent = 0.f; // 1 = append a 5th '|' field (the SUB-REGION) to every
                                          // touch mod-event string. SHIPS OFF: the documented
                                          // format is 4 fields and a consumer told to "split on

@@ -282,20 +282,20 @@ Tracking is always full-rate. **Emission** is gated: a contact must linger befor
 at all. A contact that never qualifies emits nothing — no Start, no End, and it never appears in
 the snapshot.
 
-| Region | Default | Why |
-|---|---|---|
-| Intimate | 0.5 s | an insertion is already deliberate |
-| Tail / Hair | 1.0 s | |
-| everything else | 1.0 s | limbs, torso |
-| Face | 1.5 s | brushes are common; meaning needs intent |
-| Pelvis | 2.0 s | the most brushed-in-passing region |
+**As of 2026-07-31 every gate ships at 0.25 s — one tick at the default `apiHz 4`.** PPB emits as
+soon as it knows. The dwell knobs (`apiDwell*` in `PPB_tuning.txt`: `S`, `HeadS`, `ComS`,
+`SensorS`, `TailS`) still exist per region class and a user can raise them, but the shipped
+position is: **PPB does not decide what a meaningful touch is — you do.**
 
-These are host-side knobs (`apiDwell*` in `PPB_tuning.txt`), not per-consumer. If your mod needs a
-faster trigger, document it and let the user lower the knob — do not expect PPB to filter per
-subscriber.
+The consequence you must own: **incidental brushes reach you.** `apiTouchU 1.0` means hover
+counts, so walking past an NPC in a corridor produces short contacts. Filter on `durationS` (or
+your own per-part delay) before reacting — a brush cannot hold a body part for a second. Do not
+use a long per-NPC cooldown as your filter, or a doorway brush will mute a deliberate touch that
+follows it.
 
-**If you are testing and seeing no events, this is almost always why.** Hold the touch for two
-full seconds.
+One subtlety at one-tick dwell: the first reported capsule is whichever the hand grazed first,
+not the one it settles on. On the raw stream this self-corrects on the next tick as the WHERE
+advances; re-resolve your body part on every event, not just Start.
 
 ---
 
@@ -323,6 +323,21 @@ fluffy tail.
 
 **Broad weapons read generously.** The blade segment comes from the equipped form's bound box, so
 an axe's radius is ~23 units where a sword's is slim. Expect axes and hammers to register early.
+
+**For "is something in her mouth", use the mouth gate events, not capsule names.** The mouth is
+the one place a single nearest-capsule verdict is structurally weaker than PPB's own detector:
+the gate demands the palate AND both cheeks at once, uses per-race child sets on beast heads, and
+requires the touch to be a finger. It fires as edge-triggered mod events (added 2026-07-31):
+
+```
+"PPB_MouthLips"    numArg 1/0    at the lips / left them
+"PPB_MouthEnter"   numArg 1/0    something entered / exited the mouth
+"PPB_MouthThroat"  numArg 1/0    reached the end of the cavity / pulled back
+```
+
+`sender` = the NPC, `strArg` = `"WAND|STAGE"`. One event per transition — no dwell, no spam.
+The palate and throat wall also participate in the priority race (like the intimate sensors), so
+capsule-level contacts name them too — but the gate is the authoritative signal.
 
 **M'rissi reports `skeleton=human`.** Her race is repointed to the human PPB skeleton and her
 foxtail is an equipped rig, not skeleton anatomy. Not a bug.

@@ -1112,3 +1112,42 @@ node names (`"NPC Hand [Hand]"`) that do not exist; the real ones are `kSlotNode
 `CapFix.cpp` (`"NPC R Hand [RHnd]"`, and `"NPC R Foot [Rft ]"` with a load-bearing trailing
 space). **Copy such tables verbatim from source; never retype from memory.**
 
+
+Follow-up, same day: the DLL-verified record still shipped **three invented knob prefixes**
+(`capForearm` / `capUpperarm` / `capSpine`; the real keys are `capFore` / `capUpper` /
+`capSpine0`, from `PK8(capFore)` etc. in `Tuning.cpp`). They survived because the original
+generator only verified the *capsule names* against the DLL — the knob column was never checked
+against anything. **Verify every generated column, not just the one you were worried about.**
+The check that caught it is cheap and now runs on every regeneration: parse the declared keys out
+of the shipped `PPB_tuning.txt` and assert each cited prefix has a real key beginning with it.
+Note the shape difference that made this subtle — `capHeadC9` is a *prefix*, not a key; the real
+keys are `capHeadC9Enable` / `AX` / `AY` / `AZ` / `BX` / `BY` / `BZ` / `R`. A validator that
+demands exact matches will reject all 107 of them, and the temptation is then to weaken the
+validator rather than to ask which side is wrong. Prefix-match the prefixes, exact-match the rest.
+
+## * A DEPTH LADDER IN THE DATA MODEL IS WORTHLESS IF THE DEEP CAPSULE CANNOT WIN (2026-07-31)
+The sub-region layer shipped declaring "palate = In mouth, throat = Mouth wall, each overrides the
+rungs below" — while the race that PICKS the capsule still let the cranium (r 5.52) beat both (r
+1.32 / 0.88), because a big capsule's penetration keeps growing where a small one floors at -r.
+Byte-for-byte the pelvic masking bug, one region over; it survived because the fix had been scoped
+to "the sensors" (slot 11, C21-31) instead of to the RULE ("any small interior capsule racing the
+big one it sits inside"). Desk math even had the throat LOSING by ~0.13u. Caught by the consumer's
+integration review (VRTE report 16 §4.3), not by us. **Rules:** (1) when classification metadata
+asserts a precedence, verify the SELECTION path can actually produce every value in that order —
+a label table and a race are two systems, and only the race decides; (2) the second instance of a
+masking bug means the first fix was scoped to the instance, not the rule — sweep every other small-
+inside-big capsule pair when adding one (the isSensor set is now pelvic chain + palate + throat;
+head C11 deliberately excluded, reachable from outside the jaw).
+
+## * THE CONSUMER'S REVIEW IS A VERIFICATION PASS YOU CANNOT RUN YOURSELF (2026-07-31)
+VRTE's integration plan (their report 16) found, in one document: the mouth-ladder race gap above;
+that PPB's dwell gates were highest exactly where the consumer's own delay table is lowest (12
+zero-dwell cells regressing 3x-20x — the gates are now 0.25s across the board, user decision:
+PPB reports, the consumer judges); that `apiLog 1` had shipped ON in the tuning file (a per-touch
+log line for every user — the exact "diagnostic default" class the ledger already had, caught
+again from the OTHER side); and that the digest's one-Start-per-region-visit contract makes
+hip-then-vulva structurally invisible to a Start-keyed pipeline (their D1: consume raw). None of
+these were visible from inside PPB because they are all properties of the JOIN between producer
+and consumer semantics. **Rule: when a consumer integrates, read their integration notes as a
+review of YOUR contract — every mismatch they route around is a defect report, and the ones they
+silently absorb are the ones to go looking for.**

@@ -600,14 +600,27 @@ namespace {
                 for (int ch = 0; ch < nCh; ++ch) {
                     if (ch > 0 && !GrabDiag::ReadCapsuleWorldUSide(actor, slot, left, ch, a, b, &r))
                         continue;
-                    // Interior sensors (COM C21..C31: the pelvic orifice chain) compete in a
-                    // SEPARATE race that overrides the general one below. Without this they can
-                    // never be reported: the general race keeps the most-penetrated capsule,
-                    // and a big thigh capsule at d=-11u always beats an r=0.3 sensor whose d
-                    // bottoms out near -0.3 (user-verified miss: a 5s knife insertion reported
-                    // "L upper thigh d=-11.43", zero sensor names). Among sensors the deepest
-                    // wins — so WHERE literally answers "how far it reached".
-                    const bool isSensor = (slot == 11 && ch >= 21 && ch <= 31);
+                    // PRIORITY (interior) capsules compete in a SEPARATE race that overrides the
+                    // general one below. Without this they can never be reported: the general
+                    // race keeps the most-penetrated capsule, and a BIG capsule always beats a
+                    // small one, because a small capsule's distance floors at -r while a large
+                    // one keeps going. User-verified miss: a 5s knife insertion reported
+                    // "L upper thigh d=-11.43" and named zero sensors. Among priority capsules
+                    // the deepest wins — so WHERE literally answers "how far it reached".
+                    //
+                    // ★ 2026-07-31 — THE MOUTH CHAIN WAS MISSING FROM THIS SET (VRTE report 16
+                    // §4.3, verified). The palate (r 1.32) and throat (r 0.88) sit INSIDE the
+                    // cranium capsule (r 5.52) and raced it unprotected — byte-for-byte the same
+                    // masking bug, one region over. A finger in the mouth could therefore report
+                    // "cranium", and the sub-region layer shipped 2026-07-31 would have called
+                    // that "Head" while the user's own ladder says a palate touch means IN MOUTH.
+                    // Declaring a depth ladder is worthless if the deep capsule never wins.
+                    //
+                    // Head C11 (under-jaw / deep floor) is deliberately NOT here: it is GEO-tagged
+                    // (never eye-verified, doc 15 §1) and reachable from OUTSIDE under the jaw, so
+                    // promoting it would let a chin scritch outrank the face.
+                    const bool isSensor = (slot == 11 && ch >= 21 && ch <= 31)   // pelvic chain
+                                       || (slot == 3  && (ch == 9 || ch == 10)); // palate, throat
                     for (int hand = 0; hand < 2; ++hand) {
                         const HandProbes& hp = g_hp[hand];
                         for (int bx = 0; bx < 4; ++bx) {
@@ -1028,6 +1041,29 @@ namespace PpbApi {
         }
 
         PublishSnapshot();
+    }
+
+    // ── MOUTH GATE bridge (2026-07-31) ──────────────────────────────────────────────────
+    // Re-emits the gate's three stages as mod events so a consumer gets the SAME verdict the
+    // gate acts on, instead of inferring it from whichever capsule won the nearest race.
+    //   "PPB_MouthLips"   numArg = 1 at the lips, 0 on leaving
+    //   "PPB_MouthEnter"  numArg = 1 entered, 0 exited
+    //   "PPB_MouthThroat" numArg = 1 reached, 0 left
+    // sender = the NPC. strArg = "WAND|STAGE" (WAND = L/R, STAGE = LIPS/ENTER/THROAT).
+    // Edge-triggered: exactly one event per transition, so there is no dwell and no spam.
+    void EmitMouthStage(RE::Actor* actor, int stage, bool entered, int hand, float distU)
+    {
+        if (!actor || !ObjectHold::ApiEventsEnabled()) return;
+        static const char* kName[3]  = { "PPB_MouthLips", "PPB_MouthEnter", "PPB_MouthThroat" };
+        static const char* kStage[3] = { "LIPS", "ENTER", "THROAT" };
+        if (stage < 0 || stage > 2) return;
+        char packed[32];
+        std::snprintf(packed, sizeof packed, "%s|%s", hand == 1 ? "L" : "R", kStage[stage]);
+        SKSE::ModCallbackEvent ev{ kName[stage], packed, entered ? 1.f : 0.f, actor };
+        SKSE::GetModCallbackEventSource()->SendEvent(&ev);
+        if (ObjectHold::ApiLogEnabled())
+            logger::info("API MOUTH {:08X} {} {} hand={} d={:.2f}u", actor->GetFormID(),
+                         kStage[stage], entered ? "ON" : "OFF", hand == 1 ? "L" : "R", distU);
     }
 
     void ClearOnLoad()
