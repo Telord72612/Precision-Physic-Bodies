@@ -27,7 +27,7 @@
 namespace logger = SKSE::log;
 
 SKSEPluginInfo(
-    .Version              = { 0, 1, 0 },
+    .Version              = { 1, 4, 0 },
     .Name                 = "PPB",
     .Author               = "mad72",
     .StructCompatibility  = SKSE::StructCompatibility::Independent,
@@ -969,7 +969,7 @@ SKSEPluginLoad(const SKSE::LoadInterface* skse)
     SKSE::Init(skse);
 
     logger::info("==================================================");
-    logger::info("PPB v0.1.0 (Precision Physic Bodies) loaded.");
+    logger::info("PPB v1.4.0 (Precision Physic Bodies) loaded.");
     if (auto dir = SKSE::log::log_directory()) {
         logger::info("Log file: {}\\PPB.log", dir->string());
     }

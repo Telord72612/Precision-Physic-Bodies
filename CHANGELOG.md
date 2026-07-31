@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.4.0
 
 ### Touch API: sub-regions and a depth ladder
 
@@ -53,6 +53,29 @@ verified against the shipped DLL.
   `capSpine`); the real keys are `capFore`, `capUpper`, `capSpine0`. Anyone following the record
   to tune a forearm capsule was editing a key the plugin never reads. Corrected, and the
   generator now verifies every cited knob against the shipped tuning file.
+
+### Post-review fixes (from live VR verification, 2026-07-31)
+
+- **Grab mutes the weapon** vs the grabbed actor — a hand holding an NPC's limb no longer
+  reports phantom weapon contacts on her from the weapon riding that grip.
+- **Blade radius capped** (`apiWeaponRMaxU 6`) — broad weapons carry the blade *plane's*
+  breadth as their bound radius (an axe reads 23u); uncapped this read deep phantom contacts
+  from mere proximity. Every weapon still self-describes (collision shape → form bound →
+  grip point); the cap only ceilings the radius.
+- **Throat wall requires the palate as witness** — the priority promotion let an *outside*
+  neck press claim `Face(throat wall)`; it now only wins while the probe is also within
+  deep-palate range (the mouth gate's own inside/outside asymmetry).
+- **Digest exit grace** (2 ticks) — kills the End/Start ping-pong at region boundaries that
+  one-tick dwell exposed.
+- **Held-hand index exception** — a holding hand's palm/fist stay muted (grip noise) but its
+  index reports while VRIK reads it extended, so a weapon hand can still poke and two-hand
+  interactions stay two streams. `apiSuppressHeldHand 2` = strict full mute.
+- **Keep-last-nonempty source names** — End events no longer print `OBJECT:` with no name on
+  the release tick.
+- **Mouth gate events** — `PPB_MouthLips` / `PPB_MouthEnter` / `PPB_MouthThroat`,
+  edge-triggered, the authoritative "in her mouth" signal.
+- Plugin version now reports 1.4.0 (was stale at 0.1.0 since the first build);
+  `GetBuildNumber` → 10400.
 
 ## 1.3.0
 

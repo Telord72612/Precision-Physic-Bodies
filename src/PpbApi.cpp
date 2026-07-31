@@ -1164,7 +1164,7 @@ namespace PpbApi {
     // ── the native interface object ─────────────────────────────────────────
     class TouchInterfaceImpl : public PPBAPI::IPpbTouchInterface1 {
     public:
-        unsigned int GetBuildNumber() override { return 10300; }   // 1.3.0
+        unsigned int GetBuildNumber() override { return 10400; }   // 1.4.0
         bool IsDriven(unsigned int id) override {
             auto* a = RE::TESForm::LookupByID<RE::Actor>(id);
             return a && SkeletonOf(a) != nullptr;
