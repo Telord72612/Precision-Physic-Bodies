@@ -1151,3 +1151,17 @@ these were visible from inside PPB because they are all properties of the JOIN b
 and consumer semantics. **Rule: when a consumer integrates, read their integration notes as a
 review of YOUR contract — every mismatch they route around is a defect report, and the ones they
 silently absorb are the ones to go looking for.**
+
+## * ATTRIBUTE THE CONTACT BEFORE TRUSTING IT — a probe RIDING a hand is not the hand's INTENT (2026-07-31, user-caught)
+The re-test log showed "axe -> CLITORIS -> cervix R (-16.9u, 13.6s) -> uterus R" and I reported it
+as the depth ladder verified. The user: the axe hand was HOLDING HER LEG; the other hand's finger
+did the test. Two compounding defects made the phantom: (1) a hand HIGGS-grabbing an actor kept
+its weapon probe live against her — the axe went wherever the grab went; (2) the form-bound blade
+radius on a broad weapon is the blade PLANE's breadth (axe 23u = a 46u barrel), so the axis read
+-17u "deep" from 6u away. Fixes: grab mutes the weapon vs the grabbed actor (grabActorId, masked
+per-actor), and `apiWeaponRMaxU 6` caps the radius at blade thickness. **Rules:** (1) when two
+probes ride one hand, the hand's ENGAGED probe (grab > object > weapon) speaks for it — the
+passengers are noise vs that target; (2) a log line is evidence of geometry, not intent — before
+citing a contact as verification, ask what the hand was DOING (the user knows; the log does not);
+(3) any radius inherited from a bound box needs a sanity cap — bounds encode extent, not contact
+surface.

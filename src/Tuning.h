@@ -462,6 +462,12 @@ namespace ObjectHold {
         float apiDwellComS     = 0.25f;   // pelvis/butt — the most brushed-in-passing slot
         float apiDwellSensorS  = 0.25f;   // interior sensors — insertion is already deliberate
         float apiDwellTailS    = 0.25f;   // tail chords
+        float apiWeaponRMaxU   = 6.f;    // cap on the blade-segment radius (game u). The form
+                                         // bound's second extent is the blade PLANE breadth on
+                                         // broad weapons (axe = 23u -> a 46u barrel that read
+                                         // "cervix -17u" from a hand merely holding her leg).
+                                         // 6 ~ blade thickness; swords/knives are unaffected.
+                                         // 0 = uncapped.
         float apiSubRegionInEvent = 0.f; // 1 = append a 5th '|' field (the SUB-REGION) to every
                                          // touch mod-event string. SHIPS OFF: the documented
                                          // format is 4 fields and a consumer told to "split on
@@ -1047,6 +1053,7 @@ namespace ObjectHold {
     float    ApiDwellSensorS();         // dwell filter: interior sensors C21-31
     float    ApiDwellTailS();           // dwell filter: tail pseudo-slot
     bool     ApiRawEventsEnabled();     // verbose PPB_TouchRaw* stream (ships off)
+    float    ApiWeaponRMaxU();          // blade-radius cap (6u; 0 = uncapped)
     bool     ApiSubRegionInEvent();     // append the sub-region as a 5th packed field (off)
     bool     ApiSuppressHeldHand();     // mute a hand that is holding something
     bool     ApiHairTarget();           // hair chords as touch targets (ships off)

@@ -321,8 +321,11 @@ an SMP rig nothing can drive them. Only HDT-SMP tails produce tail contacts.
 chord's position in the chain, so `tip` means the same place on a 4-chord foxtail and a 14-chord
 fluffy tail.
 
-**Broad weapons read generously.** The blade segment comes from the equipped form's bound box, so
-an axe's radius is ~23 units where a sword's is slim. Expect axes and hammers to register early.
+**Weapon contacts are capped and grab-aware.** The blade segment comes from the equipped form's
+bound box; on broad weapons the bound radius is the blade plane's breadth (an axe reads 23u), so
+PPB caps it at `apiWeaponRMaxU` (6u ~ blade thickness) — without the cap a merely-nearby axe read
+deep phantom contacts. And a hand that is HIGGS-grabbing an actor never reports weapon contacts
+on *that* actor — the weapon just rides the grip. You will still see its weapon on other NPCs.
 
 **For "is something in her mouth", use the mouth gate events, not capsule names.** The mouth is
 the one place a single nearest-capsule verdict is structurally weaker than PPB's own detector:

@@ -131,6 +131,12 @@ namespace {
         // that is needed") — geometry could not discriminate (constant curl, see below).
         float vrikIndex = -1.f;
         float vrikMiddle = -1.f;
+        // The actor this hand is HIGGS-grabbing (0 = none). Set even though grabbing an
+        // actor never fills hp.object — ScanActor uses it to MUTE THE WEAPON vs the grabbed
+        // actor: a hand holding her leg cannot also be "stabbing" her with the axe riding
+        // that same grip (2026-07-31, user-caught: leg held in the axe hand while the other
+        // hand tested — the axe reported cervix -16.9u for 13.6s, pure phantom).
+        std::uint32_t grabActorId = 0;
     };
     HandProbes g_hp[2];      // [0]=R, [1]=L (HandBox hand indexing)
 
@@ -168,6 +174,7 @@ namespace {
     constexpr int kMaxPartAcc  = 16;   // distinct capsules remembered per region visit
     struct DigestContact {
         bool          live = false, seen = false, emitted = false;
+        std::uint8_t  unseen = 0;      // consecutive ticks the region was not the winner
         std::uint32_t actorId = 0;
         std::uint8_t  wand = 0;
         int           region = 0;
@@ -498,6 +505,14 @@ namespace {
             // fallback inside WeaponSegmentU covers unreadable shapes; its one-shot log
             // names the shape actually carried.
             if (GrabDiag::WeaponSegmentU(isLeft, hp.weapon.p, hp.weapon.q, &hp.weapon.pad)) {
+                // ── BLADE-RADIUS CAP (2026-07-31, user-caught) ──────────────────────────
+                // The form-bound radius is the weapon's second extent — for an axe that is
+                // the blade PLANE's breadth (23u), making the probe a 46u-diameter barrel:
+                // the axis can sit 6u off a capsule and still read -17u "deep". The cap
+                // bounds it to something blade-THICKNESS-like. Swords/knives carry slim
+                // bounds and are unaffected. 0 = uncapped.
+                const float rCap = ObjectHold::ApiWeaponRMaxU();
+                if (rCap > 0.f && hp.weapon.pad > rCap) hp.weapon.pad = rCap;
                 hp.weapon.seg  = true;
                 hp.weapon.live = true;
                 // name = the equipped weapon in that hand (display name; may be empty)
@@ -508,6 +523,8 @@ namespace {
             }
             if (hig && hig->IsHoldingObject(isLeft)) {
                 if (auto* refr = hig->GetGrabbedObject(isLeft)) {
+                    if (auto* grabbed = refr->As<RE::Actor>())
+                        hp.grabActorId = grabbed->GetFormID();   // mutes the weapon vs her
                     if (!refr->As<RE::Actor>()) {          // a grabbed ACTOR is GRAB, not OBJECT
                         if (auto* d3 = refr->Get3D()) {
                             const auto& wb = d3->worldBound;
@@ -547,6 +564,14 @@ namespace {
         // Interior-sensor race — filled by the body-slot loop, applied as an override at
         // the bottom of this function. See the isSensor comment in the loop.
         Hit sens[2][kClsCount]{};
+        // ── GRAB MUTES THE WEAPON vs the grabbed actor (2026-07-31, user-caught) ────────
+        // A hand HIGGS-grabbing THIS actor is holding her, not wielding at her — the weapon
+        // rides the grip wherever the grab goes, so its contacts on HER are pure phantoms
+        // (the axe-in-the-leg-holding-hand reported "cervix -16.9u dur=13.6s" while the
+        // OTHER hand did the actual touching). Weapon stays live vs every other actor.
+        const std::uint32_t aid = actor->GetFormID();
+        const bool wpnOk[2] = { g_hp[0].weapon.live && g_hp[0].grabActorId != aid,
+                                g_hp[1].weapon.live && g_hp[1].grabActorId != aid };
         // actor-level cull: any live probe within reach of the actor's center?  Segment
         // probes (the weapon blade) test BOTH endpoints and the midpoint — a blade tip can
         // be in range while the hilt is not.
@@ -635,7 +660,7 @@ namespace {
                                                    sh.child = ch; sh.left = left; sh.viaBox = bx; }
                             }
                         }
-                        if (hp.weapon.live) {
+                        if (wpnOk[hand]) {
                             const float d = (hp.weapon.seg
                                                 ? SegSegDistU(a, b, hp.weapon.p, hp.weapon.q)
                                                 : SegPointDistU(a, b, hp.weapon.p))
@@ -689,7 +714,7 @@ namespace {
                         if (d < h.dist) { h.found = true; h.dist = d; h.slot = pseudo;
                                           h.child = ch; h.left = false; h.viaBox = bx; }
                     }
-                    if (hp.weapon.live) {
+                    if (wpnOk[hand]) {
                         const float d = (hp.weapon.seg
                                             ? SegSegDistU(a, b, hp.weapon.p, hp.weapon.q)
                                             : SegPointDistU(a, b, hp.weapon.p))
@@ -917,12 +942,15 @@ namespace PpbApi {
                     p.durationS = (float)(now - ct->startMs) / 1000.f;
                     std::snprintf(p.skeleton, sizeof p.skeleton, "%s", skel);
                     const HandProbes& hp = g_hp[hand];
+                    // keep-last-nonempty on the names — same release-tick race as the digest
                     if (cls == kClsWeapon) {
                         p.sourceKind = PPBAPI::kSourceWeapon;
-                        std::snprintf(p.sourceName, sizeof p.sourceName, "%s", hp.weapon.name);
+                        if (hp.weapon.name[0])
+                            std::snprintf(p.sourceName, sizeof p.sourceName, "%s", hp.weapon.name);
                     } else if (cls == kClsObject) {
                         p.sourceKind = PPBAPI::kSourceObject;
-                        std::snprintf(p.sourceName, sizeof p.sourceName, "%s", hp.object.name);
+                        if (hp.object.name[0])
+                            std::snprintf(p.sourceName, sizeof p.sourceName, "%s", hp.object.name);
                     } else {
                         p.sourceKind = ClassifyHand(actor, hand, h);
                         p.sourceName[0] = '\0';
@@ -1003,10 +1031,19 @@ namespace PpbApi {
                 if (const char* sk2 = SkeletonOf(da))
                     std::snprintf(p.skeleton, sizeof p.skeleton, "%s", sk2);
             p.distU = dc.deepestU;              // digest reports how FAR it got, not this frame
-            // carry the live source name for WEAPON/OBJECT reports
-            if (bk == PPBAPI::kSourceWeapon)      std::snprintf(p.sourceName, sizeof p.sourceName, "%s", g_hp[dc.wand & 1].weapon.name);
-            else if (bk == PPBAPI::kSourceObject) std::snprintf(p.sourceName, sizeof p.sourceName, "%s", g_hp[dc.wand & 1].object.name);
-            else p.sourceName[0] = '\0';
+            // carry the live source name for WEAPON/OBJECT reports.
+            // KEEP-LAST-NONEMPTY (2026-07-31, re-test log): the name is read LIVE, and on the
+            // release/handoff tick it is already cleared — so the End event, the one carrying
+            // the final duration, printed "OBJECT:" with no name (3 instances, e.g.
+            // "R|OBJECT:|Intimate(vaginal opening L) dur=4.06s"). p persists in dc.pub, so an
+            // empty live name keeps the last real one instead of overwriting it.
+            if (bk == PPBAPI::kSourceWeapon) {
+                const char* nm = g_hp[dc.wand & 1].weapon.name;
+                if (nm[0]) std::snprintf(p.sourceName, sizeof p.sourceName, "%s", nm);
+            } else if (bk == PPBAPI::kSourceObject) {
+                const char* nm = g_hp[dc.wand & 1].object.name;
+                if (nm[0]) std::snprintf(p.sourceName, sizeof p.sourceName, "%s", nm);
+            } else p.sourceName[0] = '\0';
             if (bi >= 0) {
                 p.slot = dc.parts[bi].slot; p.child = dc.parts[bi].child;
                 p.leftTwin = dc.parts[bi].left;
@@ -1020,11 +1057,21 @@ namespace PpbApi {
             }
             const bool qual = dc.inRegionS >= DwellSForRegion(dc.region);
             if (dc.seen) {
+                dc.unseen = 0;
                 if (qual) {
                     if (!dc.emitted) { dc.emitted = true; Emit(p, PPBAPI::kPhaseStart, false); }
                     else              Emit(p, PPBAPI::kPhaseContinue, false);
                 }
-            } else {
+            } else if (++dc.unseen >= 2) {
+                // ── EXIT GRACE (2026-07-31, measured in the re-test log): only ONE region can
+                // be the winner each tick, so a hand straddling a region boundary (the crotch
+                // touches Pelvis/Intimate/Leg/Waist capsules within a radius smaller than a
+                // fingertip) flip-flops the winner and — at one-tick dwell — emitted an
+                // End/Start ping-pong at 4 Hz (20+ events in 9 s, 14:54:15-24). Two consecutive
+                // unseen ticks (~0.5 s) must pass before a region visit ENDS; a one-tick flip
+                // now just re-seens the surviving contact. Cost: a genuine exit reports ~0.5 s
+                // late and its End duration includes the grace. VRTE's report 16 §3.2(b)
+                // predicted exactly this from the code; the log confirmed it.
                 if (dc.emitted) Emit(p, PPBAPI::kPhaseEnd, false);
                 dc.live = false;
             }

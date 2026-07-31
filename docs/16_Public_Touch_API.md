@@ -152,8 +152,16 @@ Worth reading as a method, not just a result.
 A second weapon carried a plain `kBox` and used the direct shape path, so both branches are live.
 Contacts now register anywhere along the edge, with real depth (`d=-10.06u` measured).
 
-**Caveat**: a broad weapon has a broad bound — the axe's radius came out 23u, so axes and hammers
-read generously. Swords are slim. Cap the radius if it feels eager.
+**2026-07-31 — the broad-bound caveat became a live false positive and is now fixed twice over.**
+The user held the NPC's leg with the axe hand while the OTHER hand touched her; the axe (bound
+radius 23u = the blade PLANE's breadth, making the probe a 46u-diameter barrel) reported
+"cervix -16.9u dur=13.6s" — phantom data that drowned the real finger readings. Fixes:
+1. **`apiWeaponRMaxU 6`** — the blade-segment radius is capped at blade *thickness*; the axis
+   must now genuinely be near a capsule to read contact. Swords/knives carry slim bounds and
+   are unaffected. 0 = uncapped.
+2. **Grab mutes the weapon vs the grabbed actor** — a hand HIGGS-grabbing an actor is holding
+   her, not wielding at her; its weapon probe is skipped for HER (stays live vs everyone else).
+   `HandProbes::grabActorId`, masked per-actor in `ScanActor`.
 
 ---
 

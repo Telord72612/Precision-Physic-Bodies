@@ -1182,6 +1182,10 @@ apiRangeU 300
 # plate=PALM, slab=FIST after the 07-30 rebuild). Rigs that DO articulate still get
 # the curl path.
 apiFistTipPalmU 2
+# cap on the weapon blade-segment radius (game units). Broad weapons carry the blade PLANE's
+# breadth as their bound radius (axe = 23u = a 46u-diameter barrel), which read deep phantom
+# contacts from a hand merely holding the NPC. 6 ~ blade thickness; swords unaffected. 0 = off.
+apiWeaponRMaxU 6
 apiEvents 1
 # apiHairTarget: hair chords as touch TARGETS. OFF — hair drapes the face, so it would win
 # the nearest-capsule race against cheeks and shadow face touch. Tails are always targets.
@@ -1217,7 +1221,8 @@ apiDwellSensorS 0.25
 apiDwellTailS 0.25
 # apiLog: START/END receipt lines in PPB.log. ON for this dev session (first in-game
 # verification); the packager refuses to ship it on.
-apiLog 0
+# dev machine: 1 for verification sessions; flip to 0 at packaging (shipping default)
+apiLog 1
 npcRigRangeU 700
 npcRigRangeHystU 100
 npcRigMaxActors 2
