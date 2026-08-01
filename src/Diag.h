@@ -24,6 +24,22 @@ namespace RE { class Actor; class hkpWorld; }
 
 namespace Diag {
 
+    // ── ENGINE-TRUTH WEAPON CONTACTS (2026-08-01) ──────────────────────────────────────
+    // Havok's contact events already carry the exact weapon-vs-capsule collision the player
+    // feels (haptics fire, the NPC is pushed). Reconstructing it geometrically failed on every
+    // weapon whose shape is not a simple rod. So: the listener records the real contacts, and
+    // the main thread resolves the body pointer to (actor, slot, side) and the shape key to the
+    // capsule child. No segment, no radius, no bounding box.
+    struct WeaponContact {
+        void*        otherBody;   // the body the weapon hit (resolve to actor+slot by pointer)
+        std::uint32_t child;      // list-child shape key = the exact capsule
+        int          wand;        // 0 = right, 1 = left
+        float        distHavok;   // separating distance in HAVOK metres (negative = penetrating)
+    };
+    void PublishWeaponBodies(void* rightBody, void* leftBody);
+    int  DrainWeaponContacts(WeaponContact* out, int max);
+
+
     // ── physics-step timing (called from Hooks::StepChainHook @0xDFB722) ──
     void OnPhysicsStep(double stepMs);   // accumulates only while armed
     bool Armed();                        // step hook gate (cheap atomic read)

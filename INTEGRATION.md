@@ -138,6 +138,23 @@ While i < n
 EndWhile
 ```
 
+### Want events less often than PPB sends them?
+
+PPB emits at `apiHz` (4/s). If your mod only needs a heartbeat, filter on your side — the contact's
+own duration makes this a one-liner, and it costs nothing:
+
+```papyrus
+; act at most once per second per contact
+Float dur = PPB_Touch.GetContactDuration(i)
+If dur - lastActedAt >= 1.0
+    lastActedAt = dur
+    ; ... your reaction ...
+EndIf
+```
+
+There is deliberately no per-consumer rate knob in PPB: the host cannot know what each mod needs,
+and a filter you own is one comparison.
+
 **Indices are not stable between polls.** The list is a snapshot refreshed at `apiHz`; read
 everything you need for a contact in one pass, then move on. Do not cache index `3` and expect it
 to be the same contact next tick.
@@ -304,6 +321,10 @@ advances; re-resolve your body part on every event, not just Start.
 **Self-touch is impossible by construction.** An NPC's own hair or tail can never trigger her own
 body: garment rigs are never probe *sources*, only targets. Not a threshold — a property of the
 design.
+
+**Contact duration is timed per CAPSULE GROUP**, not per capsule and not per coarse region. A
+finger wandering cheek -> chin -> nose stays ONE contact (all `Face surface`); sliding from the
+cheek INTO the mouth starts a new one, because the group — and the meaning — changed.
 
 **Both hands report independently — every contact carries its own wand.** Two hands on the same
 NPC are two parallel contact streams (even on the same region), so read the `L`/`R` field rather

@@ -180,6 +180,26 @@ namespace PPBAPI {
         kDepthDeepest = 3,   // the far wall: throat, uterus
     };
 
+    // ── WEAPON CLASS + EDGE (2026-08-01) ────────────────────────────────────────────────
+    // `sourceName` already carries the weapon's display name ("Iron Rapier"). These two add
+    // what it IS, straight from the equipped record's animation type — so a consumer can tell a
+    // mace from a dagger without string-matching a name that varies by mod and by language.
+    enum WeaponClass : int {
+        kWeapNone = 0,
+        kWeapFist, kWeapSword, kWeapDagger, kWeapAxe, kWeapMace,
+        kWeapGreatsword, kWeapBattleaxe,        // two-handed; battleaxe covers warhammers
+        kWeapBow, kWeapStaff, kWeapCrossbow, kWeapOther,
+    };
+
+    // The coarse question most consumers actually ask: does this cut, crush, or stab?
+    // Derived from the class, so it stays right when new classes are appended.
+    enum WeaponEdge : int {
+        kEdgeNone = 0,
+        kEdgeBlade,    // sword, greatsword, axe, battleaxe — cutting
+        kEdgeBlunt,    // mace, warhammer, staff, fist, a bow used as a club
+        kEdgePierce,   // dagger, and thrusting blades
+    };
+
     // One live contact. Fixed 160-byte POD; the reserved tail lets future revisions add
     // fields without moving anything.
     struct PpbTouchContact {
@@ -202,7 +222,12 @@ namespace PPBAPI {
         unsigned char region;        // Region of the reported part (digest: the contact's own)
         unsigned char subRegion;     // SubRegion of the reported part
         unsigned char depth;         // SubRegionDepthLevel — 0 surface .. 3 deepest
-        unsigned char _reserved[21]; // future fields; zero today
+        // ── appended 2026-08-01 ── zero for non-weapon sources.
+        unsigned char weaponClass;   // WeaponClass — what the weapon IS
+        unsigned char weaponEdge;    // WeaponEdge — blade / blunt / pierce
+        unsigned char engineContact; // 1 = this came from Havok's OWN narrowphase (exact capsule
+                                     // + real separating distance), 0 = the geometric fallback
+        unsigned char _reserved[18]; // future fields; zero today
     };
     static_assert(sizeof(PpbTouchContact) == 160, "PpbTouchContact layout is frozen");
 
@@ -253,6 +278,12 @@ namespace PPBAPI {
         // How far in: SubRegionDepthLevel, 0 surface .. 3 deepest. Use this when you only
         // care whether something went inside, not exactly where.
         virtual int  SubRegionDepth(int subRegion) = 0;                                  // 13
+        // ── appended 2026-08-01 ──────────────────────────────────────────────────────────
+        // "Iron Rapier" / "Steel Mace" is in sourceName; these say what it IS.
+        virtual const char* WeaponClassName(int weaponClass) = 0;                        // 14
+        // WeaponEdge for a class: blade / blunt / pierce. Use this rather than switching on
+        // every class, so appended classes keep working.
+        virtual int  WeaponEdgeOf(int weaponClass) = 0;                                  // 15
     };
 
     // The messaging request. Dispatch to sender "PPB" with this struct as data; PPB fills

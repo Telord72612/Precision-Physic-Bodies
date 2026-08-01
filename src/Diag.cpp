@@ -236,6 +236,40 @@ namespace {
 
     // The listener. Counting is read-only (g_armed-gated); the decimation branch (2026-07-10) is
     // the ONE write path: it sets kIsDisabled on new contact points when perfContactKeep is live.
+    // ══ ENGINE-TRUTH WEAPON CONTACTS (2026-08-01, user-directed) ═══════════════════════
+    // "When a blade touches a collision capsule the NPC is MOVED. That contact exists in the
+    //  game — find it." Correct: every geometric reconstruction we tried (hilt point, form
+    // OBND, list AABB) was re-deriving a fact Havok's narrowphase already computed exactly, and
+    // each approximation broke on some weapon shape (a rapier's swept hilt, an axe head, a
+    // club). The contact event carries BOTH bodies and, via GetShapeKeys, the exact list-child
+    // that touched — the capsule index itself.
+    // Collision-thread discipline (ledger, paid for in CTDs): PURE INTEGER work here. Pointers
+    // and uint32 only, no floats, no logging, no allocation. The main thread resolves.
+    struct WpnHit {
+        std::atomic<std::uintptr_t> other{ 0 };   // the NON-weapon body
+        std::atomic<std::uint32_t>  child{ 0 };   // its list-child shape key = the capsule
+        std::atomic<std::uint32_t>  wand{ 0 };    // 0 = R, 1 = L
+        std::atomic<std::uint32_t>  distBits{ 0 };// separating distance, RAW FLOAT BITS (see below)
+        std::atomic<std::uint32_t>  stamp{ 0 };   // publish counter; 0 = empty
+    };
+    constexpr int kWpnHits = 32;
+    WpnHit                     g_wpnHits[kWpnHits];
+    std::atomic<std::uint32_t> g_wpnWrite{ 0 };
+    std::atomic<std::uintptr_t> g_wpnBody[2]{};   // published each tick from the main thread
+
+    // Record a weapon-vs-body contact. Integer-only; called from the collision thread.
+    inline void NoteWeaponContact(std::uintptr_t other, std::uint32_t child, std::uint32_t wand,
+                                  std::uint32_t distBits)
+    {
+        const std::uint32_t i = g_wpnWrite.fetch_add(1, std::memory_order_relaxed);
+        WpnHit& h = g_wpnHits[i % kWpnHits];
+        h.other.store(other, std::memory_order_relaxed);
+        h.child.store(child, std::memory_order_relaxed);
+        h.wand.store(wand,  std::memory_order_relaxed);
+        h.distBits.store(distBits, std::memory_order_relaxed);
+        h.stamp.store(i + 1, std::memory_order_release);
+    }
+
     struct PpbContactCounter : RE::hkpContactListener {
         RE::hkpWorld* world = nullptr;
 
@@ -261,6 +295,36 @@ namespace {
                             props->flags.set(RE::hkContactPointMaterial::Flag::kIsDisabled);
                             g_decimKilled.fetch_add(1, std::memory_order_relaxed);
                         }
+                    }
+                }
+            }
+
+            // ENGINE-TRUTH WEAPON CONTACT — runs UNGATED (the perf counter's g_armed must not
+            // gate a gameplay feature). Pointer identity against the weapon bodies the main
+            // thread published; the other body + its shape key are the answer.
+            {
+                const std::uintptr_t pa = reinterpret_cast<std::uintptr_t>(e.bodies[0]);
+                const std::uintptr_t pb = reinterpret_cast<std::uintptr_t>(e.bodies[1]);
+                const std::uintptr_t w0 = g_wpnBody[0].load(std::memory_order_relaxed);
+                const std::uintptr_t w1 = g_wpnBody[1].load(std::memory_order_relaxed);
+                if (pa && pb) {
+                    std::uint32_t wand = 0xFFFFFFFFu;
+                    std::uintptr_t other = 0; int otherIdx = -1;
+                    if      (w0 && pa == w0) { wand = 0; other = pb; otherIdx = 1; }
+                    else if (w1 && pa == w1) { wand = 1; other = pb; otherIdx = 1; }
+                    else if (w0 && pb == w0) { wand = 0; other = pa; otherIdx = 0; }
+                    else if (w1 && pb == w1) { wand = 1; other = pa; otherIdx = 0; }
+                    if (otherIdx >= 0) {
+                        auto* keys = e.GetShapeKeys(otherIdx);
+                        // Separating distance lives in separatingNormal.w (Havok layout, what
+                        // hkContactPoint::getDistance() returns). Read that dword as an INTEGER
+                        // — no float register, no SIMD — and bit-cast on the main thread. Keeps
+                        // this callback pure-integer per the collision-thread rule while still
+                        // carrying real depth instead of the flat 0 the first cut reported.
+                        std::uint32_t db = 0;
+                        if (e.contactPoint)
+                            db = reinterpret_cast<const std::uint32_t*>(&e.contactPoint->separatingNormal)[3];
+                        NoteWeaponContact(other, keys ? keys[0] : 0xFFFFFFFFu, wand, db);
                     }
                 }
             }
@@ -378,6 +442,10 @@ namespace {
             RE::BSWriteLockGuard lk(bhk->worldLock);       // PLANCK takes the same lock here
             static REL::Relocation<AddContactListenerFn> addContactListener{ REL::Offset(0xAB5580) };
             addContactListener(world, &g_ctc);             // THE ONE new reloc
+            logger::info("Diag CTC: contact listener INSTALLED on world {} — engine weapon "
+                         "contacts are now live (armed={} decim={} apiTouch={}).",
+                         (void*)world, g_armed.load(std::memory_order_relaxed) ? 1 : 0,
+                         ObjectHold::PerfContactKeepN(), ObjectHold::ApiTouchEnabled() ? 1 : 0);
         }
         const std::int32_t after = L.size();               // FUNCTIONAL verification of 0xAB5580
         if (after != before + 1 || L[after - 1] != &g_ctc) {
@@ -790,6 +858,38 @@ namespace {
 // ============================================================================
 namespace Diag {
 
+    // ── ENGINE-TRUTH WEAPON CONTACTS: main-thread surface (2026-08-01) ──────────────────
+    void PublishWeaponBodies(void* rightBody, void* leftBody)
+    {
+        g_wpnBody[0].store(reinterpret_cast<std::uintptr_t>(rightBody), std::memory_order_relaxed);
+        g_wpnBody[1].store(reinterpret_cast<std::uintptr_t>(leftBody),  std::memory_order_relaxed);
+    }
+
+    // Drain everything recorded since the last call. Returns the count written to out[].
+    int DrainWeaponContacts(WeaponContact* out, int max)
+    {
+        static std::uint32_t s_read = 0;
+        const std::uint32_t w = g_wpnWrite.load(std::memory_order_acquire);
+        if (w == s_read) return 0;
+        // never walk more than the ring holds (a burst can outrun us; newest wins)
+        if (w - s_read > (std::uint32_t)kWpnHits) s_read = w - (std::uint32_t)kWpnHits;
+        int n = 0;
+        for (std::uint32_t i = s_read; i != w && n < max; ++i) {
+            const WpnHit& h = g_wpnHits[i % kWpnHits];
+            if (h.stamp.load(std::memory_order_acquire) != i + 1) continue;   // torn/overwritten
+            out[n].otherBody = reinterpret_cast<void*>(h.other.load(std::memory_order_relaxed));
+            out[n].child     = h.child.load(std::memory_order_relaxed);
+            out[n].wand      = (int)h.wand.load(std::memory_order_relaxed);
+            const std::uint32_t db = h.distBits.load(std::memory_order_relaxed);
+            float d = 0.f; std::memcpy(&d, &db, sizeof d);      // main thread: safe to be a float
+            out[n].distHavok = d;
+            ++n;
+        }
+        s_read = w;
+        return n;
+    }
+
+
     bool Armed() { return g_armed.load(std::memory_order_relaxed); }
 
     void OnPhysicsStep(double stepMs) {
@@ -826,8 +926,12 @@ namespace Diag {
     }
 
     void OnPreDrive(RE::Actor* actor) {
-        // The listener must be live for the perf counters AND for contact decimation — either arms it.
-        if (g_armed.load(std::memory_order_relaxed) || ObjectHold::PerfContactKeepN() > 1)
+        // The listener must be live for the perf counters, for contact decimation, AND (2026-08-01)
+        // for ENGINE-TRUTH WEAPON CONTACTS — which are a gameplay feature, not a diagnostic, so
+        // apiTouch arms it in ordinary play. Without this the contact callback never ran outside
+        // a `perf` session and the whole weapon-contact path was dead code (caught first test).
+        if (g_armed.load(std::memory_order_relaxed) || ObjectHold::PerfContactKeepN() > 1
+            || ObjectHold::ApiTouchEnabled())
             EnsureContactListener(actor);
         ApplyPendingSpike(actor);   // internally gated (lodSpike + matching FormID request)
     }

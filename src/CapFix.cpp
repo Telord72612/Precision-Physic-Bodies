@@ -109,6 +109,24 @@ namespace GrabDiag {
         return const_cast<RE::hkpListShape*>(static_cast<const RE::hkpListShape*>(shape));
     }
 
+    // Raw hkpRigidBody for a slot — the reverse-lookup source for ENGINE-TRUTH contacts.
+    // Havok's own contact events identify the colliding bodies by POINTER and hand us the exact
+    // list-child shape key, so a weapon hit needs no geometric reconstruction; the main thread
+    // just has to map those pointers back to (actor, slot, side). Same walk as GetNodeCapsule,
+    // stopping one step earlier. NEVER allocates.
+    void* SlotBodyRaw(RE::Actor* actor, int slot, bool left)
+    {
+        if (!actor || slot < 0 || slot >= 12) return nullptr;
+        const char* node = left ? kSlotNodeL[slot] : kSlotNode[slot];
+        if (!node) return nullptr;                       // centre slots have no left twin
+        auto* hn = FindNode(actor, node);
+        if (!hn) return nullptr;
+        auto* colObj = hn->collisionObject.get();
+        if (!colObj) return nullptr;
+        auto* body = static_cast<RE::bhkCollisionObject*>(colObj)->GetRigidBody();
+        return body ? body->GetRigidBody() : nullptr;
+    }
+
     // Raw capsule float write (endpoints/radius in GAME units — converted here). Pure float edits,
     // the proven-safe class; shape TYPE is never touched.
     // ── BODY MATERIAL STAMP (2026-07-18, the "ground-hitting noise" fix — scope: every capsule
@@ -2755,16 +2773,32 @@ namespace GrabDiag {
                     float ea[3] = { ct[0], ct[1], ct[2] }, eb[3] = { ct[0], ct[1], ct[2] };
                     ea[ax] -= he[ax]; eb[ax] += he[ax];
                     toWorld(ea, aOutU); toWorld(eb, bOutU);
-                    float second = 0.f;
-                    for (int i = 0; i < 3; ++i) if (i != ax && he[i] > second) second = he[i];
-                    const float rU = second * kHavokToSkyrim;   // (windows.h defines max())
-                    if (rOutU) *rOutU = rU > 0.5f ? rU : 0.5f;
+                    // ★ RADIUS = the THINNEST cross-section, not the widest (2026-08-01,
+                    // user-caught). The AABB is the union of ALL children — on the Iron Rapier
+                    // that is blade + hilt + pommel, so its widest cross-section is the SWEPT
+                    // HILT (measured 5.6u ~ 8cm, a hand-guard). Taking the larger extent made
+                    // every blade contact read ~-5u "deep" from mere proximity. The smaller
+                    // non-axis extent is blade THICKNESS, which is what "did the blade touch
+                    // her" actually wants. An axe loses its head's width the same way — correct
+                    // for a contact test, and the honest direction: under-reading costs a
+                    // grazing hit, over-reading fabricates penetration depth a consumer trusts.
+                    float wide = 0.f, thin = 1e9f;
+                    for (int i = 0; i < 3; ++i) {
+                        if (i == ax) continue;
+                        if (he[i] > wide) wide = he[i];
+                        if (he[i] < thin) thin = he[i];
+                    }
+                    float rU = thin * kHavokToSkyrim;
+                    const float rCapU = ObjectHold::ApiWeaponRMaxU();   // ceiling still applies
+                    if (rCapU > 0.f && rU > rCapU) rU = rCapU;
+                    if (rU < 0.5f) rU = 0.5f;                           // never degenerate
+                    if (rOutU) *rOutU = rU;
                     static std::atomic<int> s_listAabbLogged{ 0 };
                     if (s_listAabbLogged.exchange(1, std::memory_order_relaxed) == 0)
                         logger::info("API weapon probe: LIST-AABB blade segment (axis={} len={:.0f}u "
-                                     "r={:.1f}u) — read from the shape's own cached bounds, so it "
-                                     "works on weapons whose form carries no usable OBND",
-                                     ax, lenU, rOutU ? *rOutU : -1.f);
+                                     "r={:.1f}u) — cross-section thin={:.1f}u wide={:.1f}u; the WIDE "
+                                     "one is the guard/head and is deliberately NOT the radius",
+                                     ax, lenU, rU, thin * kHavokToSkyrim, wide * kHavokToSkyrim);
                     return true;
                 }
             }

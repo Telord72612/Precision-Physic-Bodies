@@ -8,10 +8,12 @@ that fit the actual body mesh, both refitted live at runtime.**
 ![status](https://img.shields.io/badge/status-beta-orange)
 ![platform](https://img.shields.io/badge/platform-Skyrim%20VR-blue)
 ![plugin](https://img.shields.io/badge/SKSE-VR-green)
-![version](https://img.shields.io/badge/version-1.3.0-blue)
+![version](https://img.shields.io/badge/version-1.4.0-blue)
 
-**Latest: 1.3.0** — HDT-SMP Flex support, contact-ranked push, garment-rig budget, HIGGS poke fix,
-and the runaway-finger fix. See [CHANGELOG.md](CHANGELOG.md).
+**Latest: 1.4.0 — the Touch API.** PPB now tells other mods *who* was touched, *where*, *with what*,
+*how deep* and *for how long*. Weapon contacts come from Havok's own narrowphase, so the reported
+capsule is the one the engine actually collided with. See **[INTEGRATION.md](INTEGRATION.md)** to
+consume it, and [CHANGELOG.md](CHANGELOG.md) for the full list.
 
 ---
 
@@ -21,6 +23,7 @@ and the runaway-finger fix. See [CHANGELOG.md](CHANGELOG.md).
 - [What PPB does](#what-ppb-does)
 - [ReScale — fitting the joints](#rescale--fitting-the-joints)
 - [ReShape — fitting the capsules](#reshape--fitting-the-capsules)
+- [The Touch API (for mod authors)](#the-touch-api-for-mod-authors)
 - [Features](#features)
 - [Fixes](#fixes)
 - [Install](#install)
@@ -114,6 +117,70 @@ sag, inflation and offset the capsules need.
 
 > **In short:** any NPC on an XP32 skeleton with any CBBE-based body — 3BA, SoftBody, custom NPCs,
 > OBody, arbitrary morphs. *(Female only for now.)*
+
+## The Touch API (for mod authors)
+
+**PPB knows exactly where you are touching an NPC. Since 1.4.0 it will tell your mod.**
+
+Because PPB already rebuilds every female NPC's collision as ~107 individually named capsules fitted
+to her actual body, it can answer a question nothing else in the load order can: not "the player
+touched her", but *"the player's left index finger has been resting on her right cheek for 2.4
+seconds."*
+
+```
+R|FINGER|Face(cheek L)|human      d=-0.31u  dur=2.41s
+L|WEAPON:Iron Rapier|Neck(neck / throat)|human   d=-0.71u  dur=0.5s
+```
+
+### What every contact carries
+
+| | |
+|---|---|
+| **Who** | the touched NPC (the event's `sender`) |
+| **Where** | three levels: **region** (`Face`), **group** (`In mouth`), **capsule** (`palate`) |
+| **How deep** | signed distance in game units — negative means inside |
+| **By which hand** | `L` / `R`, independently tracked |
+| **With what** | finger, open palm, fist, HIGGS grab, weapon, or held object |
+| **Which weapon** | its name, plus its class (Sword, Mace, Dagger…) and edge (Blade / Blunt / Pierce) |
+| **How long** | seconds, timed per capsule group |
+
+### The depth ladder
+
+Sub-regions are ordered, and each level overrides the ones below:
+
+```
+Face surface  <  Mouth opening  <  In mouth  <  Mouth wall
+0 surface        1 opening         2 inside     3 deepest
+```
+
+A cheek is a cheek — it only means "mouth" in conjunction with the palate. A palate touch means
+something *is* inside. The intimate chain works the same way (opening → deep → deepest), so
+"touched her hip" and "inserted" can never be confused. If you only care how far in, read the
+depth number and ignore the names.
+
+### Engine truth for weapons
+
+A weapon's shape defeats every geometric approximation — a rapier's swept hilt, an axe head, a club
+all measure differently. So PPB doesn't approximate: it reads **Havok's own contact events**, which
+carry both colliding bodies and the exact capsule that touched. The same event that vibrates your
+controller and pushes her body is the one your mod receives. Contacts carry an `engineContact` flag
+so you always know whether you got engine truth or the geometric fallback.
+
+### Three ways in
+
+| You are writing | Use |
+|---|---|
+| A Papyrus script | mod events — `RegisterForModEvent("PPB_TouchStart", …)` |
+| A Papyrus script that polls | 12 natives on script `PPB_Touch` |
+| An SKSE plugin | the C++ interface — copy `src/PpbTouchAPI.h` |
+
+Both hands are tracked independently and report **in the same tick** when both are in contact.
+
+**→ [INTEGRATION.md](INTEGRATION.md) is the full guide** — working code for all three paths, the
+coverage contract, and the gotchas. `PPB_Touch_API_Contact_List.xlsx` lists all 107 capsules with
+their group, depth and override behaviour.
+
+---
 
 ## Features
 

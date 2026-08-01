@@ -25,6 +25,7 @@
 #include "PpbApi.h"
 #include "PpbTouchAPI.h"
 #include "CapFix.h"          // GrabDiag::ReadCapsuleWorldUSide / SlotHasLeftTwin / SlotLabel / SlotLiveChildren
+#include "Diag.h"
 #include "HandBox.h"         // HandBox::TipWorldU / BoxCenterWorldU
 #include "NpcFingerTest.h"   // NpcFinger::PartName / WeaponPointU
 #include "Interop.h"         // Interop::GetHiggs
@@ -170,14 +171,18 @@ namespace {
     // six-second face touch that crosses five capsules, half a second each, reads:
     //     R|FINGER|Face(cheek L)|human  dur=6.11s
     // The raw layer above is untouched and still publishes everything, on its own events.
-    constexpr int kMaxDigest   = 12;   // live region-contacts (≤ regions × wands in practice)
+    // Live GROUP-contacts. Was 12 when identity was the coarse region; groups are finer (33 vs
+    // 13), so a hand spanning a boundary can hold two at once — 16 keeps headroom for both wands
+    // plus a weapon/object class without ever dropping the newest.
+    constexpr int kMaxDigest   = 16;
     constexpr int kMaxPartAcc  = 16;   // distinct capsules remembered per region visit
     struct DigestContact {
         bool          live = false, seen = false, emitted = false;
         std::uint8_t  unseen = 0;      // consecutive ticks the region was not the winner
         std::uint32_t actorId = 0;
         std::uint8_t  wand = 0;
-        int           region = 0;
+        int           region = 0;   // for the report string + the dwell CLASS
+        int           sub = 0;      // ★ the CAPSULE GROUP — this is the contact's IDENTITY
         std::uint64_t startMs = 0;
         float         inRegionS = 0.f;             // accumulated time, the dwell gate
         struct PartAcc { int slot, child; std::uint8_t left; float secs; };
@@ -413,6 +418,21 @@ namespace {
 
     // Stamp the three classification bytes onto a contact. One call site per stream so the
     // published POD can never disagree with the accessors.
+    int WeaponClassOf(bool left);          // defined with the engine-contact block below
+    int WeaponEdgeOfClass(int c);
+
+    inline void StampWeapon(PpbTouchContact& p, int wand, bool fromEngine)
+    {
+        if (p.sourceKind == PPBAPI::kSourceWeapon) {
+            const int c = WeaponClassOf(wand != 0);
+            if (c != PPBAPI::kWeapNone) {          // keep the last good class through a release tick
+                p.weaponClass = (unsigned char)c;
+                p.weaponEdge  = (unsigned char)WeaponEdgeOfClass(c);
+            }
+        } else { p.weaponClass = 0; p.weaponEdge = 0; }
+        p.engineContact = fromEngine ? 1 : 0;
+    }
+
     inline void StampClass(PpbTouchContact& p, int slot, int child, int regionOverride = -1)
     {
         const int sub = SubRegionOfPart(slot, child);
@@ -474,6 +494,18 @@ namespace {
     void CollectProbes()
     {
         auto* hig = Interop::GetHiggs();
+        // Publish HIGGS's weapon bodies so the contact listener can recognise them by pointer.
+        // This is what turns Havok's own narrowphase into our weapon probe (Diag.h).
+        // HIGGS hands back the bhk WRAPPER; contact events carry the hkpRigidBody. Step through
+        // at +0x10 — the same PortBhkRigidBody layout WeaponSegmentU already relies on.
+        auto hkpOf = [](RE::NiObject* ni) -> void* {
+            if (!ni) return nullptr;
+            auto* hk = *reinterpret_cast<void**>(reinterpret_cast<std::uintptr_t>(ni) + 0x10);
+            return (reinterpret_cast<std::uintptr_t>(hk) & 7) ? nullptr : hk;
+        };
+        if (hig) Diag::PublishWeaponBodies(hkpOf(hig->GetWeaponRigidBody(false)),
+                                           hkpOf(hig->GetWeaponRigidBody(true)));
+        else     Diag::PublishWeaponBodies(nullptr, nullptr);
         for (int hand = 0; hand < 2; ++hand) {
             HandProbes& hp = g_hp[hand];
             hp = HandProbes{};
@@ -573,6 +605,145 @@ namespace {
         bool  left = false;
         int   viaBox = -1;     // which hand box made the nearest contact (kClsHand only)
     };
+
+    // ── WEAPON CLASS / EDGE (2026-08-01) ────────────────────────────────────────────────
+    // From the equipped record's animationType — the game's own classification, so it is right
+    // for mod weapons too (an "Iron Rapier" is authored as kOneHandSword and reports Sword).
+    // Name-matching would break on every translation and every mod's naming whim.
+    int WeaponClassOf(bool left)
+    {
+        auto* pl = RE::PlayerCharacter::GetSingleton();
+        auto* frm = pl ? pl->GetEquippedObject(left) : nullptr;
+        auto* wp = frm ? frm->As<RE::TESObjectWEAP>() : nullptr;
+        if (!wp) return PPBAPI::kWeapNone;
+        switch (wp->GetWeaponType()) {
+        case RE::WEAPON_TYPE::kHandToHandMelee: return PPBAPI::kWeapFist;
+        case RE::WEAPON_TYPE::kOneHandSword:    return PPBAPI::kWeapSword;
+        case RE::WEAPON_TYPE::kOneHandDagger:   return PPBAPI::kWeapDagger;
+        case RE::WEAPON_TYPE::kOneHandAxe:      return PPBAPI::kWeapAxe;
+        case RE::WEAPON_TYPE::kOneHandMace:     return PPBAPI::kWeapMace;
+        case RE::WEAPON_TYPE::kTwoHandSword:    return PPBAPI::kWeapGreatsword;
+        case RE::WEAPON_TYPE::kTwoHandAxe:      return PPBAPI::kWeapBattleaxe;
+        case RE::WEAPON_TYPE::kBow:             return PPBAPI::kWeapBow;
+        case RE::WEAPON_TYPE::kStaff:           return PPBAPI::kWeapStaff;
+        case RE::WEAPON_TYPE::kCrossbow:        return PPBAPI::kWeapCrossbow;
+        default:                                return PPBAPI::kWeapOther;
+        }
+    }
+
+    const char* WeaponClassLabel(int c)
+    {
+        switch (c) {
+        case PPBAPI::kWeapFist:       return "Fist";
+        case PPBAPI::kWeapSword:      return "Sword";
+        case PPBAPI::kWeapDagger:     return "Dagger";
+        case PPBAPI::kWeapAxe:        return "War axe";
+        case PPBAPI::kWeapMace:       return "Mace";
+        case PPBAPI::kWeapGreatsword: return "Greatsword";
+        case PPBAPI::kWeapBattleaxe:  return "Battleaxe / warhammer";
+        case PPBAPI::kWeapBow:        return "Bow";
+        case PPBAPI::kWeapStaff:      return "Staff";
+        case PPBAPI::kWeapCrossbow:   return "Crossbow";
+        case PPBAPI::kWeapOther:      return "Other";
+        }
+        return "";
+    }
+
+    // Does it cut, crush, or stab? ⚠ Skyrim's record model has NO damage-type field — every
+    // melee weapon deals one generic physical damage, and "blunt vs blade" is a property of the
+    // SHAPE, not of any game data. This is therefore an honest inference from the class, not a
+    // value read out of the record. A battleaxe is grouped with warhammers by animationType, so
+    // that one row is genuinely ambiguous and is called BLADE (the commoner case).
+    int WeaponEdgeOfClass(int c)
+    {
+        switch (c) {
+        case PPBAPI::kWeapSword:
+        case PPBAPI::kWeapAxe:
+        case PPBAPI::kWeapGreatsword:
+        case PPBAPI::kWeapBattleaxe:  return PPBAPI::kEdgeBlade;
+        case PPBAPI::kWeapDagger:     return PPBAPI::kEdgePierce;
+        case PPBAPI::kWeapMace:
+        case PPBAPI::kWeapStaff:
+        case PPBAPI::kWeapFist:
+        case PPBAPI::kWeapBow:
+        case PPBAPI::kWeapCrossbow:   return PPBAPI::kEdgeBlunt;
+        }
+        return PPBAPI::kEdgeNone;
+    }
+
+    // ══ ENGINE-TRUTH WEAPON CONTACTS (2026-08-01) ══════════════════════════════════════
+    // Havok's narrowphase already computed the weapon-vs-capsule contact the player feels.
+    // Diag's contact listener records (otherBody, shapeKey, wand); here we resolve the body
+    // POINTER to (actor, slot, side) by matching against the slots of the actors we are already
+    // scanning. Result: exact slot AND exact capsule child, with no segment, radius or bounding
+    // box anywhere in the path — so it is correct for a rapier's swept hilt, an axe head and a
+    // club alike, which no geometric approximation was.
+    struct EngineHit { std::uint32_t actorId; int slot; int child; bool left; int wand; float distU; };
+    EngineHit g_engHits[24];
+    int       g_engN = 0;
+
+    // ── ENGINE-HIT LATCH (2026-08-01, caught by the per-line src= tag) ──────────────────
+    // Havok does not regenerate a contact point on EVERY step of a held touch, so a contact
+    // that STARTED as src=ENG could END as src=GEO — and distU then jumps between two
+    // different measurement systems mid-contact, which is worse than either alone. Hold the
+    // last engine result briefly: the touch is still live, the engine simply had nothing new
+    // to say this tick. One latch per (actor, wand); newest always wins, so a stale entry can
+    // never accumulate. kEngHoldTicks 3 ~= 0.75s at apiHz 4.
+    struct EngineLatch { std::uint32_t actorId; int wand; EngineHit hit; std::uint64_t tick; bool live; };
+    EngineLatch g_engLatch[8]{};
+    std::uint64_t g_engTick = 0;
+    constexpr std::uint64_t kEngHoldTicks = 3;
+
+    void LatchEngineHit(const EngineHit& h)
+    {
+        EngineLatch* slot = nullptr;
+        for (auto& L : g_engLatch)
+            if (L.live && L.actorId == h.actorId && L.wand == h.wand) { slot = &L; break; }
+        if (!slot) for (auto& L : g_engLatch) if (!L.live) { slot = &L; break; }
+        if (!slot) slot = &g_engLatch[0];                       // table full: recycle the first
+        *slot = { h.actorId, h.wand, h, g_engTick, true };
+    }
+
+    bool EngineHitFor(std::uint32_t actorId, int wand)
+    {
+        for (const auto& L : g_engLatch)
+            if (L.live && L.actorId == actorId && (L.wand & 1) == (wand & 1)) return true;
+        return false;
+    }
+
+    void CollectEngineWeaponHits(int nRoster)
+    {
+        ++g_engTick;
+        g_engN = 0;
+        // age the latches out first, so a weapon that left never keeps answering
+        for (auto& L : g_engLatch)
+            if (L.live && g_engTick - L.tick > kEngHoldTicks) L.live = false;
+        Diag::WeaponContact raw[24];
+        const int n = Diag::DrainWeaponContacts(raw, 24);
+        if (n <= 0) return;
+        for (int i = 0; i < n && g_engN < 24; ++i) {
+            if (!raw[i].otherBody) continue;
+            for (int ai = 0; ai < nRoster; ++ai) {
+                RE::Actor* a = g_roster[ai].actor;
+                if (!a) continue;
+                bool done = false;
+                for (int slot = 0; slot < 12 && !done; ++slot)
+                    for (int side = 0; side < 2; ++side) {
+                        void* b = GrabDiag::SlotBodyRaw(a, slot, side != 0);
+                        if (!b || b != raw[i].otherBody) continue;
+                        // Havok metres -> game units; this is the engine's REAL separating
+                        // distance, so a graze and a deep press no longer look identical.
+                        const EngineHit eh = { a->GetFormID(), slot, (int)raw[i].child,
+                                               side != 0, raw[i].wand,
+                                               raw[i].distHavok * 69.9422f };   // havok m -> game u
+                        g_engHits[g_engN++] = eh;
+                        LatchEngineHit(eh);
+                        done = true; break;
+                    }
+                if (done) break;
+            }
+        }
+    }
 
     void ScanActor(RE::Actor* actor, Hit out[2][kClsCount])
     {
@@ -783,6 +954,49 @@ namespace {
                     if (sens[hand][cls].found && sens[hand][cls].dist <= touchU)
                         out[hand][cls] = sens[hand][cls];
         }
+
+        // ── ENGINE-TRUTH WEAPON OVERRIDE (2026-08-01) ──────────────────────────────────
+        // A recorded Havok contact is not an estimate — the solver moved her because of it.
+        // So it OUTRANKS the geometric weapon probe entirely: exact slot, exact capsule child,
+        // and a distance of 0 (touching by definition; the probe's signed depth is a
+        // reconstruction, this is the real event). Sensor priority still applies afterwards for
+        // interior capsules, so an insertion keeps naming how far it reached.
+        // ⚠ FOURTH instance of the capped-diagnostic trap in this project, and I wrote the rule.
+        // A 4-line cap burns on the first burst, so "which slots does the engine actually
+        // report?" stayed unanswerable exactly when it mattered. Per-slot RUNNING TOTALS, dumped
+        // every 64 hits: a histogram cannot exhaust, and it answers coverage questions directly.
+        static std::atomic<int> s_engLogged{ 0 };
+        static std::atomic<int> s_engBySlot[12]{};
+        static std::atomic<int> s_engTotal{ 0 };
+        for (const auto& L : g_engLatch) {
+            if (!L.live) continue;
+            const EngineHit& eh = L.hit;
+            if (eh.actorId != aid) continue;
+            if (eh.slot >= 0 && eh.slot < 12) s_engBySlot[eh.slot].fetch_add(1, std::memory_order_relaxed);
+            const int tot = s_engTotal.fetch_add(1, std::memory_order_relaxed) + 1;
+            if (ObjectHold::ApiLogEnabled()) {
+                if (s_engLogged.fetch_add(1, std::memory_order_relaxed) < 4)
+                    logger::info("API weapon: ENGINE CONTACT {:08X} slot={} child={} side={} wand={} "
+                                 "— from Havok's own narrowphase (shape key), no geometry involved",
+                                 eh.actorId, eh.slot, eh.child, eh.left ? "L" : "R",
+                                 eh.wand ? "L" : "R");
+                if ((tot % 64) == 0)
+                    logger::info("API weapon ENGINE-CONTACT coverage after {}: hand={} fore={} "
+                                 "uarm={} head={} spn0={} spn1={} spn2={} neck={} thigh={} "
+                                 "calf={} foot={} com={}  (zeros = slots Havok never reports a "
+                                 "weapon contact on — that is the coverage gap, not a bug in the "
+                                 "override)",
+                                 tot,
+                                 s_engBySlot[0].load(), s_engBySlot[1].load(), s_engBySlot[2].load(),
+                                 s_engBySlot[3].load(), s_engBySlot[4].load(), s_engBySlot[5].load(),
+                                 s_engBySlot[6].load(), s_engBySlot[7].load(), s_engBySlot[8].load(),
+                                 s_engBySlot[9].load(), s_engBySlot[10].load(), s_engBySlot[11].load());
+            }
+            const int hand = eh.wand & 1;
+            Hit& h = out[hand][kClsWeapon];
+            h.found = true; h.dist = eh.distU;
+            h.slot = eh.slot; h.child = eh.child; h.left = eh.left;
+        }
     }
 
     // ── source classification for a hand-class contact ──────────────────────
@@ -867,9 +1081,23 @@ namespace {
             // curl = the FIST calibration receipt: index-tip-to-palm distance for the hand
             // this contact rode. Do one open-hand touch and one fist touch, read the two
             // numbers, set apiFistTipPalmU between them. -1 = boxes not live.
-            logger::info("API {} {:08X} {} d={:.2f}u dur={:.2f}s curl={:.1f}u vrik=I{:.2f}/M{:.2f}",
+            // src= says WHICH PATH produced this contact — ENG (Havok's own narrowphase: exact
+            // capsule + real separating distance) or GEO (the geometric fallback). Printed on
+            // EVERY line, not as a capped one-shot: the receipt cap exhausted on the first burst
+            // and left "did the engine path drive this?" unanswerable. Per-line beats capped.
+            // wpn= is the weapon CLASS and EDGE for weapon contacts (blank otherwise).
+            char wpn[48] = "";
+            if (c.sourceKind == PPBAPI::kSourceWeapon && c.weaponClass)
+                std::snprintf(wpn, sizeof wpn, " wpn=%s/%s",
+                              WeaponClassLabel(c.weaponClass),
+                              c.weaponEdge == PPBAPI::kEdgeBlade  ? "Blade"  :
+                              c.weaponEdge == PPBAPI::kEdgeBlunt  ? "Blunt"  :
+                              c.weaponEdge == PPBAPI::kEdgePierce ? "Pierce" : "?");
+            logger::info("API {} {:08X} {} d={:.2f}u dur={:.2f}s src={}{} curl={:.1f}u "
+                         "vrik=I{:.2f}/M{:.2f}",
                          phase == PPBAPI::kPhaseStart ? "START" : "END",
                          c.actorFormId, packed, c.distU, c.durationS,
+                         c.engineContact ? "ENG" : "GEO", wpn,
                          g_hp[c.wand & 1].curlDistU,
                          g_hp[c.wand & 1].vrikIndex, g_hp[c.wand & 1].vrikMiddle);
         }
@@ -932,6 +1160,7 @@ namespace PpbApi {
         if (maxA > 0 && rosterN > maxA) rosterN = maxA;
 
         CollectProbes();
+        CollectEngineWeaponHits(rosterN);   // real Havok weapon contacts, resolved to slot+child
 
         for (Contact& ct : g_contacts) ct.seen = false;
         const float touchU = ObjectHold::ApiTouchU();
@@ -1001,6 +1230,7 @@ namespace PpbApi {
                         p.leftTwin = h.left ? 1 : 0;
                         BodyPartName(h.slot, h.left, h.child, p.bodyPart, sizeof p.bodyPart);
                         StampClass(p, h.slot, h.child);
+                        StampWeapon(p, hand, EngineHitFor(roster[ai].id, hand));
                         if (!ct->emitted) { ct->emitted = true; Emit(p, PPBAPI::kPhaseStart, true); }
                         else              Emit(p, PPBAPI::kPhaseContinue, true);
                     } else if (ct->emitted) {
@@ -1012,17 +1242,27 @@ namespace PpbApi {
 
                     // ── DIGEST: accumulate into the (actor, wand, region) contact ──────
                     {
+                        // ★ 2026-08-01 (user spec): a contact's DURATION is timed per CAPSULE
+                        // GROUP (sub-region), not per capsule and not per coarse region. So a
+                        // finger wandering cheek->chin->nose stays ONE contact (all "Face
+                        // surface"), while sliding from the cheek INTO the mouth correctly starts
+                        // a new one — the groups differ, and so does the meaning.
+                        // Identity is (actor, wand, GROUP). Because the wand is part of it, two
+                        // hands on the same group are two independent contacts that qualify and
+                        // emit in the SAME TICK — both hands reported together, per-hand detail
+                        // preserved, exactly as asked.
                         const int reg = RegionOfPart(h.slot, h.child);
+                        const int sub = SubRegionOfPart(h.slot, h.child);
                         DigestContact* dc = nullptr;
                         for (DigestContact& d : g_digest)
                             if (d.live && d.actorId == roster[ai].id && d.wand == hand &&
-                                d.region == reg) { dc = &d; break; }
+                                d.sub == sub) { dc = &d; break; }
                         if (!dc) {
                             for (DigestContact& d : g_digest) if (!d.live) { dc = &d; break; }
                             if (dc) {
                                 *dc = DigestContact{};
                                 dc->live = true; dc->actorId = roster[ai].id;
-                                dc->wand = (std::uint8_t)hand; dc->region = reg;
+                                dc->wand = (std::uint8_t)hand; dc->region = reg; dc->sub = sub;
                                 dc->startMs = now;
                             }
                         }
@@ -1094,6 +1334,7 @@ namespace PpbApi {
                 // the digest's REGION is the contact's identity, not the part's — a wandering
                 // touch keeps one region while the reported part moves inside it.
                 StampClass(p, p.slot, p.child, dc.region);
+                StampWeapon(p, dc.wand, EngineHitFor(dc.actorId, dc.wand));
             }
             const bool qual = dc.inRegionS >= DwellSForRegion(dc.region);
             if (dc.seen) {
@@ -1155,6 +1396,8 @@ namespace PpbApi {
 
     void ClearOnLoad()
     {
+        for (auto& L : g_engLatch) L.live = false;   // FormIDs recycle across saves
+        g_engN = 0;
         for (Contact& ct : g_contacts) ct.live = false;
         for (DigestContact& dc : g_digest) dc.live = false;
         g_rosterN = 0;
@@ -1215,6 +1458,8 @@ namespace PpbApi {
         int SubRegionOf(int slot, int child) override { return SubRegionOfPart(slot, child); }
         const char* SubRegionName(int sub) override { return SubRegionLabel(sub); }
         int SubRegionDepth(int sub) override { return SubRegionDepthOf(sub); }
+        const char* WeaponClassName(int c) override { return WeaponClassLabel(c); }
+        int WeaponEdgeOf(int c) override { return WeaponEdgeOfClass(c); }
     };
     static TouchInterfaceImpl g_iface;
 

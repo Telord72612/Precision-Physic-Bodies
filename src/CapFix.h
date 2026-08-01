@@ -30,6 +30,13 @@ namespace GrabDiag {
     // position when the shape is unreadable. false = no weapon body at all.
     bool WeaponSegmentU(bool left, float aOutU[3], float bOutU[3], float* rOutU);
     bool SlotBodyPoseU(RE::Actor* a, int slot, float posOutU[3], float rotOut[9]);
+
+    // The raw hkpRigidBody backing a slot (void* keeps SDK types out of this header).
+    // Added 2026-08-01 for ENGINE-TRUTH weapon contacts: Havok's own contact events hand us
+    // the two colliding bodies plus the exact list-child shape key, so a weapon hit needs no
+    // geometric reconstruction at all — but the event only gives POINTERS, and the main thread
+    // must map them back to (actor, slot, side). This is that map's source.
+    void* SlotBodyRaw(RE::Actor* a, int slot, bool left);
     const char* SlotLabel(int slot);                 // "hand","forearm",... "com" (12 slots)
     int  SlotLiveChildren(RE::Actor* a, int slot);   // list child count; 0 = single capsule/none
     // Console entry: apply=false prints the current R-hand capsule into `out`; apply=true writes
