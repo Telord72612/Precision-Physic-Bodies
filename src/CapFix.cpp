@@ -4009,6 +4009,37 @@ namespace GrabDiag {
                 g_bsInval.clear();
             }
             bool freshLatch = false;
+            // ── RESHAPE GATE DIAGNOSTIC (2026-08-01) ────────────────────────────────────
+            // ReShape stopped sampling ANY actor (zero HEADUV/UVMEAS/MESHGIRTH for a whole
+            // 20-minute session) while ReScale kept working and CapFix kept applying, so the
+            // failure is somewhere in THIS decision chain. Every stage is silent today, which
+            // is why it could not be located from a log. One line per actor, naming each gate:
+            // whichever reads false is the answer. Same method that settled the SMP handshake,
+            // the weapon shape and the VRIK fingers — log what it saw, then build against it.
+            {
+                static std::mutex s_gdMx;
+                static std::set<std::uint32_t> s_gdSeen;
+                bool first = false;
+                { std::lock_guard<std::mutex> g(s_gdMx); first = s_gdSeen.insert(id).second; }
+                if (first) {
+                    const auto& rr0 = s_regionRatio[id];
+                    const bool hasSkee = Interop::HasSkee();
+                    logger::info("RESHAPEGATE {:08X}: lmReShape={} boneShape={} attached={} "
+                                 "latched={} skee={} hasMorphs={} attachedTicks={} beast={} "
+                                 "dead={} excluded={}  (the FALSE one is why ReShape is silent)",
+                                 id,
+                                 ObjectHold::LmReShapeEnabled() ? 1 : 0,
+                                 ObjectHold::BoneShapeEnabled() ? 1 : 0,
+                                 attached ? 1 : 0,
+                                 rr0.latched ? 1 : 0,
+                                 hasSkee ? 1 : 0,
+                                 hasSkee ? (Interop::SkeeHasMorphs(actor) ? 1 : 0) : -1,
+                                 ap.attachedTicks,
+                                 IsBeastSkeletonActor(actor) ? 1 : 0,
+                                 (actor && actor->IsDead()) ? 1 : 0,
+                                 (actor && DismemberGuard::IsExcluded(actor)) ? 1 : 0);
+                }
+            }
             if (ObjectHold::LmReShapeEnabled() && attached) {
                 auto& rr = s_regionRatio[id];
                 // Morphs load a beat after 3D; if SKEE is present, wait for HasMorphs so we never latch

@@ -30,7 +30,10 @@ git — nothing here is remembered.
 - `logVerbose 1`, so these are NOT hidden by log level
 - Both gates ON: `lmReShape 1`, `boneShape 1`
 - **CapFix itself is healthy** — 234 lines, 102 `APPLIED` on her incl. the COM sensors, all `gen=1`
-- ReScale `ARM re-scale sequence` fired twice for her (16:55:03, 16:55:09) with **no completion line**
+- **ReScale is NOT broken** — corrected 2026-08-01 from a later log: it completes fine
+  (`1301DE4F nodeArc=45.710 medHavokArc=43.446 -> factor x1.0521 trueScale=0.9514`, applied to 17
+  constraints). The earlier "armed but never completed" reading was a too-short log window. **The
+  fault is ReShape ONLY.**
 
 **The gate** (`CapFix.cpp` ~line 2116):
 ```cpp
@@ -47,7 +50,11 @@ if (ObjectHold::LmReShapeEnabled() && ObjectHold::BoneShapeEnabled()) {
    tier, and reworked the blade radius, all in that file. A sampler that runs for NOBODY is exactly
    the shape of an accidental break.
 
-**THE CHEAP DISCRIMINATOR (do this first):** `bodyScaleDump` is **edge-triggered** — any value
+**A GATE DIAGNOSTIC IS NOW DEPLOYED.** `RESHAPEGATE <id>: lmReShape= boneShape= attached= latched=
+skee= hasMorphs= attachedTicks= beast= dead= excluded=` prints once per actor at the latch decision.
+Whichever field reads false is the answer — read that line first, it replaces all guessing below.
+
+**THE CHEAP DISCRIMINATOR (if the gate line is inconclusive):** `bodyScaleDump` is **edge-triggered** — any value
 change re-latches everyone. It currently reads **21**. Change it to 22 and watch:
 - `HEADUV` lines appear + her face corrects → it was a stale latch, no code bug.
 - Still nothing → the sampler is genuinely broken; `git diff 41095aa..HEAD -- src/CapFix.cpp` is
