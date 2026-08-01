@@ -242,7 +242,12 @@ namespace ArmIK {
         if (!root) return;
         auto* npcNode = root->GetObjectByName("NPC");
         if (!npcNode) return;
-        if (!HeelsFixHeeled(actor)) return;                    // same authority as the drive half — must stay balanced
+        // ⚠ 2026-08-01: this said "same authority as the drive half — must stay balanced" and I
+        // then converted ONLY the drive half to the sticky gate. During a Heels Fix refresh the
+        // bias applied while this compensation did not, so the whole rendered body rose 8u and
+        // floated (user-observed). The two halves are one mechanism: they MUST read the same
+        // gate, always. Any future change to one is a change to both.
+        if (!HeeledSticky(actor)) return;
         const float heelZ = npcNode->local.translate.z;
         if (heelZ <= 0.01f || heelZ > 40.f) return;
         if (actor->IsInRagdollState()) return;

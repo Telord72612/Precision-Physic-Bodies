@@ -326,6 +326,11 @@ namespace {
 
 namespace FsmpLink {
 
+    // Public forwarder — the anonymous-namespace handler is not linkable from main.cpp.
+    // See FsmpLink.h for why the handshake no longer owns its own SKSE registration.
+    void HandleEngineMessage(SKSE::MessagingInterface::Message* msg) { OnEngineMessage(msg); }
+
+
     void Register()
     {
         auto* msg = SKSE::GetMessagingInterface();
@@ -336,10 +341,26 @@ namespace FsmpLink {
         // unconditionally — so "listeners registered" was a CLAIM, not a receipt, and a
         // session where the handshake never happened looked identical to one where it did.
         // SKSE resolves the sender by plugin NAME; a name that does not resolve returns false.
-        static std::atomic<bool> s_done{ false };
-        if (s_done.exchange(true, std::memory_order_relaxed)) return;   // retry call = no-op
+        // ⚠ NO once-only guard. FSMP's dispatch site says "Send ourselves to any plugin that
+        // registered during the PostLoad event" (PluginInterfaceImpl::onPostPostLoad, v4.0.1),
+        // so kPostLoad is the CONTRACTED registration point. A guard here would let an earlier
+        // SKSEPluginLoad call suppress the compliant one — which is exactly what happened when
+        // I moved registration earlier. Register at BOTH; a duplicate listener is harmless
+        // (g_accepted makes the handler idempotent), a MISSING one is fatal and silent.
+        // ⚠ 2026-08-01: we used to register BOTH spellings unconditionally. SKSE resolves
+        // sender names case-INSENSITIVELY (_stricmp in LookupHandleFromName), so on any single
+        // engine BOTH names resolve to the SAME plugin handle and we registered the same
+        // handler twice for one sender. Whether SKSE appends or replaces on a duplicate
+        // (listener, sender) pair is not documented — and we are currently registered, the
+        // engine dispatches, and our handler is never called. Register the SECOND spelling
+        // ONLY if the first did not resolve, so exactly one listener exists per engine.
         const bool okLower = msg->RegisterListener("hdtsmp64", OnEngineMessage);
-        const bool okUpper = msg->RegisterListener("hdtSMP64", OnEngineMessage);
+        const bool okUpper = okLower ? false
+                                     : msg->RegisterListener("hdtSMP64", OnEngineMessage);
+        logger::info("FSMPLINK: sender resolution — 'hdtsmp64'={}{}",
+                     okLower ? "RESOLVED (listening)" : "not a loaded plugin",
+                     okLower ? "" : (okUpper ? ", 'hdtSMP64'=RESOLVED (listening)"
+                                             : ", 'hdtSMP64'=not a loaded plugin"));
         if (okLower || okUpper)
             logger::info("FSMPLINK: listener registered — 'hdtsmp64'={} 'hdtSMP64'={} "
                          "(awaiting MSG_STARTUP at the engine's PostPostLoad).",

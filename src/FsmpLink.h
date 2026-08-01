@@ -16,6 +16,11 @@ namespace FsmpLink {
 
     // Call during SKSE kPostLoad (MUST precede the engine's kPostPostLoad dispatch).
     void Register();
+    // Exposed 2026-08-01: SKSE allows exactly ONE handler per (listener, sender) pair, and a
+    // wildcard RegisterListener(nullptr,...) claims PPB's slot in EVERY plugin's list. So the
+    // SMP handshake cannot own its own registration — main.cpp installs one unified handler
+    // and forwards here. Ignores anything that is not the engine's MSG_STARTUP.
+    void HandleEngineMessage(SKSE::MessagingInterface::Message* msg);
 
     // Main-thread frame tick: deferred logging (the PostStep callback runs on the
     // engine's TBB worker with its world lock held — it must never log).

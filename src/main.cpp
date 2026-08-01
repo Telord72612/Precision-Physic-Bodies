@@ -855,16 +855,30 @@ static void LogEnvironment()
                  detail("activeragdoll.dll"), detail("higgs_vr.dll"), detail("cbp.dll"), detail("hdtSMP64.dll"));
 }
 
+static void OnAnyPluginMessage(SKSE::MessagingInterface::Message* msg);   // defined below
+
 static void OnSKSEMessage(SKSE::MessagingInterface::Message* msg)
 {
+    // MESSAGE CENSUS (2026-08-01): SKSE's own log records "dispatch message (N)" without a
+    // sender, so a plugin-sourced MSG_STARTUP (type 0) is indistinguishable from SKSE's own
+    // kPostLoad (also 0) there. Name every message that reaches ANY of our listeners.
+    if (msg) {
+        static std::atomic<int> s_msgCensus{ 24 };
+        if (s_msgCensus.fetch_sub(1, std::memory_order_relaxed) > 0)
+            logger::info("SKSEMSG census: sender='{}' type={} data={}",
+                         msg->sender ? msg->sender : "<null>", msg->type,
+                         msg->data ? "present" : "null");
+    }
     switch (msg->type) {
     case SKSE::MessagingInterface::kPostLoad:
         logger::info("PostLoad.");
-        // FsmpLink::Register() MOVED to SKSEPluginLoad (2026-07-31) — registering here lost a
-        // race against engines that dispatch from their own kPostLoad. Kept as a retry: if the
-        // first call already registered, this is a cheap no-op; if the engine somehow appeared
-        // later, we still catch it.
-        FsmpLink::Register();
+        // Re-assert the wildcard at kPostLoad. FSMP dispatches at kPostPostLoad and documents
+        // "any plugin that registered during the PostLoad event", and by kPostLoad EVERY plugin
+        // is loaded — so this pass reaches plugins that loaded after us, which the SKSEPluginLoad
+        // pass structurally cannot (s_pluginListeners only holds plugins loaded so far).
+        // SKSE de-duplicates per (listener, sender), so this is free where we already registered.
+        if (auto* mi = SKSE::GetMessagingInterface())
+            mi->RegisterListener(nullptr, OnAnyPluginMessage);
         break;
 
     case SKSE::MessagingInterface::kPostPostLoad:
@@ -968,6 +982,21 @@ static void OnSKSEMessage(SKSE::MessagingInterface::Message* msg)
     }
 }
 
+// ★★ ONE handler for every OTHER plugin's messages (2026-08-01). ★★
+// SKSE stores at most ONE listener per (listener, sender) pair: RegisterListener with a named
+// sender RETURNS TRUE AND DOES NOTHING if we are already in that plugin's list
+// (PluginManager.cpp:819-826), and the nullptr form inserts us into EVERY loaded plugin's list.
+// So two separate RegisterListener calls cannot both win — the first one to claim a plugin owns
+// it, silently. That is exactly how the touch API's wildcard registration stole the SMP
+// engine's slot and killed hair push on BOTH engines for two days.
+// Therefore: ONE registration, ONE handler, fanned out here. Every consumer must tolerate
+// messages that are not theirs (both already do).
+static void OnAnyPluginMessage(SKSE::MessagingInterface::Message* msg)
+{
+    FsmpLink::HandleEngineMessage(msg);   // the SMP engine's MSG_STARTUP (interface 1 and 2)
+    PpbApi::OnPluginMessage(msg);         // kGetTouchInterface requests from API consumers
+}
+
 SKSEPluginLoad(const SKSE::LoadInterface* skse)
 {
     InitLogging();
@@ -983,9 +1012,23 @@ SKSEPluginLoad(const SKSE::LoadInterface* skse)
     const auto msg = SKSE::GetMessagingInterface();
     if (msg) {
         msg->RegisterListener(OnSKSEMessage);
-        // Public touch API (PpbTouchAPI.h): answer kGetTouchInterface requests from ANY
-        // plugin — the HIGGS request/reply pattern, provider side. nullptr = all senders.
-        msg->RegisterListener(nullptr, PpbApi::OnPluginMessage);
+        // Public touch API (PpbTouchAPI.h): answer kGetTouchInterface requests from ANY plugin.
+        //
+        // ★★ 2026-08-01 — THIS LINE SILENTLY BROKE THE SMP HANDSHAKE FOR TWO DAYS. ★★
+        // SKSE's RegisterListener(nullptr, h) does NOT mean "a wildcard listener": read
+        // PluginManager.cpp, it LOOPS EVERY LOADED PLUGIN and inserts us into each one's
+        // listener list. And the named form is a no-op if we are already in that list:
+        //     for (... s_pluginListeners[target] ...) if (iter->listener == listener) return true;
+        // It returns TRUE and does NOT replace the handler. So this call claimed hdtsmp64's
+        // slot with OnPluginMessage, and FsmpLink's later RegisterListener("hdtsmp64",
+        // OnEngineMessage) silently did nothing — FSMP's MSG_STARTUP was delivered to the
+        // touch-API handler, which dropped it. Hair push died; tails limped on their
+        // SMP-native collider. Both engines, identically.
+        //
+        // FIX: FsmpLink registers FIRST (it needs a specific sender), and the wildcard
+        // registration is DELEGATED to it — one handler owns PPB's slot in every plugin's
+        // list and forwards to both consumers. One listener per plugin is all SKSE allows us.
+        msg->RegisterListener(nullptr, OnAnyPluginMessage);
         // ★ SMP HANDSHAKE — REGISTER AS EARLY AS THE PLUGIN CAN (2026-07-31).
         // This used to happen in our kPostLoad handler, which is a RACE we lose: SKSE loads
         // 'hdtsmp64' before 'PPB' (alphabetical), so if the engine dispatches MSG_STARTUP from
@@ -995,6 +1038,9 @@ SKSEPluginLoad(const SKSE::LoadInterface* skse)
         // Registering here, inside SKSEPluginLoad, is strictly earlier than any message SKSE
         // can dispatch to anyone. Harmless if the engine is absent (the names simply do not
         // resolve, which is now logged rather than assumed).
+        // FsmpLink::Register() RETIRED 2026-08-01 — a named registration is a no-op once the
+        // wildcard has claimed our slot, and whichever ran first silently owned the sender.
+        // OnAnyPluginMessage is now the single owner and fans out. Kept only for its receipts.
         FsmpLink::Register();
     }
 

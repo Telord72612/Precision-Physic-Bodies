@@ -1208,3 +1208,24 @@ with exclusive whitelists), so hair went fully dead. One cause, two different-lo
 **Rules:** (1) before explaining away an observation, enumerate every channel that could produce
 it — a partial symptom usually means a partial system, not a mistaken user; (2) the user's
 description of DEGREE ("not as good") is data: it pointed straight at "one of two channels".
+
+## ** SKSE STORES ONE LISTENER PER (PLUGIN, SENDER) — RegisterListener(nullptr) CLAIMS THEM ALL (2026-08-01, the two-day dead handshake)
+The touch API added `RegisterListener(nullptr, PpbApi::OnPluginMessage)` ("nullptr = all
+senders"). Per SKSE's own PluginManager.cpp, the nullptr form INSERTS the caller into EVERY
+loaded plugin's listener list — and a later NAMED registration finds the caller already present
+and `return true`s WITHOUT storing the new handler. So FsmpLink's `RegisterListener("hdtsmp64",
+OnEngineMessage)` became a silent no-op: FSMP's MSG_STARTUP was delivered every launch, into the
+touch-API handler, which filters on its own message type and dropped it. Hair push died; tails
+limped on the SMP-native hand collider; both engines identical. Registration "success" receipts,
+message census, timing theories — all pointed away, because the message WAS delivered, to us,
+to the wrong function.
+FIX: one wildcard registration, one handler (`OnAnyPluginMessage`) fanning out to every
+consumer, each of which hard-filters its own type. Re-asserted at kPostLoad because the
+SKSEPluginLoad pass can only reach plugins loaded before us.
+**Rules:** (1) SKSE plugin messaging is ONE HANDLER PER (LISTENER, SENDER) — any second
+registration for a sender you already occupy is a return-true NO-OP; audit every
+RegisterListener in the codebase whenever one is added; (2) a wildcard registration is not a
+listener, it is a LAND GRAB — never add one to a plugin that also registers named senders,
+except as the single fan-out owner; (3) the fastest diagnosis all night was the USER'S: A/B
+against a known-good BINARY (v1.1, then released 1.3). A working reference build partitions the
+search space better than any amount of theory — keep old release folders precisely for this.
