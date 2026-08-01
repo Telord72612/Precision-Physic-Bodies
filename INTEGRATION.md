@@ -159,10 +159,34 @@ and a filter you own is one comparison.
 everything you need for a contact in one pass, then move on. Do not cache index `3` and expect it
 to be the same contact next tick.
 
+### Using events *and* the full data
+
+A Papyrus mod event carries one packed string and **one** number, so an event-only handler cannot
+see depth, weapon class or provenance, and can never have distance *and* duration at once. That is
+a limit of Papyrus events, not of the API — bridge it with `FindContact`:
+
+```papyrus
+Event OnPpbTouchStart(String eventName, String strArg, Float numArg, Form sender)
+    Int i = PPB_Touch.FindContact(sender as Actor, "")     ; "" = either hand
+    If i >= 0
+        If PPB_Touch.GetContactDepth(i) >= 2               ; 2 = inside
+            String w = PPB_Touch.GetContactWeaponClass(i)  ; "Dagger"
+            String e = PPB_Touch.GetContactWeaponEdge(i)   ; "Pierce"
+            Float  d = PPB_Touch.GetContactDistance(i)     ; and duration, sub-region, ...
+        EndIf
+    EndIf
+EndEvent
+```
+
+Every value is separate and typed — nothing needs parsing out of a string. `FindContact` returns
+-1 once the contact has ended, which is normal inside a `PPB_TouchEnd` handler: read what you need
+on Start, and take the final duration from the End event's own `numArg`.
+
 Full function list: `GetContactCount`, `GetContactActor`, `GetContactBodyPart`,
 `GetContactSource`, `GetContactWand`, `GetContactSkeleton`, `GetContactDuration`,
 `GetContactDistance`, `GetContactPacked`, `GetContactRegion`, `GetContactSubRegion`,
-`GetContactDepth`.
+`GetContactDepth`, `GetContactWeaponClass`, `GetContactWeaponEdge`,
+`GetContactIsEngine`, `FindContact`.
 
 ---
 

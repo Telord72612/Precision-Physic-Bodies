@@ -1588,6 +1588,43 @@ namespace PpbApi {
         std::int32_t N_GetContactDepth(RE::StaticFunctionTag*, std::int32_t i) {
             const auto* c = At(i); return c ? (std::int32_t)c->depth : -1;
         }
+        // ── appended 2026-08-01 ── the fields a MOD EVENT cannot carry.
+        // A Papyrus event gives one packed string and ONE number, so an event-only consumer
+        // could not see depth, weapon class, or provenance, and could never have distance AND
+        // duration together. FindContact bridges it: the event handler resolves its own contact
+        // and then reads whatever it likes, each value separate and typed.
+        RE::BSFixedString N_GetContactWeaponClass(RE::StaticFunctionTag*, std::int32_t i) {
+            const auto* c = At(i); return c ? WeaponClassLabel(c->weaponClass) : "";
+        }
+        RE::BSFixedString N_GetContactWeaponEdge(RE::StaticFunctionTag*, std::int32_t i) {
+            const auto* c = At(i);
+            if (!c) return "";
+            switch (c->weaponEdge) {
+            case PPBAPI::kEdgeBlade:  return "Blade";
+            case PPBAPI::kEdgeBlunt:  return "Blunt";
+            case PPBAPI::kEdgePierce: return "Pierce";
+            }
+            return "";
+        }
+        // true = the game's own physics reported this collision; false = PPB proximity (hover)
+        bool N_GetContactIsEngine(RE::StaticFunctionTag*, std::int32_t i) {
+            const auto* c = At(i); return c && c->engineContact != 0;
+        }
+        // Resolve an event back to its live contact. asWand "L"/"R"; "" = either hand.
+        // Returns -1 if the contact has already ended (normal on a TouchEnd handler).
+        std::int32_t N_FindContact(RE::StaticFunctionTag*, RE::Actor* who, RE::BSFixedString wand) {
+            if (!who) return -1;
+            const Snapshot& s = Snap();
+            const char* w = wand.c_str();
+            const bool anyWand = !w || !*w;
+            const std::uint8_t want = (w && (*w == 'L' || *w == 'l')) ? 1 : 0;
+            for (int i = 0; i < s.n; ++i) {
+                if (s.c[i].actorFormId != who->GetFormID()) continue;
+                if (!anyWand && s.c[i].wand != want) continue;
+                return i;
+            }
+            return -1;
+        }
     }
 
     bool RegisterNatives(RE::BSScript::IVirtualMachine* vm)
@@ -1605,8 +1642,12 @@ namespace PpbApi {
         vm->RegisterFunction("GetContactPacked",   k, N_GetContactPacked);
         vm->RegisterFunction("GetContactRegion",    k, N_GetContactRegion);
         vm->RegisterFunction("GetContactSubRegion", k, N_GetContactSubRegion);
-        vm->RegisterFunction("GetContactDepth",     k, N_GetContactDepth);
-        logger::info("Papyrus natives registered: PPB_Touch.GetContact* (12 functions).");
+        vm->RegisterFunction("GetContactDepth",       k, N_GetContactDepth);
+        vm->RegisterFunction("GetContactWeaponClass", k, N_GetContactWeaponClass);
+        vm->RegisterFunction("GetContactWeaponEdge",  k, N_GetContactWeaponEdge);
+        vm->RegisterFunction("GetContactIsEngine",    k, N_GetContactIsEngine);
+        vm->RegisterFunction("FindContact",           k, N_FindContact);
+        logger::info("Papyrus natives registered: PPB_Touch (16 functions).");
         return true;
     }
 }
