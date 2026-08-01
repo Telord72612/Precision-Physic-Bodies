@@ -955,12 +955,23 @@ namespace {
                         out[hand][cls] = sens[hand][cls];
         }
 
-        // ── ENGINE-TRUTH WEAPON OVERRIDE (2026-08-01) ──────────────────────────────────
-        // A recorded Havok contact is not an estimate — the solver moved her because of it.
-        // So it OUTRANKS the geometric weapon probe entirely: exact slot, exact capsule child,
-        // and a distance of 0 (touching by definition; the probe's signed depth is a
-        // reconstruction, this is the real event). Sensor priority still applies afterwards for
-        // interior capsules, so an insertion keeps naming how far it reached.
+        // ── ENGINE / GEOMETRY: BEST OF BOTH (2026-08-01, completed) ────────────────────
+        // The two probes answer DIFFERENT questions and neither subsumes the other:
+        //   GEO  "is the weapon within apiTouchU of this capsule?"  — proximity, computed by us
+        //        from an APPROXIMATED weapon (segment + radius). Covers hover and near-misses,
+        //        which is a deliberate feature, and works on capsules the engine never reports.
+        //   ENG  "did Havok collide these two shapes?"              — the engine's narrowphase
+        //        against the weapon's REAL geometry (hilt, blade, pommel), giving the exact
+        //        capsule via the shape key and a true separating distance.
+        // Policy: ENG owns IDENTITY whenever it exists (it cannot be wrong about which capsule
+        // the solver touched), and its distance is preferred because it measures real shapes.
+        // GEO fills every gap, so hover coverage is unchanged.
+        // SANITY: the engine distance is cross-checked against the geometry of the SAME capsule.
+        // A ring entry that survived a body swap could otherwise inject a wild depth (a -5.05u
+        // outlier appeared once among neighbours under 1u). If they disagree beyond
+        // kEngGeoSaneU the geometric value is used — identity still from the engine — and the
+        // disagreement is logged, so this stays MEASURED rather than assumed.
+        constexpr float kEngGeoSaneU = 6.f;
         // ⚠ FOURTH instance of the capped-diagnostic trap in this project, and I wrote the rule.
         // A 4-line cap burns on the first burst, so "which slots does the engine actually
         // report?" stayed unanswerable exactly when it mattered. Per-slot RUNNING TOTALS, dumped
@@ -993,8 +1004,52 @@ namespace {
                                  s_engBySlot[9].load(), s_engBySlot[10].load(), s_engBySlot[11].load());
             }
             const int hand = eh.wand & 1;
+            // geometric distance to the SAME capsule the engine named — the cross-check
+            float geoD = 1e9f;
+            {
+                float ca[3], cb[3], cr;
+                if (GrabDiag::ReadCapsuleWorldUSide(actor, eh.slot, eh.left, eh.child, ca, cb, &cr)) {
+                    const HandProbes& hp = g_hp[hand];
+                    if (hp.weapon.live)
+                        geoD = (hp.weapon.seg ? SegSegDistU(ca, cb, hp.weapon.p, hp.weapon.q)
+                                              : SegPointDistU(ca, cb, hp.weapon.p))
+                               - cr - hp.weapon.pad;
+                }
+            }
+            // MEASURE the ENG-vs-GEO agreement instead of speculating about a "discontinuity".
+            // If the two metrics track each other, mixing them is free and the flag is just
+            // provenance; if they diverge, this says by how much and we can act on a number.
+            if (geoD < 1e8f) {
+                static std::atomic<int>   s_agrN{ 0 };
+                static std::atomic<int>   s_agrSumMilli{ 0 };   // integer accumulator, |eng-geo| in 1/1000 u
+                static std::atomic<int>   s_agrMaxMilli{ 0 };
+                const int dMilli = (int)(std::fabs(eh.distU - geoD) * 1000.f);
+                const int n = s_agrN.fetch_add(1, std::memory_order_relaxed) + 1;
+                s_agrSumMilli.fetch_add(dMilli, std::memory_order_relaxed);
+                int prevMax = s_agrMaxMilli.load(std::memory_order_relaxed);
+                while (dMilli > prevMax &&
+                       !s_agrMaxMilli.compare_exchange_weak(prevMax, dMilli, std::memory_order_relaxed)) {}
+                if (ObjectHold::ApiLogEnabled() && (n % 64) == 0)
+                    logger::info("API weapon ENG-vs-GEO agreement over {} samples: mean |diff| "
+                                 "{:.2f}u, max {:.2f}u — small means the two metrics are "
+                                 "interchangeable and mixing them costs nothing",
+                                 n, s_agrSumMilli.load() / 1000.f / (float)n,
+                                 s_agrMaxMilli.load() / 1000.f);
+            }
+            float useD = eh.distU;
+            const bool sane = geoD < 1e8f && std::fabs(eh.distU - geoD) <= kEngGeoSaneU;
+            if (geoD < 1e8f && !sane) {
+                useD = geoD;                       // engine depth implausible -> trust geometry
+                static std::atomic<int> s_disLogged{ 0 };
+                if (ObjectHold::ApiLogEnabled() &&
+                    s_disLogged.fetch_add(1, std::memory_order_relaxed) < 8)
+                    logger::info("API weapon: ENG/GEO depth disagree on {:08X} slot={} child={} "
+                                 "— eng={:.2f}u geo={:.2f}u (>{:.0f}u apart); using GEO depth, "
+                                 "engine identity kept",
+                                 eh.actorId, eh.slot, eh.child, eh.distU, geoD, kEngGeoSaneU);
+            }
             Hit& h = out[hand][kClsWeapon];
-            h.found = true; h.dist = eh.distU;
+            h.found = true; h.dist = useD;
             h.slot = eh.slot; h.child = eh.child; h.left = eh.left;
         }
     }

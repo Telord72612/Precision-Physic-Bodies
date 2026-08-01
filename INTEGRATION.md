@@ -349,6 +349,18 @@ an SMP rig nothing can drive them. Only HDT-SMP tails produce tail contacts.
 chord's position in the chain, so `tip` means the same place on a 4-chord foxtail and a 14-chord
 fluffy tail.
 
+**Weapon contacts use two probes, and `engineContact` tells you which you got.** They answer
+different questions and neither replaces the other:
+
+| | asks | covers |
+|---|---|---|
+| `engineContact = 1` | *did Havok collide these shapes?* | the engine's own narrowphase against the weapon's **real** geometry — exact capsule, true separating distance |
+| `engineContact = 0` | *is the weapon within ~1u of this capsule?* | a segment+radius approximation — includes **hover and near-misses**, and reaches capsules the engine never reports |
+
+PPB gives you the best of both automatically: when the engine has an opinion it owns the identity
+and the depth; the geometric probe fills every gap. You do not have to choose. Read the flag only
+if you specifically want to ignore hover (`engineContact == 1` means a real collision happened).
+
 **Weapon contacts are capped and grab-aware.** The blade segment comes from the equipped form's
 bound box; on broad weapons the bound radius is the blade plane's breadth (an axe reads 23u), so
 PPB caps it at `apiWeaponRMaxU` (6u ~ blade thickness) — without the cap a merely-nearby axe read
