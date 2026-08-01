@@ -16,6 +16,7 @@
 
 #include "PivFix.h"
 #include "Tuning.h"
+#include <set>
 #include <mutex>
 #include "Interop.h"
 #include "DismemberGuard.h"  // PlanckGet/SetSetting — the PivGuard flag bracket (2026-07-29)   // Interop::IsActorGrabbedByPlayer / HasHiggs — the grab gate (2026-07-07)
@@ -722,7 +723,13 @@ namespace ObjectHold {
     {
         // FIRST-FIRE DIAGNOSTIC (2026-07-29): the v2 field test failed SILENTLY — log the whole
         // decision chain for the first few drives so the log names the dead stage.
-        static std::atomic<int> s_diagLeft{ 4 };
+        // ⚠ 2026-07-31: this budget was 4 lines SHARED ACROSS ALL ACTORS, and the two reject
+        // paths below consume it too — so on a normal street a generic NPC and a draugr burned
+        // all four before the first PPB female ever drove, and the getOk/setOk receipt (the one
+        // line that says whether our PLANCK calls actually land) was structurally unreachable.
+        // A capped diagnostic that reaches its cap has stopped being a measurement. The REJECT
+        // paths now have their own small budget; the ACCEPT path reports once PER ACTOR.
+        static std::atomic<int> s_diagLeft{ 6 };
         const bool diag = s_diagLeft.load(std::memory_order_relaxed) > 0;
 
         if (!actor) return;
@@ -747,9 +754,25 @@ namespace ObjectHold {
         double prev = 1.0;
         const bool gotOk = DismemberGuard::PlanckGetSetting("loosenRagdollConstraintPivots", prev);
         const bool setOk = gotOk && DismemberGuard::PlanckSetSetting("loosenRagdollConstraintPivots", 0.0);
-        if (diag && s_diagLeft.fetch_sub(1) > 0)
-            logger::info("PIVGUARD diag {:08X}: ppbSkel=YES getOk={} prev={:.0f} setOk={}",
-                         actor->GetFormID(), gotOk ? 1 : 0, prev, setOk ? 1 : 0);
+        // ONE receipt per actor, on its own budget — this is the line that proves our PLANCK
+        // vtable calls still land after an upstream update. A FAILURE here means the whole
+        // per-actor scoping is a silent no-op, so it logs as a WARNING, always.
+        {
+            static std::mutex s_seenMx;
+            static std::set<std::uint32_t> s_seen;
+            bool first = false;
+            { std::lock_guard<std::mutex> g(s_seenMx); first = s_seen.insert(actor->GetFormID()).second; }
+            if (first) {
+                if (gotOk && setOk)
+                    logger::info("PIVGUARD {:08X}: PLANCK setting calls OK (prev loosen={:.0f} -> 0 for this drive)",
+                                 actor->GetFormID(), prev);
+                else
+                    logger::warn("PIVGUARD {:08X}: PLANCK SETTING CALL FAILED (getOk={} setOk={}) — per-actor "
+                                 "pivot scoping is a NO-OP for her. If PLANCK was updated, its interface "
+                                 "vtable may have moved (we call Get/SetSettingDouble at slots 13/14).",
+                                 actor->GetFormID(), gotOk ? 1 : 0, setOk ? 1 : 0);
+            }
+        }
         if (setOk) {
             t_pgRestore = prev;
             t_pgScoped  = true;

@@ -20,6 +20,8 @@ namespace ArmIK {
     // Heel-fix per-thread drive bias for the CURRENT driveToPose (set by ApplyHeelFix inside
     // ApplyToPoseTrack; consumed by Hooks::InnerDriveChainHook while the outer frame is on the stack).
     float GetHeelDriveBias();
+    bool  HeeledSticky(RE::Actor* actor);   // spell seen once -> node offset is the authority
+    void  ClearHeeledSticky();
 
     // HEEL AUTHORITY = Heels Fix (HeelsFix.esp), resolved once at kDataLoaded. PPB does NO heel-height
     // recognition of its own: Heels Fix flags an actor with HeelsFixSpell iff it decided she is actively

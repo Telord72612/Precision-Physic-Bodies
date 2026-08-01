@@ -1814,6 +1814,13 @@ touchProbeHudU 1.0
 # failure is structurally impossible: we own the restore. 0 = off (PLANCK stock everywhere).
 planckLoosenOurs 1
 
+# LIVE A/B on PLANCK's GLOBAL loosenRagdollConstraintPivots (its joint-loosening band-aid).
+#   -1 = leave PLANCK alone (default — PLANCK keeps its own value)
+#    0 = force OFF     1 = force ON
+# Applied the moment this line changes (~1s) and READ BACK, so PPB.log records what PLANCK
+# actually holds, not what we asked for. Watch for the PLANCKLOOSEN receipt line.
+planckLoosenGlobal -1
+
 # ══ PELVIS SENSOR CAPSULES (2026-07-29) — COM C21..C31 ═══════════════════════════════════
 # Internal proximity sensors, dialled with the trf/collision visualizer. All start DISABLED
 # and buried (0,0,0)->(0,0,2u) r0.5u at the COM origin — nothing changes in game until each

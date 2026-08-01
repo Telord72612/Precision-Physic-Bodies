@@ -1,6 +1,7 @@
 #include "PCH.h"
 #include "PerfSys.h"
 #include "Tuning.h"        // ObjectHold::Perf* accessors
+#include "DismemberGuard.h"
 #include "Interop.h"       // Interop::GetHiggs / IsActorGrabbedByPlayer
 #include "HiggsInterface.h"
 #include "NpcFingerTest.h" // NpcFinger::FilterDecision/OnFrame — spliced into FilterCB + the frame lambda
@@ -273,6 +274,37 @@ namespace PerfSys {
     {
         g_frame.fetch_add(1, std::memory_order_relaxed);
         const std::uint64_t frame = g_frame.load(std::memory_order_relaxed);
+
+        // ── LIVE A/B SWITCH for PLANCK's GLOBAL loosenRagdollConstraintPivots (2026-07-31) ──
+        // PLANCK has no MCM and no per-actor settings, so its band-aid can only be judged by
+        // toggling it and looking. -1 = leave PLANCK alone (default). 0/1 = force. Applied on
+        // CHANGE only, from the main thread, with the value read back so the log records what
+        // PLANCK actually holds rather than what we asked for.
+        {
+            static float s_lastWant = -999.f;
+            const float want = ObjectHold::PlanckLoosenGlobal();
+            if (want != s_lastWant) {
+                s_lastWant = want;
+                if (want >= -0.5f) {
+                    double before = -1.0;
+                    const bool gotOk = DismemberGuard::PlanckGetSetting("loosenRagdollConstraintPivots", before);
+                    const bool setOk = DismemberGuard::PlanckSetSetting("loosenRagdollConstraintPivots",
+                                                                        want > 0.5f ? 1.0 : 0.0);
+                    double after = -1.0;
+                    DismemberGuard::PlanckGetSetting("loosenRagdollConstraintPivots", after);
+                    if (setOk && gotOk)
+                        logger::info("PLANCKLOOSEN: global loosenRagdollConstraintPivots {:.0f} -> {:.0f} "
+                                     "(requested {:.0f}, read back {:.0f})", before, after, want, after);
+                    else
+                        logger::warn("PLANCKLOOSEN: could not set global loosenRagdollConstraintPivots "
+                                     "(getOk={} setOk={}) — PLANCK absent, or its interface vtable moved "
+                                     "(we call Get/SetSettingDouble at slots 13/14).",
+                                     gotOk ? 1 : 0, setOk ? 1 : 0);
+                } else {
+                    logger::info("PLANCKLOOSEN: releasing global override — PLANCK keeps whatever it holds.");
+                }
+            }
+        }
 
         // refresh the callback's hot caches from the tuning file (1 Hz reload)
         g_cbSelfThigh.store(ObjectHold::PerfFilterSelfThigh(), std::memory_order_relaxed);

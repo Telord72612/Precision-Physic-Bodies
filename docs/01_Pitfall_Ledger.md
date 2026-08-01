@@ -1180,3 +1180,31 @@ every win is TRUE — test each promoted capsule from the OUTSIDE, not just the 
 promoted for; (2) when one capsule cannot discriminate, AND it with a second (the user's original
 mouth-gate architecture: one capsule is never proof); (3) a scripted session — the user narrating
 what they did — turns a log into ground truth and found in minutes what free-form testing missed.
+
+## * REGISTER FOR A BROADCAST BEFORE THE BROADCASTER CAN SPEAK (2026-07-31, the dead SMP handshake)
+PPB called `FsmpLink::Register()` from its own **kPostLoad handler**, with a comment asserting that
+this "MUST precede the engine's kPostPostLoad dispatch". SKSE loads `hdtsmp64` before `PPB`
+(alphabetical), so if the engine announces MSG_STARTUP from its OWN early handler it broadcasts
+into an empty room — and it never repeats. Measured: engine init 23:06:23.686, our registration
+23:06:25.756, and a message census recording **zero** messages ever delivered while BOTH sender
+names registered OK. FIX: register inside `SKSEPluginLoad`, earlier than any message SKSE can
+dispatch to anyone; keep the old call as an idempotent retry. **Rules:** (1) for a one-shot
+broadcast you do not control, register at the EARLIEST point the process allows — never at a
+message whose ordering vs the sender you cannot guarantee; (2) a comment asserting an ordering
+guarantee is not a guarantee — the sender's dispatch point is THEIR choice and can change per
+version; (3) this was a latent race that we used to WIN, which is the worst kind: it "worked"
+for weeks and then silently stopped with no code change on either side.
+
+## * WHEN A FEATURE HAS TWO CHANNELS, A DEAD ONE LOOKS LIKE "PARTLY WORKING" (2026-07-31, user-corrected)
+Told that tails still reacted but "not as good as before" while hair was dead, I concluded the tail
+motion was SMP's own simulation and that no PPB push was involved — effectively telling the user
+their hands-on observation was an illusion. WRONG, and they were right to reject it. Garment push
+has TWO independent channels: (A) `ppbHands.xml`, an SMP-NATIVE hand collider whitelisted to
+`Tail`, living inside the engine's own world — it needs no plugin interface and cannot die from a
+handshake failure; (B) force injection through the plugin interface, which carries the dialled
+gains. Channel B died; A survived. Tails have BOTH, so they kept responding at reduced strength —
+exactly "not as good as before". Hair can only ever use B (216 hair XMLs are all `<shared>private`
+with exclusive whitelists), so hair went fully dead. One cause, two different-looking symptoms.
+**Rules:** (1) before explaining away an observation, enumerate every channel that could produce
+it — a partial symptom usually means a partial system, not a mistaken user; (2) the user's
+description of DEGREE ("not as good") is data: it pointed straight at "one of two channels".

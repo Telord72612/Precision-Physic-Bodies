@@ -214,6 +214,18 @@ namespace {
 
     void OnEngineMessage(SKSE::MessagingInterface::Message* msg)
     {
+        // MESSAGE CENSUS (2026-07-31): the handler used to return SILENTLY on any message that
+        // was not MSG_STARTUP, so "the engine never dispatched" and "it dispatched something we
+        // did not recognise" were indistinguishable in the log. Name what actually arrives.
+        if (msg) {
+            static std::atomic<int> s_census{ 8 };
+            if (s_census.fetch_sub(1, std::memory_order_relaxed) > 0)
+                logger::info("FSMPLINK census: message from '{}' type={} data={} "
+                             "(MSG_STARTUP is type {})",
+                             msg->sender ? msg->sender : "<null>", msg->type,
+                             msg->data ? "present" : "NULL",
+                             (int)hdt::PluginInterface::MSG_STARTUP);
+        }
         if (!msg || msg->type != hdt::PluginInterface::MSG_STARTUP || !msg->data) return;
         if (g_accepted.load(std::memory_order_relaxed)) return;   // first accepted engine wins
 
@@ -320,10 +332,23 @@ namespace FsmpLink {
         if (!msg) return;
         // Both known engine sender names: FSMP ("hdtsmp64", CMake project name) and
         // SMP Flex ("hdtSMP64", the classic name). Only the installed one dispatches.
-        msg->RegisterListener("hdtsmp64", OnEngineMessage);
-        msg->RegisterListener("hdtSMP64", OnEngineMessage);
-        logger::info("FSMPLINK: listeners registered for senders 'hdtsmp64' + 'hdtSMP64' "
-                     "(awaiting MSG_STARTUP at the engine's PostPostLoad).");
+        // ⚠ 2026-07-31: these return values were DISCARDED and the success line printed
+        // unconditionally — so "listeners registered" was a CLAIM, not a receipt, and a
+        // session where the handshake never happened looked identical to one where it did.
+        // SKSE resolves the sender by plugin NAME; a name that does not resolve returns false.
+        static std::atomic<bool> s_done{ false };
+        if (s_done.exchange(true, std::memory_order_relaxed)) return;   // retry call = no-op
+        const bool okLower = msg->RegisterListener("hdtsmp64", OnEngineMessage);
+        const bool okUpper = msg->RegisterListener("hdtSMP64", OnEngineMessage);
+        if (okLower || okUpper)
+            logger::info("FSMPLINK: listener registered — 'hdtsmp64'={} 'hdtSMP64'={} "
+                         "(awaiting MSG_STARTUP at the engine's PostPostLoad).",
+                         okLower ? "OK" : "no such plugin", okUpper ? "OK" : "no such plugin");
+        else
+            logger::warn("FSMPLINK: BOTH listener registrations FAILED — SKSE resolved neither "
+                         "'hdtsmp64' nor 'hdtSMP64' to a loaded plugin. No SMP handshake is "
+                         "possible this session: hair/tail capsules will collide but never PUSH. "
+                         "Check the engine's declared plugin name.");
     }
 
     void OnFrame()

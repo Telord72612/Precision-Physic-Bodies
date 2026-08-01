@@ -860,7 +860,11 @@ static void OnSKSEMessage(SKSE::MessagingInterface::Message* msg)
     switch (msg->type) {
     case SKSE::MessagingInterface::kPostLoad:
         logger::info("PostLoad.");
-        FsmpLink::Register();   // MUST precede the SMP engine's kPostPostLoad MSG_STARTUP dispatch
+        // FsmpLink::Register() MOVED to SKSEPluginLoad (2026-07-31) — registering here lost a
+        // race against engines that dispatch from their own kPostLoad. Kept as a retry: if the
+        // first call already registered, this is a cheap no-op; if the engine somehow appeared
+        // later, we still catch it.
+        FsmpLink::Register();
         break;
 
     case SKSE::MessagingInterface::kPostPostLoad:
@@ -946,6 +950,7 @@ static void OnSKSEMessage(SKSE::MessagingInterface::Message* msg)
         ObjectHold::PivDescaleClearAll();  // descaled-instance pointers dangle across loads
         ObjectHold::PivReScaleClearAll();  // re-scale scaled-instance pointers dangle across loads too
         ArmIK::ClearBindRelCache();     // per-driver bind-relation / clavicle-follow cache
+        ArmIK::ClearHeeledSticky();     // heel sticky gate — FormIDs recycle across saves
         ArmIK::ClearStatueSet();        // statue flags don't survive a load
         ArmIK::ClearPoseConformCache(); // pose-conform node/ragdoll map (root + ragdoll pointers dangle across a load)
         Diag::ClearOnLoad();            // drop the cached Havok world (rebuilt across a load) + any pending spike
@@ -981,6 +986,16 @@ SKSEPluginLoad(const SKSE::LoadInterface* skse)
         // Public touch API (PpbTouchAPI.h): answer kGetTouchInterface requests from ANY
         // plugin — the HIGGS request/reply pattern, provider side. nullptr = all senders.
         msg->RegisterListener(nullptr, PpbApi::OnPluginMessage);
+        // ★ SMP HANDSHAKE — REGISTER AS EARLY AS THE PLUGIN CAN (2026-07-31).
+        // This used to happen in our kPostLoad handler, which is a RACE we lose: SKSE loads
+        // 'hdtsmp64' before 'PPB' (alphabetical), so if the engine dispatches MSG_STARTUP from
+        // its own early handler it broadcasts into an empty room — and it never repeats.
+        // Measured: FSMP init 23:06:23.686, our old registration 23:06:25.756, and the message
+        // census recorded ZERO messages ever reaching us while BOTH sender names registered OK.
+        // Registering here, inside SKSEPluginLoad, is strictly earlier than any message SKSE
+        // can dispatch to anyone. Harmless if the engine is absent (the names simply do not
+        // resolve, which is now logged rather than assumed).
+        FsmpLink::Register();
     }
 
     // Papyrus bridge: PPB_Native.SetStatuePose (the A-pose statue spell backend) +

@@ -14,6 +14,7 @@
 #include <cmath>
 #include <algorithm>   // std::sort — the head-trim median-of-10
 #include <cstring>
+#include <set>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -152,6 +153,37 @@ namespace ArmIK {
     }
     bool HeelsFixHeeled(RE::Actor* actor) { return g_heelsFixSpell && actor && actor->HasSpell(g_heelsFixSpell); }
 
+    // ── STICKY HEEL GATE (2026-07-31, user-diagnosed) ───────────────────────────────────
+    // Heels Fix's periodic refresh (MCM: check for stuck heels every N minutes) REMOVES its
+    // ability spell and re-adds it 0.5s later (HeelsFixRefreshEffect.psc: RemoveSpell ->
+    // Wait(0.5) -> re-add). Gating on HasSpell per frame therefore inherits the flicker —
+    // and when the Papyrus re-add loses its race, the spell stays OFF for minutes while the
+    // NiOverride offset (the thing we actually read) persists: her visual stays heeled, PPB
+    // dropped the bias, her Havok body sat 8u low. Measured live: offset 8->0->8->0 within
+    // 175ms at 23:12:51, then stuck low until a 3D rebuild.
+    // FIX: the spell only needs to be seen ONCE per actor — after that the NODE OFFSET is
+    // the authority (it is Heels Fix's own persistent output; unequipping heels removes it,
+    // so z reads 0 and the bias drops naturally with no spell involved).
+    static std::mutex s_heeledOnceMx;
+    static std::set<std::uint32_t> s_heeledOnce;
+    bool HeeledSticky(RE::Actor* actor)
+    {
+        if (!actor) return false;
+        const std::uint32_t id = actor->GetFormID();
+        if (HeelsFixHeeled(actor)) {
+            std::lock_guard<std::mutex> g(s_heeledOnceMx);
+            s_heeledOnce.insert(id);
+            return true;
+        }
+        std::lock_guard<std::mutex> g(s_heeledOnceMx);
+        return s_heeledOnce.count(id) != 0;
+    }
+    void ClearHeeledSticky()
+    {
+        std::lock_guard<std::mutex> g(s_heeledOnceMx);
+        s_heeledOnce.clear();
+    }
+
     static void ApplyHeelFix(RE::Actor* actor, RE::hkbRagdollDriver* driver, void* generatorOutputRaw)
     {
         if (!ObjectHold::HeelFixEnabled()) return;
@@ -159,7 +191,19 @@ namespace ArmIK {
         if (!root) return;
         auto* npcNode = root->GetObjectByName("NPC");
         if (!npcNode) return;
-        if (!HeelsFixHeeled(actor)) return;                    // Heels Fix is the sole heel authority — no own height guess
+        const bool spellNow = HeelsFixHeeled(actor);
+        if (!HeeledSticky(actor)) return;              // Heels Fix is the sole heel authority — no own height guess
+        // carrying a refresh flicker: spell off but she was heeled and the offset persists
+        static float s_flickerLog = -10.f;
+        if (!spellNow) {
+            const float nowS = ArmNowSeconds();
+            if (nowS - s_flickerLog > 10.f) {
+                s_flickerLog = nowS;
+                logger::info("HEELFIX {:08X}: Heels Fix ability is OFF (refresh window / stuck re-add) "
+                             "but the node offset persists — bias held from the offset itself.",
+                             actor->GetFormID());
+            }
+        }
         const float heelZ = npcNode->local.translate.z;        // amount = the lift Heels Fix put on the XP32 "NPC" node
         if (heelZ <= 0.01f || heelZ > 40.f) return;            // flagged but node not (yet) raised, or a wild value → skip
         // A KNOCKED-DOWN NPC's bodies are free physics (authoritative) — biasing the drive or the pose
@@ -701,7 +745,7 @@ namespace ArmIK {
             // treat a material change exactly like the stand-up edge: full re-measure.
             {
                 float heelNow = 0.f;                                    // 0 unless Heels Fix flags her (heel recognition is 100% from Heels Fix)
-                if (HeelsFixHeeled(actor))
+                if (HeeledSticky(actor))   // sticky: the refresh flicker must not fire the edge
                     if (auto* npcNode = root->GetObjectByName("NPC"))
                         heelNow = npcNode->local.translate.z;
                 const float biasNow = GetHeelDriveBias();               // hf toggle / arming edge

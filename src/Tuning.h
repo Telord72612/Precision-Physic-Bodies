@@ -668,6 +668,12 @@ namespace ObjectHold {
                                         // in-view on touch (needs touchProbe on)
         float touchProbeHudU   = 1.0f;  // how close counts as a TOUCH for the HUD (units)
         float planckLoosenOurs = 1.f;   // PivGuard v2: PLANCK pivot collapse 0 during PPB-skeleton
+        float planckLoosenGlobal = -1.f; // LIVE A/B on PLANCK's GLOBAL loosenRagdollConstraintPivots.
+                                         // -1 = leave PLANCK alone (default, PLANCK's own value).
+                                         //  0 = force OFF, 1 = force ON. Applied on CHANGE from the
+                                         // frame callback and READ BACK, so the log records what
+                                         // PLANCK actually holds. PLANCK has no MCM in VR; this is
+                                         // the only way to judge the band-aid by eye.
                                         // drives (global stays stock 1), with stranded-pivot self-heal
         float dgHeadPlanck     = 0.f;   // 1 = do NOT PLANCK-ignore severed-head clones (grab test)
         float dgHeadGrabFix    = 1.f;   // clear the severed head's anchor ragdoll sub-layer so
@@ -1115,6 +1121,7 @@ namespace ObjectHold {
     bool     DgHeadGrabFixOn();  // clear head anchor sub-layer for HIGGS (dgHeadGrabFix)
     bool     DgHeadPlanckOn();   // leave head clones under PLANCK (dgHeadPlanck)
     bool     PlanckLoosenOursOn();// PivGuard v2 master (planckLoosenOurs)
+    float    PlanckLoosenGlobal();      // -1 leave alone / 0 force off / 1 force on
     bool     TouchProbeHudOn();  // mapping HUD (touchProbeHud)
     float    TouchProbeHudU();   // HUD touch distance (touchProbeHudU)
     bool     DgHeadStripHairOn();// unequip wigs from severed heads (dgHeadStripHair)
