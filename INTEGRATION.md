@@ -413,6 +413,33 @@ against today's PPB.
 
 ---
 
+## 9b. Debugging: see exactly what PPB sends
+
+Set **`contactLog = 1`** in `SKSE/Plugins/PPB_Skeletons_Added_Race.ini` (the user-facing config,
+no dev files needed) and every contact is written to `My Games/Skyrim VR/SKSE/PPB.log`:
+
+```
+API START 1301DE4F R|FINGER|Face(cheek L)|human d=-0.31u dur=0.00s src=GEO curl=9.1u vrik=I1.00/M0.00
+API END   1301DE4F R|WEAPON:Iron Rapier|Neck(neck / throat)|human d=-0.71u dur=2.41s src=ENG wpn=Sword/Blade
+```
+
+| field | meaning |
+|---|---|
+| `START` / `END` | the contact opening or closing; `dur=` on END is its total length |
+| `R` / `L` | which hand |
+| `FINGER` / `WEAPON:name` / … | the source |
+| `Face(cheek L)` | region and the capsule dwelt on longest |
+| `d=` | distance in game units, negative = inside |
+| `src=ENG` | the game's own physics reported this collision — exact capsule, true depth |
+| `src=GEO` | PPB measured proximity — includes hover, and reaches capsules the engine never reports |
+| `wpn=` | weapon class and edge (Blade / Blunt / Pierce) |
+
+If your handler is not firing, this tells you whether PPB saw the touch at all — which separates
+"PPB missed it" from "my registration is wrong" in one line. It is verbose (several lines a second
+while touching), so it ships **off**; `contactLog = 0` or removing the line disables it.
+
+---
+
 ## 10. Reference
 
 | File | What it is |

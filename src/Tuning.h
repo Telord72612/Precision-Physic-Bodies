@@ -1053,6 +1053,10 @@ namespace ObjectHold {
     float    ApiFistTipPalmU();         // fist-detection tip-to-palm distance
     bool     ApiEventsEnabled();        // mod-event emission
     bool     ApiLogEnabled();           // debug START/END logging
+    // Contact logging can be turned on from the USER-facing ini (PPB_Skeletons_Added_Race.ini,
+    // key `contactLog = 1`) as well as from the dev tuning file's apiLog. Either enables it, so
+    // a user chasing a bug never has to find the tuning file.
+    void     SetContactLogIni(bool on);
     float    ApiDwellS();               // dwell filter: default class
     float    ApiDwellHeadS();           // dwell filter: head slot
     float    ApiDwellComS();            // dwell filter: pelvis slot (non-sensor)

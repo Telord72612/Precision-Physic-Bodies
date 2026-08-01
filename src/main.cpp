@@ -569,6 +569,30 @@ static void ApplySkeletonIni()
             logger::info("SKELINI: section -> '{}'", section);
             continue;
         }
+        // ── GLOBAL SETTINGS (2026-08-01, user-requested) — valid BEFORE any [section] ─────
+        // The ini is the user-facing config file, so the user-facing debug switch belongs here
+        // rather than in the dev tuning file. Parsed before the section check so it can sit at
+        // the top of the file where a user will actually find it.
+        {
+            const auto eqg = line.find('=');
+            if (eqg != std::string::npos) {
+                std::string k = line.substr(0, eqg), v = line.substr(eqg + 1);
+                auto trimg = [](std::string& s) {
+                    const auto x = s.find_first_not_of(" 	"); if (x == std::string::npos) { s.clear(); return; }
+                    const auto y = s.find_last_not_of(" 	"); s = s.substr(x, y - x + 1);
+                };
+                trimg(k); trimg(v);
+                std::string kl = k; for (auto& c : kl) c = (char)::tolower((unsigned char)c);
+                if (kl == "contactlog") {
+                    const bool on = !(v == "0" || v == "false" || v == "off" || v == "no");
+                    ObjectHold::SetContactLogIni(on);
+                    logger::info("SKELINI: contactLog = {} — every touch contact will {}be "
+                                 "written to PPB.log (debug aid; turn it off for normal play).",
+                                 on ? "ON" : "OFF", on ? "" : "NOT ");
+                    continue;
+                }
+            }
+        }
         if (section.empty()) { ++nBad; continue; }
 
         const auto eq = line.find('=');

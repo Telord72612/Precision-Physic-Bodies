@@ -733,7 +733,11 @@ namespace ObjectHold {
     float ApiRangeU()           { return g_tune.apiRangeU < 0.f ? 0.f : g_tune.apiRangeU; }
     float ApiFistTipPalmU()     { return g_tune.apiFistTipPalmU < 0.f ? 0.f : g_tune.apiFistTipPalmU; }
     bool  ApiEventsEnabled()    { return g_tune.apiEvents > 0.5f; }
-    bool  ApiLogEnabled()       { return g_tune.apiLog > 0.5f; }
+    // contactLog from PPB_Skeletons_Added_Race.ini — OR'd with the dev knob apiLog, so either
+    // switch turns contact logging on and neither can silently cancel the other.
+    static std::atomic<bool> s_contactLogIni{ false };
+    void  SetContactLogIni(bool on) { s_contactLogIni.store(on, std::memory_order_relaxed); }
+    bool  ApiLogEnabled()       { return g_tune.apiLog > 0.5f || s_contactLogIni.load(std::memory_order_relaxed); }
     float ApiDwellS()           { return g_tune.apiDwellS       < 0.f ? 0.f : g_tune.apiDwellS; }
     float ApiDwellHeadS()       { return g_tune.apiDwellHeadS   < 0.f ? 0.f : g_tune.apiDwellHeadS; }
     float ApiDwellComS()        { return g_tune.apiDwellComS    < 0.f ? 0.f : g_tune.apiDwellComS; }

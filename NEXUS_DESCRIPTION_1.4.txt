@@ -54,6 +54,17 @@ INTEGRATION.md.
 
 [color=#000000].[/color]
 
+[size=5][b]Contact logging (for debugging)[/b][/size]
+
+Set [b]contactLog = 1[/b] in [i]SKSE/Plugins/PPB_Skeletons_Added_Race.ini[/i] and every touch is
+written to [i]My Games/Skyrim VR/SKSE/PPB.log[/i] — which NPC, which hand, what touched her, the
+exact capsule, how deep, and for how long.
+
+If a mod that uses the API is not reacting, this shows in one line whether PPB actually saw the
+touch. Verbose by nature, so it ships off; set it back to 0 for normal play.
+
+[color=#000000].[/color]
+
 [size=5][b]Also in 1.4[/b][/size]
 
 [list]

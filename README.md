@@ -176,6 +176,20 @@ so you always know whether you got engine truth or the geometric fallback.
 
 Both hands are tracked independently and report **in the same tick** when both are in contact.
 
+### Debugging an integration
+
+Set `contactLog = 1` in `SKSE/Plugins/PPB_Skeletons_Added_Race.ini` and every contact is written
+to `My Games/Skyrim VR/SKSE/PPB.log`:
+
+```
+API START 1301DE4F R|FINGER|Face(cheek L)|human d=-0.31u dur=0.00s src=GEO curl=9.1u
+API END   1301DE4F R|WEAPON:Iron Rapier|Neck(neck / throat)|human d=-0.71u dur=2.41s src=ENG wpn=Sword/Blade
+```
+
+`src=ENG` means the game's own physics reported that collision; `src=GEO` means PPB measured
+proximity (hover included). It is the fastest way to see exactly what your mod is being sent —
+and verbose, so turn it off for normal play.
+
 **→ [INTEGRATION.md](INTEGRATION.md) is the full guide** — working code for all three paths, the
 coverage contract, and the gotchas. `PPB_Touch_API_Contact_List.xlsx` lists all 107 capsules with
 their group, depth and override behaviour.
