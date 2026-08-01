@@ -2730,6 +2730,44 @@ namespace GrabDiag {
                 if (ci.shape && ci.shape->type == RE::hkpShapeType::kCapsule) {
                     cap = static_cast<const RE::hkpCapsuleShape*>(ci.shape); break;
                 }
+            // ★ 2026-08-01 — THE LIST'S OWN CACHED AABB (user-caught: "Iron Rapier", a mod
+            // weapon, produced haptics and moved her capsules while the API saw NOTHING).
+            // Its children are kConvexTransform (no public header) AND its form carries no
+            // usable OBND — mod authors frequently never recalculate bounds — so the probe
+            // fell all the way through to the HILT POINT, which sits in your fist 40-70u from
+            // the blade. That is the exact tier-1 failure the segment reader was built to fix,
+            // reached by a different road.
+            // hkpListShape caches its union AABB for the broadphase (aabbCenter /
+            // aabbHalfExtents) — PPB already reads and repatches these fields in
+            // RepatchListAabb, so the layout is proven in our own shipped code. That AABB IS
+            // the weapon's real collision extent, and it needs no author cooperation and no
+            // guessing at a child's private layout: long axis = the blade line, second extent
+            // = its half-thickness. Tried BEFORE the form bound, which is now the last resort.
+            if (!cap) {
+                alignas(16) float he[4], ct[4];
+                _mm_store_ps(he, list->aabbHalfExtents.quad);
+                _mm_store_ps(ct, list->aabbCenter.quad);
+                int ax = 0;
+                if (he[1] > he[ax]) ax = 1;
+                if (he[2] > he[ax]) ax = 2;
+                const float lenU = he[ax] * 2.f * kHavokToSkyrim;
+                if (lenU >= 2.f) {                       // a real blade, not a degenerate box
+                    float ea[3] = { ct[0], ct[1], ct[2] }, eb[3] = { ct[0], ct[1], ct[2] };
+                    ea[ax] -= he[ax]; eb[ax] += he[ax];
+                    toWorld(ea, aOutU); toWorld(eb, bOutU);
+                    float second = 0.f;
+                    for (int i = 0; i < 3; ++i) if (i != ax && he[i] > second) second = he[i];
+                    const float rU = second * kHavokToSkyrim;   // (windows.h defines max())
+                    if (rOutU) *rOutU = rU > 0.5f ? rU : 0.5f;
+                    static std::atomic<int> s_listAabbLogged{ 0 };
+                    if (s_listAabbLogged.exchange(1, std::memory_order_relaxed) == 0)
+                        logger::info("API weapon probe: LIST-AABB blade segment (axis={} len={:.0f}u "
+                                     "r={:.1f}u) — read from the shape's own cached bounds, so it "
+                                     "works on weapons whose form carries no usable OBND",
+                                     ax, lenU, rOutU ? *rOutU : -1.f);
+                    return true;
+                }
+            }
         }
         if (cap) {
             alignas(16) float va[4], vb[4];

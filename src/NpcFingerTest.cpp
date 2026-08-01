@@ -2883,13 +2883,27 @@ namespace NpcFinger {
     // any garment table below kHairBase), kind 1 = hair (tbl >= kHairBase). tbl 0 is the
     // finger rig — never a target. One live rig per kind per actor by construction
     // (the auto-probe's have[]/haveHair checks).
+    // ★ 2026-08-01 — WHICH GARMENT IS THIS? (user-caught: "Carmella has no tail")
+    // This used to be `isHair = tbl >= kHairBase`, which is WRONG: the generated SMP-wig
+    // tables live at kHairBase+, but table 3 is the hand-authored Amber Lights WIG and sits
+    // BELOW it. So a wig classified as "not hair" -> answered a TAIL query -> every wig
+    // contact reported as Tail(tail (tip/mid/base)) on an NPC with no tail, and apiHairTarget
+    // could not gate it because the code never thought it was hair.
+    // The TAIL tables are the tail CONVENTIONS, enumerated: 1 fluffy HDTS, 2 M'rissi foxtail,
+    // 5 skinned vanilla chain, 6 Mal_Tail. Everything else that is a garment rig is head-worn.
+    // Enumerate the small closed set; never infer it from a numeric threshold.
+    static bool IsTailTable(int tbl)
+    {
+        return tbl == 1 || tbl == 2 || tbl == 5 || tbl == 6;
+    }
+
     static FingerRig* FindGarmentRig(std::uint32_t actorId, int kind)
     {
         for (int k = 0; k < kMaxRigs; ++k) {
             FingerRig& r = g_rigs[k];
             if (!r.live || r.actorId != actorId || r.tbl == 0) continue;
-            const bool isHair = r.tbl >= kHairBase;
-            if ((kind == 1) == isHair) return &r;
+            const bool isTail = IsTailTable(r.tbl);
+            if ((kind == 0) == isTail) return &r;
         }
         return nullptr;
     }

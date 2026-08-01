@@ -1229,3 +1229,31 @@ listener, it is a LAND GRAB — never add one to a plugin that also registers na
 except as the single fan-out owner; (3) the fastest diagnosis all night was the USER'S: A/B
 against a known-good BINARY (v1.1, then released 1.3). A working reference build partitions the
 search space better than any amount of theory — keep old release folders precisely for this.
+
+## * CLASSIFY BY AN ENUMERATED SET, NEVER BY A NUMERIC THRESHOLD (2026-08-01, "Carmella has no tail")
+`FindGarmentRig` answered "is this rig hair or a tail?" with `isHair = tbl >= kHairBase` (1000).
+The 239 GENERATED wig tables live at kHairBase+, but table 3 is the hand-authored Amber Lights
+WIG and sits BELOW it — so a wig was classified "not hair" and answered every TAIL query. Every
+wig contact reported `Tail(tail (tip/mid/base))` on an NPC with no tail, and `apiHairTarget 0`
+could not gate it because the code never believed it was hair (so head-worn garments were racing
+face capsules the whole time — the exact shadowing that knob exists to prevent). FIX: an explicit
+`IsTailTable()` enumerating the four tail CONVENTIONS (1 fluffy HDTS, 2 foxtail, 5 vanilla chain,
+6 Mal_Tail). **Rule: when a category has a small closed membership, enumerate it. A `>=` against a
+base constant silently mis-files every member that predates the base** — and the wrong answer is
+invisible because both branches return a valid-looking rig.
+
+## * A LAST-RESORT FALLBACK THAT SILENTLY DEGRADES TO USELESS IS A DEFECT (2026-08-01, the Iron Rapier)
+A modded weapon produced haptics and visibly shoved the NPC's capsules while the API reported
+NOTHING — user-observed, and correct. The probe ladder was: capsule child (absent: children are
+kConvexTransform) -> equipped form's OBND (absent: mod authors routinely never recalculate bounds)
+-> **the hilt point**. The hilt sits in your fist 40-70u from the blade, so the last resort is not
+a degraded measurement, it is a GUARANTEED miss — the exact tier-1 failure the segment reader was
+written to fix, reached by a different road, and it shipped because the axe happened to carry a
+usable OBND. FIX: read the LIST SHAPE'S OWN CACHED AABB (`aabbCenter`/`aabbHalfExtents`) — PPB
+already reads and rewrites those fields in RepatchListAabb, so the layout is proven in our own
+code; it is the real collision extent and needs no author cooperation. Tried BEFORE the form
+bound. **Rules:** (1) when a fallback chain ends in something that cannot succeed, the chain has a
+hole — audit what the terminal case actually measures; (2) never depend on AUTHOR-SUPPLIED
+metadata (OBND) when the ENGINE holds the same fact (the collision AABB); (3) a one-shot census
+that prints tier 1 and tier 2 but not tier 3 is telling you which tier failed — read the ABSENT
+line.
