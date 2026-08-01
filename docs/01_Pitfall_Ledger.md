@@ -1257,3 +1257,39 @@ hole — audit what the terminal case actually measures; (2) never depend on AUT
 metadata (OBND) when the ENGINE holds the same fact (the collision AABB); (3) a one-shot census
 that prints tier 1 and tier 2 but not tier 3 is telling you which tier failed — read the ABSENT
 line.
+
+## * A KNOWN-GOOD BINARY BEATS FOUR ROUNDS OF THEORY (2026-08-01, the user's method)
+Hair push was dead. I was wrong four consecutive times about why: the Flex refactor (byte-identical
+reception path, disproven by git), a load-order race (disproven by the source: FSMP dispatches at
+kPostPostLoad), a duplicate registration (disproven: SKSE's lookup is case-SENSITIVE so only one
+name ever resolved), and FSMP not dispatching at all (disproven by reading their v4.0.1 tag). The
+user then enabled an OLD MOD FOLDER — `Precision V1.1`, then released `1.3` — confirmed hair worked
+in both, and that single A/B partitioned the search space instantly: both working builds predate
+the touch API, so the API commit owned the bug. It did (the wildcard listener, ledger above).
+**Rules:** (1) keep every shipped release as an installable folder — a known-good BINARY is a
+bisection tool no amount of source reading replaces; (2) when you have been wrong twice about the
+same symptom, STOP theorising and go find a version that works; (3) the user proposing the A/B
+outperformed four of my hypotheses — when they suggest a mechanism, price it before defending
+the current line of inquiry (this is the third time that rule has been earned).
+
+## * NEVER EXPLAIN AWAY WHAT THE USER PHYSICALLY FELT (2026-08-01)
+Told "tails still react but not as good as before, hair does nothing", I concluded the tail motion
+was SMP's own simulation and that no PPB push was involved — effectively telling the user their
+hands-on observation was an illusion. They pushed back hard and were right. Garment push has TWO
+channels: `ppbHands.xml`, an SMP-NATIVE hand collider living inside the engine's own world (needs
+no plugin interface, cannot die from a handshake failure), and force injection through the plugin
+interface (carries the dialled gains). Channel B died; A survived. Tails have both → reduced
+strength. Hair can only use B → fully dead. **Rules:** (1) a PARTIAL symptom usually means a
+PARTIAL system — enumerate every channel that could produce what was observed before doubting the
+observation; (2) the user's description of DEGREE ("not as good") is data, and it pointed straight
+at one-of-two; (3) haptics firing and bodies moving is proof the contact EXISTS — the only open
+question is which of our layers can see it.
+
+## * DO NOT MISTAKE YOUR OWN TOOLING FAILURE FOR AN EXTERNAL LIMIT (2026-08-01)
+I told the user "I can't confirm it offline — no network to read their source". There was network.
+My `curl` calls had returned 14-byte 404s because I guessed wrong repo paths, and one wrote to a
+directory that did not exist. I read those failures as an environment limitation and said so out
+loud, which cost a round and was simply false — the user supplied a working URL and the answer was
+one correct request away. **Rule: before reporting a capability as unavailable, prove the failure
+is the environment and not your invocation.** A 404 is a wrong path; a nonexistent output directory
+is a wrong path; neither is "the network is down".
