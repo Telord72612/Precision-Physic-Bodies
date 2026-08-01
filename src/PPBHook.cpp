@@ -194,17 +194,30 @@ namespace ArmIK {
         const bool spellNow = HeelsFixHeeled(actor);
         if (!HeeledSticky(actor)) return;              // Heels Fix is the sole heel authority — no own height guess
         // carrying a refresh flicker: spell off but she was heeled and the offset persists
+        const float heelZ = npcNode->local.translate.z;        // amount = the lift Heels Fix put on the XP32 "NPC" node
+        // ⚠ 2026-08-01: this receipt used to print ABOVE the heelZ read, so it asserted "the node
+        // offset persists" without ever having looked at the offset — and printed that every 10 s
+        // while heelZ was 0.0 and NO bias was armed. A log line must never claim a fact the code
+        // has not yet checked. Report the measured value and say which of the two cases it is:
+        //   offset alive -> we bridge the Heels Fix refresh flicker (the sticky gate working)
+        //   offset gone  -> Heels Fix genuinely dropped it; PPB holds NO bias (no own height logic),
+        //                   so a still-heeled NPC's collision sits ~heelZ BELOW her visual body.
         static float s_flickerLog = -10.f;
         if (!spellNow) {
             const float nowS = ArmNowSeconds();
             if (nowS - s_flickerLog > 10.f) {
                 s_flickerLog = nowS;
-                logger::info("HEELFIX {:08X}: Heels Fix ability is OFF (refresh window / stuck re-add) "
-                             "but the node offset persists — bias held from the offset itself.",
-                             actor->GetFormID());
+                if (heelZ > 0.01f)
+                    logger::info("HEELFIX {:08X}: Heels Fix ability is OFF (refresh window) but the node "
+                                 "offset PERSISTS at {:.2f}u — bias held from the offset itself.",
+                                 actor->GetFormID(), heelZ);
+                else
+                    logger::info("HEELFIX {:08X}: Heels Fix ability is OFF *and* the node offset is GONE "
+                                 "({:.2f}u) — NO bias armed. If she is still wearing heels her collision "
+                                 "is now sitting below her visual body; Heels Fix has not re-added.",
+                                 actor->GetFormID(), heelZ);
             }
         }
-        const float heelZ = npcNode->local.translate.z;        // amount = the lift Heels Fix put on the XP32 "NPC" node
         if (heelZ <= 0.01f || heelZ > 40.f) return;            // flagged but node not (yet) raised, or a wild value → skip
         // A KNOCKED-DOWN NPC's bodies are free physics (authoritative) — biasing the drive or the pose
         // there would sink her visual under the real bodies. Stock behavior while ragdolled.

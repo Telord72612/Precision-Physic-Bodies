@@ -77,6 +77,40 @@ verified against the shipped DLL.
 - Plugin version now reports 1.4.0 (was stale at 0.1.0 since the first build);
   `GetBuildNumber` → 10400.
 
+### ReShape never fitted head capsules on most NPCs (2026-08-01)
+
+Head collision was silently stuck on the generic baked face for a large share of NPCs, so
+reaching for someone's face could miss it by a couple of units.
+
+The head is the one capsule slot whose children are **baked, with no knobs** — the ReShape head
+ratio is their only driver. That ratio returns exactly `1.0` for an actor who has not been
+measured, and the apply is gated on `ratio != 1.0`. So an unmeasured NPC does not get a *rough*
+head fit; she gets **no head write at all**, with nothing logged, because nothing failed.
+
+What kept her unmeasured was the gate in front of the sampler, which used `Actor::IsDead()`.
+That predicate is **true for `kRestrained`-class states**, so live NPCs read as corpses and were
+refused — intermittently, since the state comes and goes, which is why this looked like "ReShape
+randomly stops working" rather than a gate on a predicate that lies. In one session it reported
+every actor present as dead and latched nothing at all for four minutes.
+
+Now uses `GetLifeState()` (`kDead`/`kDying`), which is what the finger-rig code already used after
+hitting the identical trap. The crash protection that motivated the original check is unchanged:
+real corpses still match, and dismembered actors were always caught by the dismember guard, which
+was the actual crash vector.
+
+### Internal (2026-08-01)
+
+- **`ReadJointWorlds` null-guards its out-params consistently.** Three of five were guarded and two
+  were written unconditionally, which is invisible at the call site; a new caller passing `nullptr`
+  for one of the unguarded pair took an access violation. All are guarded now.
+- **Receipts for silent stalls.** A re-scale sequence could arm and then sit indefinitely without
+  logging — three early returns on that path emitted nothing, and one stall lasted 3m40s. The grab
+  gate now says so.
+- **The heel receipt no longer asserts what it has not checked.** It claimed "the node offset
+  persists" from *above* the line that reads the offset, so it printed that every 10 s while the
+  offset was zero and no bias was armed. It now reports the measured value and distinguishes
+  "bridging a Heels Fix refresh" from "Heels Fix dropped the offset and did not re-add".
+
 ## 1.3.0
 
 ### HDT-SMP Flex support

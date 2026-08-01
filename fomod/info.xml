@@ -2,7 +2,7 @@
 <fomod>
   <Name>Precision Physic Bodies</Name>
   <Author>mad72</Author>
-  <Version MachineVersion="1.3.0">1.3.0</Version>
+  <Version MachineVersion="1.4.0">1.4.0</Version>
   <Description>
     A complete rebuild of Skyrim VR's NPC Havok bodies. Joints that track the XP32 skeleton,
     collision capsules that fit the actual body mesh, both refitted live at runtime.

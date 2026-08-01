@@ -13,6 +13,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <map>
 #include <unordered_map>
 #include <atomic>
 #include <xmmintrin.h>   // _mm_store_ps
@@ -1988,6 +1989,15 @@ namespace GrabDiag {
     // NO head channel at all — head capsules ride es x baked, the pre-head-channel behavior.
     // Detection = the race skeleton path (the sculpt-gate pattern), so every beast race the
     // ini maps is covered automatically, with zero race lists to maintain.
+    // The ONLY correct death test in this codebase — Actor::IsDead() reports kRestrained as dead
+    // (pitfall ledger line 72). Every gate that means "she is a corpse" must use this.
+    static bool PpbTrulyDead(RE::Actor* actor)
+    {
+        if (!actor) return false;
+        const auto l = actor->GetLifeState();
+        return l == RE::ACTOR_LIFE_STATE::kDead || l == RE::ACTOR_LIFE_STATE::kDying;
+    }
+
     static bool IsBeastSkeletonActor(RE::Actor* actor)
     {
         auto* base = actor ? actor->GetActorBase() : nullptr;
@@ -2066,7 +2076,19 @@ namespace GrabDiag {
         // re-latches EVERYONE, including headless corpses whose face geometry the engine has
         // destroyed — that walk was crash-2026-07-28-18-05-52 (freed BSDynamicTriShape).
         // A previously-latched live shape stays cached, so corpses keep the shape they died with.
-        if (actor && !isRef && (actor->IsDead() || DismemberGuard::IsExcluded(actor))) return;
+        // ⚠ 2026-08-01 (user-caught, ledger line 72): NOT IsDead(). Actor::IsDead() is TRUE for
+        // kRestrained-class states, so a perfectly ALIVE Carmella read dead=1 and bounced off this
+        // return every 1 Hz probe for entire sessions — HEADSTAGE/LATCHED never printed and her head
+        // capsules were NEVER fitted (they are knobless: the ReShape ratio is their only driver, and
+        // an unlatched actor yields exactly 1.0 = no write). The identical trap was found and fixed
+        // in NpcFingerTest.cpp on 2026-07-09 *on this same actor* ("NFING DESTROY reason=death 12 ms
+        // after CREATE on a perfectly alive Carmella") and the fix was never propagated here.
+        // The 2026-07-28 crash protection is preserved: real corpses still match kDead/kDying, and
+        // dismembered actors are caught by IsExcluded — which was always the actual crash vector.
+        const auto lifeSt = actor ? actor->GetLifeState() : RE::ACTOR_LIFE_STATE::kAlive;
+        const bool trulyDead = (lifeSt == RE::ACTOR_LIFE_STATE::kDead ||
+                                lifeSt == RE::ACTOR_LIFE_STATE::kDying);
+        if (actor && !isRef && (trulyDead || DismemberGuard::IsExcluded(actor))) return;
         RE::BSDynamicTriShape* hg = FindHeadGeom(actor);
         // Reference head capture (Lydia): both flavours, once, so NPCs compare like-with-like.
         if (isRef) {
@@ -4017,10 +4039,30 @@ namespace GrabDiag {
             // whichever reads false is the answer. Same method that settled the SMP handshake,
             // the weapon shape and the VRIK fingers — log what it saw, then build against it.
             {
+                // Print on first sight AND on every CHANGE of the gate vector (2026-08-01 v2).
+                // v1 printed once per actor, which lands on the very first probe tick — exactly
+                // when `attached` is still false and attachedTicks is 0. That snapshot would have
+                // shown a gate closed that opens a second later, and we'd have "diagnosed" a
+                // transient. Key the dedup on the STATE, not the actor: one line per distinct
+                // gate combination, so the settled truth always appears and a flapping gate is
+                // visible as alternating lines.
                 static std::mutex s_gdMx;
-                static std::set<std::uint32_t> s_gdSeen;
+                static std::map<std::uint32_t, std::uint32_t> s_gdSeen;
+                const std::uint32_t gateBits =
+                      (ObjectHold::LmReShapeEnabled()      ? 1u   : 0u)
+                    | (ObjectHold::BoneShapeEnabled()      ? 2u   : 0u)
+                    | (attached                            ? 4u   : 0u)
+                    | (s_regionRatio[id].latched           ? 8u   : 0u)
+                    | (Interop::HasSkee()                  ? 16u  : 0u)
+                    | (Interop::HasSkee() && Interop::SkeeHasMorphs(actor) ? 32u : 0u)
+                    | (ap.attachedTicks >= 6               ? 64u  : 0u)
+                    | (IsBeastSkeletonActor(actor)         ? 128u : 0u)
+                    | ((actor && PpbTrulyDead(actor))      ? 256u : 0u)
+                    | ((actor && DismemberGuard::IsExcluded(actor)) ? 512u : 0u);
                 bool first = false;
-                { std::lock_guard<std::mutex> g(s_gdMx); first = s_gdSeen.insert(id).second; }
+                { std::lock_guard<std::mutex> g(s_gdMx);
+                  auto it = s_gdSeen.find(id);
+                  if (it == s_gdSeen.end() || it->second != gateBits) { s_gdSeen[id] = gateBits; first = true; } }
                 if (first) {
                     const auto& rr0 = s_regionRatio[id];
                     const bool hasSkee = Interop::HasSkee();
@@ -4036,7 +4078,7 @@ namespace GrabDiag {
                                  hasSkee ? (Interop::SkeeHasMorphs(actor) ? 1 : 0) : -1,
                                  ap.attachedTicks,
                                  IsBeastSkeletonActor(actor) ? 1 : 0,
-                                 (actor && actor->IsDead()) ? 1 : 0,
+                                 (actor && PpbTrulyDead(actor)) ? 1 : 0,
                                  (actor && DismemberGuard::IsExcluded(actor)) ? 1 : 0);
                 }
             }

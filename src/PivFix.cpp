@@ -17,6 +17,7 @@
 #include "PivFix.h"
 #include "Tuning.h"
 #include <set>
+#include <map>
 #include <mutex>
 #include "Interop.h"
 #include "DismemberGuard.h"  // PlanckGet/SetSetting — the PivGuard flag bracket (2026-07-29)   // Interop::IsActorGrabbedByPlayer / HasHiggs — the grab gate (2026-07-07)
@@ -121,6 +122,15 @@ namespace {
     };
     static_assert(offsetof(PortBhkRigidBody, hkBody) == 0x10);
     static_assert(sizeof(PortBhkRigidBody) == 0x40);
+    // Deferred post-correction audits (2026-08-01): actor id -> wall-clock ms at which to dump
+    // the PIVTRACK ball-vs-bone audit, so every re-scale reports its OUTCOME and not just its
+    // command. See the SELF-VERIFY note at the PIVRESCALE apply.
+    static std::mutex g_rsvMx;
+    static std::map<std::uint32_t, std::uint64_t> g_rescaleVerifyAt;
+    inline std::uint64_t RsvNowMs() {   // same clock as PivNowMs, usable this early in the file
+        using namespace std::chrono;
+        return duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
+    }
 }
 
 namespace ObjectHold {
@@ -500,7 +510,7 @@ namespace ObjectHold {
                          id, strainU[3], strainU[4], strainU[5], strainU[6], strainU[7],
                          strainU[8], strainU[9], strainU[10]);
 
-            // PIVTRACK (2026-07-05): the Havok ball vs the XP32 bone origin, per joint, LIVE — the
+        // PIVTRACK (2026-07-05): the Havok ball vs the XP32 bone origin, per joint, LIVE — the
             // instrument for "the ball left the flesh when she bent her arm". Ball = child-copy world
             // (pivotW); bone = the child node's rendered world position. delta ~0 in the statue and
             // spiking in bent poses WITH low strain = the body is displaced (limits/motors), not the data.
@@ -904,6 +914,10 @@ namespace ObjectHold {
             const hkRotation& RO = TO.getRotation();
             const hkVector4 cl = tChild.getTranslation();
             const hkVector4 ol = tOther.getTranslation();
+            // 2026-08-01: childW/otherW used to be written unconditionally while ciOut/spdChildU/
+            // spdOtherU were null-guarded. That asymmetry is invisible at the call site and cost a
+            // CTD the same day it was first hit. Guard them the same way as everything else.
+            if (!childW || !otherW) return false;
             childW[0] = (RC(0,0)*cl(0) + RC(0,1)*cl(1) + RC(0,2)*cl(2) + TC.getTranslation()(0)) * kHavokToSkyrim;
             childW[1] = (RC(1,0)*cl(0) + RC(1,1)*cl(1) + RC(1,2)*cl(2) + TC.getTranslation()(1)) * kHavokToSkyrim;
             childW[2] = (RC(2,0)*cl(0) + RC(2,1)*cl(1) + RC(2,2)*cl(2) + TC.getTranslation()(2)) * kHavokToSkyrim;
@@ -933,6 +947,7 @@ namespace ObjectHold {
             std::chrono::steady_clock::time_point armedAt{};         // when the sequence armed (settle timer)
             std::chrono::steady_clock::time_point lastRead{};        // last arc read (0.5 s cadence)
             std::chrono::steady_clock::time_point lastRetry{};       // last retry (5 s cadence)
+            std::chrono::steady_clock::time_point stallLog{};        // last "why am I parked" receipt (5 s cadence)
             int   retryCount = 0;                                    // bounded 12 retries, then wait for next rebuild
             float reads[5]{};                                        // the 5 havokArc samples
             int   readN = 0;                                         // how many collected
@@ -1013,6 +1028,46 @@ namespace ObjectHold {
             return true;
         };
 
+        // ── POST-CORRECTION SELF-VERIFY (2026-08-01, user-caught) ──────────────────────────────
+        // The PIVRESCALE receipt below reports the drive TARGET, not the outcome. The user had a
+        // head sitting ~3u low while that line read a perfectly clean x1.0521 / trueScale 0.9514 —
+        // i.e. the correction announced success and nobody ever measured the result. That is the
+        // ledger's oldest rule (measure the SETTLED bodies, never the command) being broken by the
+        // correction's own logging. So: ~1.5s after every re-scale, walk the head chain and report
+        // where each Havok pivot ACTUALLY landed relative to its XP32 bone, in game units.
+        //   H= is the head. ~0 = the ball is on the bone. A few units = the correction did not land,
+        //   and the size of H is the size of the user's visible error.
+        {
+            bool due = false;
+            { std::lock_guard<std::mutex> gv(g_rsvMx);
+              auto it = g_rescaleVerifyAt.find(id);
+              if (it != g_rescaleVerifyAt.end() && RsvNowMs() >= it->second) { due = true; g_rescaleVerifyAt.erase(it); } }
+            if (due) {
+                static const char* kVN[5] = { "NPC Spine [Spn0]", "NPC Spine1 [Spn1]", "NPC Spine2 [Spn2]",
+                                              "NPC Neck [Neck]",  "NPC Head [Head]" };
+                static const char* kVO[5] = { "NPC COM [COM ]",   "NPC Spine [Spn0]", "NPC Spine1 [Spn1]",
+                                              "NPC Spine2 [Spn2]", "NPC Neck [Neck]" };
+                float d[5] = { -1.f, -1.f, -1.f, -1.f, -1.f };
+                float nodeArcNow = 0.f, havokArcNow = 0.f;
+                float nP[5][3], pP[5][3], oDmy[3]; bool okAll = true;
+                for (int i = 0; i < 5; ++i) {
+                    // oDmy, NOT nullptr — ReadJointWorlds writes otherW[0..2] UNCONDITIONALLY
+                    // (only ciOut/spdChildU/spdOtherU are null-guarded). Passing nullptr here was
+                    // crash-2026-08-01-22-06-06: EXCEPTION_ACCESS_VIOLATION, movss [rax],xmm1, rax=0.
+                    if (!nodePos(kVN[i], nP[i]) ||
+                        !ReadJointWorlds(actor, kVN[i], kVO[i], pP[i], oDmy, nullptr)) { okAll = false; continue; }
+                    d[i] = Dist3(pP[i], nP[i]);
+                }
+                if (okAll)
+                    for (int i = 0; i < 4; ++i) { nodeArcNow += Dist3(nP[i], nP[i+1]); havokArcNow += Dist3(pP[i], pP[i+1]); }
+                const float resid = (havokArcNow > 1e-4f) ? (nodeArcNow / havokArcNow) : -1.f;
+                logger::info("PIVVERIFY {:08X} 1.5s AFTER re-scale — ball-vs-bone(u): s0={:.2f} s1={:.2f} "
+                             "s2={:.2f} neck={:.2f} HEAD={:.2f} | arc now node={:.2f} havok={:.2f} "
+                             "residual factor x{:.4f} (want x1.0000; HEAD is the user-visible error)",
+                             id, d[0], d[1], d[2], d[3], d[4], nodeArcNow, havokArcNow, resid);
+            }
+        }
+
         // ── ARC-SUM measure (pose-invariant): the XP32 node arc Spn0->Spn1->Spn2->Neck->Head vs the SAME
         // chain of Havok child-side pivots. nodeArc is a sum of RIGID bone lengths (a joint rotating never
         // changes it); the Havok pivot arc is likewise pose-invariant once the ragdoll is connected. Their
@@ -1073,7 +1128,17 @@ namespace ObjectHold {
         };
 
         // A grab displaces limbs ~12u — never measure through one (transient, no retry clock).
-        if (PivGrabGateEnabled() && Interop::IsActorGrabbedByPlayer(actor)) return;
+        // 2026-08-01: these three returns were SILENT — an armed sequence could sit forever with no
+        // receipt, which is exactly what happened (ARM at 18:02:16, no PIVARC 2 minutes later, and
+        // no "gave up" either because retry() is never reached from here). Name the stall, throttled.
+        if (PivGrabGateEnabled() && Interop::IsActorGrabbedByPlayer(actor)) {
+            if (st.stallLog.time_since_epoch().count() == 0 || now - st.stallLog >= std::chrono::seconds(5)) {
+                st.stallLog = now;
+                logger::info("PIVRESCALE {:08X} STALLED: player is grabbing her (HIGGS hold) — a grab "
+                             "displaces limbs ~12u, so the measure is parked until you let go.", id);
+            }
+            return;
+        }
 
         // ── (B) SETTLE: 1.5 s after arming, before anything is measured (ragdoll still building/dropping).
         if (now - st.armedAt < std::chrono::milliseconds(1500)) return;
@@ -1166,6 +1231,15 @@ namespace ObjectHold {
             logger::info("PIVRESCALE {:08X} MIS-SCALED (nodeArc={:.2f} medHavokArc={:.2f}) -> UNIFORM x{:.4f} "
                          "trueScale={:.4f} on {} constraint(s), both copies, L+R",
                          id, nodeArc, medHavokArc, factor, arcScale, scaledNow);
+            // ── SELF-VERIFY (2026-08-01, user-caught) ───────────────────────────────────
+            // "ReScale fired" is NOT "the result is right". This receipt reports the drive
+            // TARGET; the user had a head 3u low with this exact line reading a clean
+            // x1.0521 / trueScale 0.9514. That is the ledger's oldest rule (measure the
+            // SETTLED bodies, never the command) being violated by the correction's own
+            // logging. Arm a PIVTRACK audit ~1.5s later — long enough for the PD drive to
+            // settle — so every re-scale states its OUTCOME, per joint, in game units.
+            // H= is the head. Non-zero after a correction means the correction did not land.
+            { std::lock_guard<std::mutex> gv(g_rsvMx); g_rescaleVerifyAt[id] = RsvNowMs() + 1500; }
     }
 
     // ── JOINT TRACK (2026-07-10 — the actor-scale audit, console `jtrack`, READ-ONLY) ─────────────

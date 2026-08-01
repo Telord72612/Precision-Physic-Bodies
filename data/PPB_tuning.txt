@@ -1033,7 +1033,7 @@ npcFingerCount 4
 #   Ships OFF; flip to 1 for a telemetry session ("does it track": p95 gap < ~0.5u, 0 teleports).
 npcFingerLog 0
 # logVerbose 1 = per-slot CapFix geometry lines (BEFORE/APPLIED/MIRROR-L/AUTOFIT) back in PPB.log (dial sessions)
-logVerbose 1
+logVerbose 0
 handBoxEnable 1
 handBoxFollowMode 2
 handBoxArm 2
@@ -1070,7 +1070,7 @@ bodyScaleArms 0.12
 bodyScaleHead 0.12
 bodyScaleClampLo 0.7
 bodyScaleClampHi 2.0
-bodyScaleDump 21
+bodyScaleDump 22
 handBoxTipFrac 1.15
 handBoxPlateLenFrac 0.5
 handBoxPlateTipFrac 0.85
@@ -1225,7 +1225,7 @@ apiDwellTailS 0.25
 # apiLog: START/END receipt lines in PPB.log. ON for this dev session (first in-game
 # verification); the packager refuses to ship it on.
 # dev machine: 1 for verification sessions; flip to 0 at packaging (shipping default)
-apiLog 1
+apiLog 0
 npcRigRangeU 700
 npcRigRangeHystU 100
 npcRigMaxActors 2

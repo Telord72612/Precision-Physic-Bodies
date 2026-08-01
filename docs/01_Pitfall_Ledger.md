@@ -1293,3 +1293,102 @@ loud, which cost a round and was simply false — the user supplied a working UR
 one correct request away. **Rule: before reporting a capability as unavailable, prove the failure
 is the environment and not your invocation.** A 404 is a wrong path; a nonexistent output directory
 is a wrong path; neither is "the network is down".
+
+---
+
+## A silent measurement makes a whole subsystem a no-op — and the no-op looks like a bad correction
+
+**2026-08-01.** The user reported an NPC whose face collision sat ~3u low and asked why she had not
+been re-scaled. The natural reading — a re-scale that fired and landed wrong — was wrong twice over.
+
+The head is the **one** capsule slot whose children are entirely baked, with no knobs
+(`CapFix.cpp`, "KNOBLESS HEAD CHILDREN"). Their only driver is the ReShape head ratio:
+
+```
+BodyScaleRegionRatio(actor, 3, i)
+  -> if (!latched) return 1.f;                 // CapFix.cpp ~2013
+head apply:
+  -> if (fabs(hr - 1.f) > 0.005f) { ...write... }   // 1.0 == skip
+```
+
+So an unlatched actor yields ratio **exactly 1.0**, the write is skipped, and **not one head
+capsule is ever touched**. Her face stayed at the shared skeleton NIF's generic baked face. Nothing
+logged an error, because nothing failed — the correction was simply never requested.
+
+**Three lessons, in order of how much time they cost:**
+
+1. **A "do nothing" sentinel silences the subsystem it guards.** Returning 1.0 for "I have no
+   measurement" is correct and deliberate (the ledger already has an entry praising it over
+   guessing). But it converts a *dead sampler* into a *silent identity transform*. Any such
+   sentinel needs a receipt at the CONSUMER: log when a region ratio comes back as the
+   no-measurement value, or the subsystem's death is indistinguishable from its success.
+
+2. **The user's symptom named the wrong subsystem, and that is normal.** "Why didn't she get
+   ReScale" is what a 3u-low face feels like from inside the headset. ReScale drives joints;
+   the face capsules belong to ReShape. **Do not let the user's naming of the subsystem scope
+   the search** — confirm which system OWNS the observed geometry before debugging that system.
+   Read the apply path for the exact capsules the user touched.
+
+3. **Contradictory evidence was the tell, and it sat in the log for a whole session.** "CapFix
+   applied 102 writes" alongside "her face is wrong" is only contradictory if you assume the head
+   was among the 102. It never was. **When a health metric and a user report disagree, find out
+   what the metric actually counts before trusting either.**
+
+**Corollary caught the same day:** the first version of the ReScale self-verify instrument was
+placed inside `PivFixApply`, which never executes in normal play — the live tuning carries no
+`pivFix*` slot enables (`pivEnables=[W0 E0 S0 s00 s10 s20 N0 H0 hip0 knee0 ankle0]`). It would have
+logged nothing, and the silence would have been read as evidence. **Before adding an instrument,
+prove the function you are adding it to actually runs** — grep the log for ANY line that function
+already emits. If it emits nothing today, the instrument is dead on arrival.
+
+---
+
+## The instrument crashed the game: `ReadJointWorlds` null-guards SOME out-params, not all
+
+**2026-08-01, crash-2026-08-01-22-06-06.** `EXCEPTION_ACCESS_VIOLATION`, `movss [rax], xmm1`, `rax=0`,
+four PPB frames deep, `RBX = hkpRigidBody* "NPC COM [COM ]"` on Carmella.
+
+```cpp
+bool ReadJointWorlds(actor, childNode, otherNode,
+                     float childW[3], float otherW[3], hkpConstraintInstance** ciOut,
+                     float* spdChildU = nullptr, float* spdOtherU = nullptr)
+{
+    ...
+    childW[0] = ...;   otherW[0] = ...;      // UNCONDITIONAL
+    if (ciOut)     *ciOut = ci;              // guarded
+    if (spdChildU) ...                       // guarded
+}
+```
+
+Three of the five out-params are null-guarded and two are not. Nothing at the call site shows that,
+and every pre-existing caller happened to pass real buffers. A new caller (the ReScale self-verify)
+passed `nullptr` for `otherW` because `nullptr` was legal for the parameter beside it. Instant CTD.
+
+**Lessons:**
+
+1. **Inconsistent null-guarding within one signature is a trap, not a style choice.** If any out-param
+   is optional, either guard them all or name the optional ones so the asymmetry is visible. Fixed by
+   guarding `childW`/`otherW` too.
+
+2. **A diagnostic instrument is production code on the hot path.** This one existed only to *measure*
+   a correction, and it was the most dangerous code in the build. Instruments get less design scrutiny
+   precisely because they "only log" — apply the same review to them as to the systems they watch.
+
+3. **Rarely-armed code hides its bugs for exactly as long as it stays unarmed.** The verify only fires
+   after a real re-scale APPLY. It shipped, ran for hours across several sessions, and detonated the
+   first time an apply happened. **Estimate how often a new path actually executes; if the answer is
+   "rarely", that is a reason for MORE care, not less.** Force it to run once before shipping it.
+
+## The correction does not survive a ragdoll rebuild (same session)
+
+Carmella measured `medHavokArc=45.547` (corrected, x1.0036) at 17:43, then **43.441 again** (x1.0522)
+at 18:06 — reverted by a ragdoll rebuild. She had three rebuilds in four minutes.
+
+`45.710 − 43.441 = 2.27u` of missing arc across spine→head. That IS the user's reported "face too low
+by ~3u": in the un-corrected window her Havok head joint sits ~2.3u under the bone.
+
+**Lesson — do not let ONE clean reading retire a user's symptom.** A single healthy `PIVARC` was read
+as "ReScale is fine, so the face offset must be ReShape", and the real defect (a correction that does
+not persist, plus long stalls before re-correction — one arm produced nothing for 3m40s) was argued
+away. A flip-flopping system reads as healthy exactly half the time it is sampled. When the user's
+symptom and one measurement disagree, **sample again over time** before reassigning blame.
