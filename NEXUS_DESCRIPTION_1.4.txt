@@ -1,6 +1,6 @@
 [size=6][b]Precision Physic Bodies 1.4 — The Touch API[/b][/size]
 
-[size=4][i]Skyrim VR's NPC collision, rebuilt — and now it can tell other mods what you are touching.[/i][/size]
+[size=4][i]Skyrim VR's NPC collision, rebuilt — and now it can tell your mod what the player is touching.[/i][/size]
 
 [color=#000000].[/color]
 
@@ -20,54 +20,163 @@ capsules per NPC, refitted live as she scales, changes shape, or equips heels.
 
 [color=#000000].[/color]
 
-[size=5][b]★ New in 1.4 — the Touch API[/b][/size]
+[size=5][b]★ New in 1.4 — the Touch API. Here is how to use it.[/b][/size]
 
-PPB already knows exactly which capsule your hand is on. As of 1.4 it will [b]tell other mods[/b].
-
-This is a foundation for other authors. On its own the API changes nothing you can see — it is the
-plumbing that lets a follower mod, an AI mod, or a reaction mod know that:
+PPB already knows exactly which capsule your hand is on. As of 1.4 it will tell other mods — not
+"the player touched her", but:
 
 [quote][i]the player's left index finger has been resting on her right cheek for 2.4 seconds[/i][/quote]
 
-instead of merely "the player touched her".
+On its own the API changes nothing you can see. It is plumbing for follower mods, AI mods and
+reaction mods. What follows is the short version of the tutorial; the full guide with all the
+gotchas is [url=https://github.com/Telord72612/Precision-Physic-Bodies/blob/main/INTEGRATION.md]INTEGRATION.md on GitHub[/url].
 
-[b]Every contact reports:[/b]
+[size=4][b]Every contact reports[/b][/size]
 [list]
 [*][b]Who[/b] — the NPC
 [*][b]Where[/b] — at three levels: the region ([i]Face[/i]), the group ([i]In mouth[/i]), and the exact capsule ([i]palate[/i])
-[*][b]How deep[/b] — a real distance; negative means inside
-[*][b]Which hand[/b] — left and right tracked independently
+[*][b]How deep[/b] — a real distance in game units; negative means inside — plus a 0–3 depth number
+[*][b]Which hand[/b] — left and right tracked independently, reported in the same tick
 [*][b]With what[/b] — finger, open palm, fist, HIGGS grab, weapon, or a held object
 [*][b]Which weapon[/b] — its name, its class (Sword, Mace, Dagger…) and whether it is blade, blunt or piercing
-[*][b]How long[/b] — the contact's duration
+[*][b]How long[/b] — the contact's duration in seconds
 [/list]
 
-[b]Weapon contacts come from the game's own physics.[/b] Rather than guessing a blade's shape, PPB
-reads Havok's actual contact events — the same ones that make your controller buzz and push her
-body. So the capsule your mod is told about is the capsule the engine really hit, and it works the
-same for a rapier, an axe, a club or any modded weapon.
+[size=4][b]Papyrus — reacting to a touch (ten lines)[/b][/size]
 
-[b]Mod authors:[/b] full guide, working code for all three integration paths (Papyrus events,
-Papyrus natives, or a C++ SKSE interface), and a spreadsheet of all 107 capsules are on the
-[url=https://github.com/Telord72612/Precision-Physic-Bodies]GitHub page[/url]. Start with
-INTEGRATION.md.
+PPB fires three mod events per contact: [b]PPB_TouchStart[/b], then [b]PPB_Touch[/b] repeatedly
+while it holds, then [b]PPB_TouchEnd[/b]. No dependency needed — register and listen:
 
-[color=#000000].[/color]
+[code]Scriptname MyTouchWatcher extends ReferenceAlias
 
-[size=5][b]Contact logging (for debugging)[/b][/size]
+Event OnPlayerLoadGame()
+    RegisterForModEvent("PPB_TouchStart", "OnPpbTouchStart")
+    RegisterForModEvent("PPB_TouchEnd",   "OnPpbTouchEnd")
+EndEvent
 
-Set [b]contactLog = 1[/b] in [i]SKSE/Plugins/PPB_Skeletons_Added_Race.ini[/i] and every touch is
-written to [i]My Games/Skyrim VR/SKSE/PPB.log[/i] — which NPC, which hand, what touched her, the
-exact capsule, how deep, and for how long.
+Event OnPpbTouchStart(String eventName, String strArg, Float numArg, Form sender)
+    Actor victim = sender as Actor                 ; WHO was touched
+    String[] f = StringUtil.Split(strArg, "|")     ; "WAND|SOURCE|BODYPART|SKELETON"
+    Debug.Notification(victim.GetDisplayName() + ": " + f[1] + " on " + f[2])
+EndEvent
 
-If a mod that uses the API is not reacting, this shows in one line whether PPB actually saw the
-touch. Verbose by nature, so it ships off; set it back to 0 for normal play.
+Event OnPpbTouchEnd(String eventName, String strArg, Float numArg, Form sender)
+    Debug.Notification("held for " + numArg + " seconds")
+EndEvent[/code]
+
+Three things to get right:
+[list=1]
+[*][b]sender[/b] is the touched NPC — cast it to Actor.
+[*][b]strArg[/b] is four fields joined by "|": the hand (L/R), the source (FINGER / PALM / FIST / HAND / GRAB / WEAPON:Iron Rapier / OBJECT:Tankard), the body part ("Face(cheek L)"), and the skeleton (human / argonian / khajiit / draenei).
+[*][b]numArg changes meaning[/b]: on Start it is the surface distance (negative = inside); on End it is the total [i]duration in seconds[/i]. This is the one everybody trips on.
+[/list]
+
+[size=4][b]Papyrus — reading every variable[/b][/size]
+
+An event carries one string and one number, so it cannot hand you depth, weapon class, or distance
+[i]and[/i] duration at once. The 16 natives on script [b]PPB_Touch[/b] can (it ships compiled — you
+do not need any source to call it). Bridge from inside your handler:
+
+[code]Event OnPpbTouchStart(String eventName, String strArg, Float numArg, Form sender)
+    Int i = PPB_Touch.FindContact(sender as Actor, "")   ; "" = either hand
+    If i >= 0
+        String region = PPB_Touch.GetContactRegion(i)     ; "Face"
+        String sub    = PPB_Touch.GetContactSubRegion(i)  ; "In mouth"
+        Int    depth  = PPB_Touch.GetContactDepth(i)      ; 0 surface .. 3 deepest
+        Float  dist   = PPB_Touch.GetContactDistance(i)   ; negative = inside
+        Float  dur    = PPB_Touch.GetContactDuration(i)   ; seconds
+        String wclass = PPB_Touch.GetContactWeaponClass(i); "Sword", "" if not a weapon
+        If depth >= 2
+            ; something is unambiguously inside
+        EndIf
+    EndIf
+EndEvent[/code]
+
+Or poll on your own schedule: [font=Courier New]GetContactCount()[/font] then index 0..n-1 with the
+same getters. Indices are a snapshot refreshed at apiHz (ships at 4/s) — read what you need in one
+pass, never store an index.
+
+[size=4][b]SKSE C++ — one header, two calls[/b][/size]
+
+Copy the single self-contained header
+[url=https://github.com/Telord72612/Precision-Physic-Bodies/blob/main/src/PpbTouchAPI.h]PpbTouchAPI.h[/url]
+into your project (no CommonLib dependency — works from CommonLibSSE, CommonLibVR or classic
+skse64). Acquire the interface any time at or after kPostLoad, the same way you would HIGGS or
+PLANCK:
+
+[code]#include "PpbTouchAPI.h"
+PPBAPI::IPpbTouchInterface1* g_ppb = nullptr;
+
+PPBAPI::PpbMessage msg{};
+SKSE::GetMessagingInterface()->Dispatch(
+    PPBAPI::PpbMessage::kGetTouchInterface, &msg, sizeof(msg), "PPB");
+if (msg.GetApiFunction)
+    g_ppb = static_cast<PPBAPI::IPpbTouchInterface1*>(msg.GetApiFunction(1));[/code]
+
+Then register a callback (or poll GetContacts whenever you like):
+
+[code]void OnTouch(const PPBAPI::PpbTouchContact* c, int phase) {
+    if (phase != PPBAPI::kPhaseStart) return;
+    // c->bodyPart      "Face(palate)"          c->distU     negative = inside
+    // c->region        via RegionName()        c->durationS seconds
+    // c->subRegion     via SubRegionName()     c->wand      0 = R, 1 = L
+    // c->depth         0..3                    c->sourceName "Iron Rapier"
+    if (c->depth >= PPBAPI::kDepthInside) { /* something went in */ }
+}
+g_ppb->AddTouchCallback(&OnTouch);[/code]
+
+The contact struct is a frozen 160-byte POD, append-only, and the vtable never reorders — a plugin
+built against today's header keeps working. Callbacks fire on the main thread at apiHz; the pointer
+is only valid inside the call, so copy what you need.
+
+[size=4][b]The depth ladder — the part people get wrong[/b][/size]
+
+Sub-regions are ordered, and each level overrides the ones below:
+
+[code]Face surface  <  Mouth opening  <  In mouth  <  Mouth wall
+0 surface        1 opening         2 inside     3 deepest[/code]
+
+A cheek is just a face touch — those capsules only mean "mouth" in combination. A [b]palate[/b]
+touch means something IS inside, and outranks any lip reading. The throat wall outranks even that.
+The intimate chain works the same way, which is why [i]Intimate[/i] is its own region and can never
+be confused with a hip touch. If you only care how far in, read the depth number and ignore names.
+
+[size=4][b]Coverage — read before you ship[/b][/size]
+
+PPB drives [b]female NPCs[/b] of mapped races: the human catch-all (covers elves, orcs and most
+custom races), Argonian, Khajiit, Draenei, plus anything added to PPB_Skeletons_Added_Race.ini.
+Males, children and creatures are never reported. In C++, check [font=Courier New]IsDriven()[/font];
+in Papyrus, no events simply arrive. [b]Silence can mean "not covered", not "not touched" — always
+have a fallback.[/b]
+
+[size=4][b]Weapon contacts come from the game's own physics[/b][/size]
+
+A rapier's swept hilt, an axe head and a club all defeat geometric guessing — so PPB reads Havok's
+own contact events, the same ones that buzz your controller and push her body. Each contact carries
+an engine flag ([font=Courier New]GetContactIsEngine[/font] / [font=Courier New]engineContact[/font])
+so you know whether you got engine truth or PPB's proximity fallback (which deliberately includes
+hover).
+
+[size=4][b]Debugging your integration[/b][/size]
+
+Set [b]contactLog = 1[/b] in [i]SKSE/Plugins/PPB_Skeletons_Added_Race.ini[/i] and every contact is
+written to [i]My Games/Skyrim VR/SKSE/PPB.log[/i]:
+
+[code]API START 1301DE4F R|FINGER|Face(cheek L)|human d=-0.31u dur=0.00s src=GEO
+API END   1301DE4F R|WEAPON:Iron Rapier|Neck(neck / throat)|human d=-0.71u dur=2.41s src=ENG wpn=Sword/Blade[/code]
+
+One line settles "is my handler broken, or did PPB send nothing?". Verbose — turn it off for play.
+
+[b]The full tutorial[/b] — the raw per-capsule stream, dwell filtering, the versioning contract,
+Caprica notes, and a spreadsheet of all 107 capsules with their groups and overrides — is on
+[url=https://github.com/Telord72612/Precision-Physic-Bodies]GitHub[/url]. Start with INTEGRATION.md.
 
 [color=#000000].[/color]
 
 [size=5][b]Also in 1.4[/b][/size]
 
 [list]
+[*][b]ReShape head fix.[/b] Head capsules were silently never fitted on many NPCs (a live NPC could read as "dead" to the sampler and be refused) — face collision stayed on the generic bake, off by a couple of units. Now fitted per NPC like everything else.
 [*][b]Heels fix compatibility.[/b] Heels Fix periodically removes and re-adds its marker spell to check for stuck heels. PPB used to follow that flicker and drop a heeled NPC's collision 8 units below her body. It now reads the persistent offset instead, so the refresh is invisible.
 [*][b]Hair and tail push restored.[/b] A registration conflict introduced with the API work was silently stealing the HDT-SMP handshake, which killed hand-pushable hair and weakened tails. Fixed for both Faster HDT-SMP and HDT-SMP Flex.
 [*][b]Wigs are no longer reported as tails.[/b] A classification bug filed head-worn garments as tail rigs, so wigs competed against face capsules and could shadow them.
