@@ -2036,6 +2036,8 @@ namespace NpcFinger {
             RE::Actor*    best   = nullptr;   // this-frame nearest driven candidate (same-frame use only)
             float         bestD2 = FLT_MAX;
             RE::Actor*    actor  = nullptr;   // tracked NPC (compare-only across frames)
+            float         curD2  = FLT_MAX;   // the tracked NPC's OWN distance this frame (hysteresis)
+            float         phonWritten = -1.f; // last phoneme actually written (skip no-op writes)
             float         phon   = 0.f;       // current phoneme value 0..1
             bool          inMouth = false;
             bool          inThroat = false;   // tip at the end-of-mouth wall (only reachable while inMouth)
@@ -2118,9 +2120,22 @@ namespace NpcFinger {
         const float d2 = g_gt.bestD2; g_gt.bestD2 = FLT_MAX;
         const float rng = ObjectHold::GhostRangeU();
         if (!a || d2 > rng * rng) { g_gt.actor = nullptr; g_gt.inMouth = false; g_gt.inThroat = false; g_gt.phon = 0.f; return; }
+        // -- STICKY TRACKING (2026-08-07, the synchronized-spasm fix) -------------------------
+        // Nearest-wins flapped between two equidistant NPCs ~1/s (160 switches in 2 min on
+        // M'rissi+Aela), and the pair visibly SPASMED in lockstep -- confirmed by single-variable
+        // A/B (ghostZones 0 -> gone). Every switch retargets the per-frame phoneme write and
+        // resets the gate state on BOTH actors at once. A challenger now has to be meaningfully
+        // closer (20% linear) before tracking moves, so a tie parks on whoever had it first.
+        const float curD2 = (g_gt.actor ? g_gt.curD2 : FLT_MAX);
+        g_gt.curD2 = FLT_MAX;
         if (a != g_gt.actor) {
-            g_gt.actor = a; g_gt.inMouth = false; g_gt.inThroat = false; g_gt.phon = 0.f;
-            logger::info("GHOST tracking {:08X}", a->GetFormID());
+            const bool curAlive = g_gt.actor && curD2 <= rng * rng;
+            if (!curAlive || d2 < curD2 * 0.64f) {          // 0.8^2: >=20% closer to steal
+                g_gt.actor = a; g_gt.inMouth = false; g_gt.inThroat = false; g_gt.phon = 0.f;
+                logger::info("GHOST tracking {:08X}", a->GetFormID());
+            } else {
+                a = g_gt.actor;                             // keep the incumbent this frame
+            }
         }
         // marker knob falling edge -> ACTIVELY remove parked bodies (the seizure lesson)
         {
@@ -2253,7 +2268,13 @@ namespace NpcFinger {
         const float rate = g_gt.inMouth ? ObjectHold::MouthRampIn() : ObjectHold::MouthRampOut();
         if (g_gt.phon < tgt)      { g_gt.phon += rate * dt; if (g_gt.phon > tgt) g_gt.phon = tgt; }
         else if (g_gt.phon > tgt) { g_gt.phon -= rate * dt; if (g_gt.phon < tgt) g_gt.phon = tgt; }
-        if (auto* fad = a->GetFaceGenAnimationData()) {
+        // Write ONLY on change (2026-08-07): this used to run EVERY FRAME even at a constant
+        // 0.0, dirtying the tracked actor's facegen 90x/s -- and the tracker flap moved that
+        // treatment between two NPCs once a second, in lockstep with their visible spasm.
+        // An idle tracked actor now receives zero writes.
+        if (auto* fad = a->GetFaceGenAnimationData();
+            fad && std::fabs(g_gt.phon - g_gt.phonWritten) > 1e-4f) {
+            g_gt.phonWritten = g_gt.phon;
             const auto i1 = static_cast<std::uint32_t>(ObjectHold::MouthPhonemeIdx());
             const auto i2 = static_cast<std::uint32_t>(ObjectHold::MouthPhoneme2Idx());
             const auto cnt = fad->phenomeKeyFrame.count;
@@ -2472,6 +2493,7 @@ namespace NpcFinger {
                 const float dx = ap.x-pp.x, dy = ap.y-pp.y, dz = ap.z-pp.z;
                 const float dd = dx*dx + dy*dy + dz*dz;
                 if (dd < g_gt.bestD2) { g_gt.bestD2 = dd; g_gt.best = actor; }
+                if (actor == g_gt.actor) g_gt.curD2 = dd;   // hysteresis input (2026-08-07)
             }
         }
         const std::uint32_t pin = g_pinnedId.load(std::memory_order_relaxed);
@@ -2645,8 +2667,40 @@ namespace NpcFinger {
                                 // exist in her tree (hair from an uncovered mod, or facegen-baked static);
                                 // sigHits>0 → a signature matched but the full bone set failed to resolve
                                 // (a table/collision defect — report it).
+                                // -- UNRECOGNIZED-RIG DUMP (2026-08-07, the KS-headpart question) --
+                                // When NO signature matched, list the hair-LIKE bones the tree DOES carry
+                                // (non-skeleton nodes ending in a chord number). One glance separates the
+                                // three cases file archaeology cannot: (a) a KS vintage we never censused
+                                // -> extend the tables; (b) a facegen-embedded rig with intact names ->
+                                // coverable, table just missing; (c) nothing at all -> static hair, nothing
+                                // to bind. One-shot per actor (rides s_hairMissLogged); 6 names identify a rig.
+                                struct RigDump { static void Walk(RE::NiAVObject* o, int depth, char* bf,
+                                                                  int& u, int& f) {
+                                    if (!o || depth > 40 || f >= 6) return;
+                                    if (const char* nm = o->name.c_str(); nm && *nm) {
+                                        const char* pl = PlainBoneName(nm);
+                                        const size_t L = std::strlen(pl);
+                                        if (L >= 4 && L < 40 && std::strncmp(pl, "NPC ", 4) != 0 &&
+                                            std::isdigit((unsigned char)pl[L-1]) &&
+                                            (std::strchr(pl, ' ') || std::strchr(pl, '_'))) {
+                                            const int w = std::snprintf(bf + u, 256 - u, "%s'%s'",
+                                                                        f ? ", " : "", pl);
+                                            if (w > 0 && u + w < 250) { u += w; ++f; }
+                                        }
+                                    }
+                                    if (auto* nd = o->AsNode())
+                                        for (auto& ch : nd->GetChildren())
+                                            Walk(ch.get(), depth + 1, bf, u, f);
+                                } };
                                 static std::unordered_set<std::uint32_t> s_hairMissLogged;
                                 if (s_hairMissLogged.insert(id).second) {
+                                    if (sigHits == 0) {
+                                        char buf[256]; int used = 0, found = 0;
+                                        buf[0] = 0; RigDump::Walk(root3d, 0, buf, used, found);
+                                        if (found)
+                                            logger::info("NFING HAIRSCAN {:08X}   unrecognized rig bones seen: {}{}",
+                                                         id, buf, found >= 6 ? ", ..." : "");
+                                    }
                                     auto* b = actor->GetActorBase();
                                     logger::info("NFING HAIRSCAN {:08X} \"{}\": no bind (sigHits={}) — {}",
                                                  id, (b && b->GetFullName()) ? b->GetFullName() : "<unnamed>",

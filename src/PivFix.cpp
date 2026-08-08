@@ -760,6 +760,27 @@ namespace ObjectHold {
             return;
         }
 
+        // ── COMBAT GATE (2026-08-03, pivGuardCombatLoose) ────────────────────────────────────
+        // PLANCK's loosen exists so the ragdoll CAN MATCH THE ANIM POSE (verified in its source,
+        // PreDriveToPoseHook -> hkpEaseConstraintsAction + pivot move; see
+        // 18_PLANCK_Internals_Reference). Scoping it to 0 keeps our baked joints from being
+        // collapsed — correct for ordinary movement, but it also FORBIDS the ragdoll from
+        // reaching poses our joints cannot express. Extreme combat animations are exactly that,
+        // and a body that cannot follow its animation reads as stretched (user-reported).
+        // With the knob on, leave PLANCK's global loosen alone while the actor is in combat.
+        if (ObjectHold::PivGuardCombatLooseOn() && actor->IsInCombat()) {
+            static std::mutex s_cmbMx;
+            static std::set<std::uint32_t> s_cmbSeen;
+            bool first = false;
+            { std::lock_guard<std::mutex> g(s_cmbMx); first = s_cmbSeen.insert(actor->GetFormID()).second; }
+            if (first)
+                logger::info("PIVGUARD {:08X}: IN COMBAT -> leaving PLANCK's loosen at its global "
+                             "value so extreme combat anims can be matched (pivGuardCombatLoose 1). "
+                             "Capsule fit is intentionally traded away for the duration.",
+                             actor->GetFormID());
+            return;   // no scoping this drive — stock PLANCK behaviour
+        }
+
         // 1) the flag bracket (Hooks.cpp restores right after the chained call returns)
         double prev = 1.0;
         const bool gotOk = DismemberGuard::PlanckGetSetting("loosenRagdollConstraintPivots", prev);
@@ -948,6 +969,8 @@ namespace ObjectHold {
             std::chrono::steady_clock::time_point lastRead{};        // last arc read (0.5 s cadence)
             std::chrono::steady_clock::time_point lastRetry{};       // last retry (5 s cadence)
             std::chrono::steady_clock::time_point stallLog{};        // last "why am I parked" receipt (5 s cadence)
+            bool  farAbandoned = false;   // mid-sequence distance abandon -> re-arm on APPROACH,
+                                          // not only on the next rebuild (2026-08-07 skull-2u-low)
             int   retryCount = 0;                                    // bounded 12 retries, then wait for next rebuild
             float reads[5]{};                                        // the 5 havokArc samples
             int   readN = 0;                                         // how many collected
@@ -1008,7 +1031,24 @@ namespace ObjectHold {
             const RE::NiPoint3 pa = actor->GetPosition();
             const RE::NiPoint3 pp = pc->GetPosition();
             const float dx = pa.x-pp.x, dy = pa.y-pp.y, dz = pa.z-pp.z;
-            if (dx*dx + dy*dy + dz*dz > kMaxDistU*kMaxDistU) { st.phase = 0; return; }
+            if (dx*dx + dy*dy + dz*dz > kMaxDistU*kMaxDistU) {
+                // 2026-08-07 (Carmella skull 2u low, 8 min parked): this abandon was SILENT and
+                // the only re-arm was "the next rebuild" -- which for a standing NPC may simply
+                // never come, so a mid-sequence walk-away stranded her mis-scaled FOREVER with
+                // zero receipts. Now: say so once, and remember to re-arm on APPROACH.
+                if (st.phase != 0) {
+                    st.farAbandoned = true;
+                    logger::info("PIVRESCALE {:08X} ABANDONED mid-sequence (>10 m) -- will re-ARM "
+                                 "when the player is back in range (no rebuild needed)", id);
+                }
+                st.phase = 0; return;
+            }
+            if (st.farAbandoned && st.phase == 0) {
+                st.farAbandoned = false;
+                st.phase = 1; st.armedAt = now; st.retryCount = 0; st.readN = 0; st.lastRetry = {};
+                logger::info("PIVRESCALE {:08X} back in range after abandon -> re-ARM re-scale "
+                             "sequence", id);
+            }
         }
 
         // ── IDLE POLL THROTTLE: while parked (phase 0) the ONLY work is watching the rebuild signal, and a

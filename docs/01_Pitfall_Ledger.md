@@ -1392,3 +1392,318 @@ as "ReScale is fine, so the face offset must be ReShape", and the real defect (a
 not persist, plus long stalls before re-correction — one arm produced nothing for 3m40s) was argued
 away. A flip-flopping system reads as healthy exactly half the time it is sampled. When the user's
 symptom and one measurement disagree, **sample again over time** before reassigning blame.
+
+---
+
+## "Touching an NPC freezes the game" — and it was NOT us: dump-first debugging pays off (2026-08-01)
+
+Freeze 0.3 s after the player's SECOND hand grabbed M'rissi (both hands holding one actor). It came
+on the very first VR run of a brand-new PPB build, so PPB was the obvious suspect — the ledger's own
+"rarely-armed code" entry had been written HOURS earlier about this exact build.
+
+**The move that settled it in minutes instead of days: while the game was still frozen, write a
+stacks-only minidump of the live process (`MiniDumpWriteDump`, type 0x0, ~6 MB), then parse it.**
+No debugger was installed; a ~80-line Python script walked the minidump (module list stream 4,
+thread list stream 3 — NB thread entry: Stack descriptor at +24, ThreadContext at +40, RIP at
+context+0xF8) and scanned every thread's captured stack for return addresses inside any module.
+
+**Result: 703 threads, ZERO frames in PPB.dll.** Not executing, not in any call chain, no lock held
+(all PPB mutexes are scoped `lock_guard`s). The freeze:
+
+- MAIN thread: kernel wait entered from **AccuratePenetration.dll** (Immersive Weapon Penetration
+  VR, folder "Penetration Physics"), called from engine code near the hdtSMP step.
+- An AccuratePenetration WORKER thread: parked inside **sksevr** — the SKSE task-queue lock.
+
+That is the DF-freeze anatomy from this ledger, in a different mod: main thread blocks inside a
+hook waiting on its worker; the worker needs the SKSE task queue; the main thread is the only
+thing that drains that queue. PPB itself refuses `SKSE::AddTask` for exactly this reason
+(DismemberGuard.cpp "freeze5 dump" note). Trigger surface: the both-hands-on-one-actor grab state.
+
+**Lessons:**
+1. **A frozen process is evidence — capture it BEFORE anyone kills the game.** A stacks-only
+   minidump takes seconds and ~6 MB, needs no debugger installed, and answers "whose code is
+   stuck" with certainty no amount of log reading or source theorising can.
+2. **"It froze right after MY new build's first run" is a correlation, not a verdict.** The prior
+   probability was heavily against PPB being innocent — and PPB was innocent. The dump beat the
+   prior.
+3. Minidump parsing needs no tooling: MDMP header → stream dir → modules(4)/threads(3); crude
+   stack-scan symbolication (qword in any module range) is enough for module-level attribution.
+   Use bisect on sorted module bases or the scan takes minutes instead of seconds.
+
+---
+
+## One flag, two meanings: `permanent` silently killed the only restore path (2026-08-02)
+
+User report: **decapitated draugr hang in mid-air**; uninstalling PPB fixes it. A/B by the
+reporter, two knobs:
+
+| config | result |
+|---|---|
+| `dgDeathCut 0` (dgEnable 1) | still floats → our death-cut ACQUITTED |
+| `dgEnable 0` | fixed → the fault is inside DismemberGuard |
+
+That pair is the whole diagnosis: inside DG, but not the cut. It left exactly one candidate — the
+permanent PLANCK ignore in `Probe()`.
+
+**The defect.** `Rec::permanent` carried *three* meanings at once: "detection is settled, stop
+probing", "PPB skips this actor forever", and "the PLANCK ignore is forever". The third one gated
+the only `PlanckRestore` call site:
+
+```cpp
+r.permanent = true;                          // set at detection, 3 lines before the ignore
+...
+if (!r.permanent && r.planckIgnored && ...)  // the ONLY restore — unreachable by construction
+    PlanckRestore(a, r, "grace expired");
+```
+
+`permanent` is never cleared anywhere in the file, so **any** DF/NGD-touched actor was dropped from
+PLANCK forever — a decapitated victim as much as a head-clone prop. PLANCK's documented "re-adds
+unmanaged ragdolls within 50u" recovery is defeated by the ignore, so nothing ever took the body
+back and it hung wherever it was.
+
+**Lessons:**
+
+1. **A boolean that means three things will eventually be read for the wrong one.** The permanent
+   PLANCK ignore is correct for clone props (it is the artifact PPB was built to stop) and wrong
+   for victims — but both rode the same flag. Split it (`planckPerm`) and each meaning can be
+   right independently. Watch for this whenever one flag is set at a single detection point and
+   then consumed by unrelated subsystems.
+2. **A restore path gated on a flag that is never cleared is dead code wearing a safety
+   costume.** It read as protection in review for weeks. Grep every guard flag for where it is
+   set to false; if there is no such site, the guarded path never runs.
+3. **Pick the fix by reproducing the KNOWN-GOOD STATE, not by theorising about the other mod's
+   internals.** I could not prove what PLANCK does to a mid-animation actor on `AddIgnoredActor`,
+   and did not need to: with PPB uninstalled the victim stays under PLANCK, so the fix is "make
+   victims stay under PLANCK." Same family as [known-good-binary-bisection] — the working
+   configuration is the specification.
+4. **Ask for the discriminating config, and check the master switch first.** The reporter's first
+   pass set BOTH knobs to 0, which proved nothing because `dgEnable` gates the death sink before
+   `dgDeathCut` is ever read. Naming the one config that separates the hypotheses
+   (`dgEnable 1` + `dgDeathCut 0`) converted an ambiguous result into a verdict in one round.
+
+---
+
+## Hand-box jitter: the box is infinite-mass, so the shake MUST be in the command (2026-08-02)
+
+User report: player hand/finger colliders visibly shake, **worse outdoors and when the engine is
+struggling**. Premise going in was "our boxes are a HIGGS clone, so they should behave like HIGGS".
+
+**The reasoning step that collapsed the search space:** the boxes are `MOTION_KEYFRAMED` /
+`HK_COLLIDABLE_QUALITY_KEYFRAMED` with deactivation off — infinite mass. **Contacts cannot move
+them.** Their position is 100% commanded, so no amount of "something is pushing them" can be true.
+The shake is in the command chain, and that chain is short.
+
+**The finding.** `UpdateEffFrames` builds the target as `E = T_higgs · EMA(R)` where
+`R = T_higgs⁻¹ · T_handnode`. Because the rotation is orthonormal, `|E.pos − hand| ≡ |EMA(R) − R|`
+exactly — the smoothing residual IS the box's displacement from the hand, in game units. And the
+two sources are sampled at different points in the frame: the bones are read fresh, while the HIGGS
+anchor body has had its velocity set but has **not been stepped yet** (we run before
+`stepDeltaTime`), so it still holds last step's result. `R` therefore carries a whole frame of
+motion, which an α=0.05 EMA (~20-frame time constant) cannot track. Residual ∝ speed × frame-time
+variance = "shakes, worse outdoors". HIGGS has no equivalent: it never measures a relation at
+runtime — `cachedTransform · a CONSTANT config offset`, one source, no filter.
+
+A closed argument, requiring no assumption about engine ordering: *if* the relation were genuinely
+near-constant as the header claims, mode 2 would be a no-op. Mode 2 is demonstrably not a no-op (it
+was added to fix a reproduced bug). Therefore R fluctuates. Therefore the box is displaced every
+frame.
+
+**Method lessons — the investigation itself is the reusable part:**
+
+1. **Adversarial verification earned its keep by killing the pretty answer.** The best-evidenced
+   hypothesis (PPB feeds `applyHardKeyFrame` a `steady_clock` dt where HIGGS feeds the engine's
+   `*g_deltaTime`) was verified true *as a code fact* and still refuted *as the cause*: HIGGS uses
+   the FRAME delta too (not `g_physicsDeltaTime`), so gain≠1 is not differential; the `clamp(dt,
+   1e-4, 0.1)` under-drives and cannot over-drive, so the hypothesis asserted both directions of
+   the same clamp; and the loop `e→e(1−g)` with mean g≤1 is a stable low-pass that **cannot ring**.
+   Ringing needs g≥2 sustained, which is unreachable. It is a noisy LAG, not an oscillator.
+   **A defensible-sounding mechanism that produces a constant or monotonic error is not a jitter
+   explanation. Demand an oscillator.**
+2. **"All five hypotheses refuted" is a good outcome, not a failed run.** The refutations surfaced
+   two better suspects the original pass had dismissed, and the synthesis of *those* produced the
+   actual finding. Cheap, plausible, wrong answers are the expensive kind.
+3. **A framerate story built on invented numbers is not evidence.** One hypothesis carried a full
+   quantitative cascade (±0.3 ms → 2.7% → 0.15 mm) whose seed value was measured nowhere. The
+   verifier caught it. **If a number is not from a log or the source, say so in the same sentence.**
+4. **The instrument that would have settled it already existed and was never aimed.**
+   `Hooks::StepChainHook` has always received the exact `float` the physics is about to integrate
+   and discarded it. Before theorising about timing, check what the codebase is already handed.
+
+---
+
+## Hand shake: mutating another mod's LIVE collision shape every frame (2026-08-02, user-reproduced)
+
+Users reported jittery hands, worse outdoors. Four wrong answers preceded the right one, and the
+thing that actually solved it was **a user observation, not analysis**:
+
+> *"No shaking with an equipped weapon."*
+
+That single sentence is a discriminator no amount of source reading had produced. HIGGS swaps from
+its **hand** collision body to its **weapon** body when you equip a weapon — so "empty hand shakes,
+armed hand doesn't" points straight at code touching HIGGS's *hand* body. There was exactly one
+such site.
+
+**`SlabWrite()` rewrote HIGGS's hand `hkpBoxShape::halfExtents` UNCONDITIONALLY, every frame** —
+into a live shape that HIGGS keyframes and Havok is deriving contacts from. Our own boxes never did
+this: `ResolveGeometryLive` writes *"only when a knob actually moved"*, and a comment there credits
+this very function with that idiom (*"the SlabWrite idiom ... idempotent skip"*). The skip was never
+implemented in SlabWrite. Fixed by writing only on change — one write per HIGGS body recreation
+instead of ~90/second.
+
+**Lessons:**
+
+1. **Writing an unchanged value to a live physics shape is NOT a no-op.** "Idempotent at the value
+   level" is not idempotent at the engine level once another system caches derived data from that
+   shape (broadphase AABB, contact manifolds). If you must mutate a foreign body, mutate it once.
+2. **A comment claiming a safety property is not the property.** Two call sites, one claiming to
+   follow the other's "idempotent skip" idiom; only one implemented it. **Grep for the guard, do not
+   trust the prose.**
+3. **The user's incidental observation outperformed five investigator agents and five verifiers.**
+   The deep dive produced a genuinely valuable finding (the keyframe clock — measured gain swinging
+   0.11..1.87, a real defect, fixed separately) but it was *not this bug*. When a user offers an
+   unprompted correlation — "not when X" — treat it as the highest-value evidence available and
+   chase it before any theory.
+4. **`handBoxEnable 0` silently blinds the public touch API.** `PpbApi.cpp` sources every hand probe
+   from `HandBox::TipWorldU`, which returns false unless `g_rig[hand].live`. So the diagnostic knob
+   used to isolate the shake also stops every finger/palm contact consumers receive (weapon contacts
+   survive — different path). **A knob that disables a subsystem other features silently depend on
+   must say so at its definition.** Toggling it during a live investigation cost a consumer mod 20
+   minutes of blindness with no warning given to the user.
+5. **Never leave PACKAGING settings on a dev install.** `apiLog 0` was set for the public release and
+   left in the developer's tuning, so their contact stream went quiet and the log could not answer
+   "is the API firing?" during an unrelated investigation.
+
+---
+
+## ★ Fixing a REAL defect caused the symptom: the broken clock was load-bearing (2026-08-02)
+
+The hand-jitter hunt, end to end. Three hypotheses were "confirmed" and two of them were wrong;
+the one that survived is the most useful entry in this file.
+
+**What was measured and true:** PPB fed `applyHardKeyFrame` an `invDt` derived from `steady_clock`
+instead of the physics interval Havok actually integrates. 764 live samples: the wall clock had
+**3.4x the variance** of the real step (stdev 23.08 ms vs 6.82 ms), pegged its own 100 ms clamp, and
+drove the executed-motion fraction across **gain 0.11..1.87, mean 0.92**. Executing 11% of a
+commanded move one frame and 187% the next is indefensible. I fixed it. Measured `gain = 1.000`
+exactly, every frame.
+
+**And the hands jittered.** Single-variable revert in VR confirmed it: `handBoxStepDt 0` -> gone.
+
+**Why.** `gain = 1.000` is DEADBEAT tracking: the box now reproduces its target's own frame-to-frame
+noise perfectly. That target is genuinely noisy (`dR` 0.007..0.057 u/frame, logged). The old clock's
+chronic **under**-shoot was an accidental low-pass filter, and it was **load-bearing**. Correcting
+the clock removed the damping and exposed the real defect underneath — a noisy TARGET — which is
+still unfixed. The shipped default is now 0, with that reasoning written at the knob.
+
+**Lessons, in order of how expensive they were:**
+
+1. **A measured defect is not automatically the cause of the symptom, and repairing it can regress
+   behaviour that silently depended on the bug.** Before fixing a long-standing wrongness, ask what
+   has been quietly relying on it. "This number is wrong" and "this number is why the user is
+   suffering" are different claims needing different evidence.
+2. **The adversarial verifier was RIGHT and I overrode it with a measurement.** Its verdict said, in
+   terms: *"a real, cheap-to-fix hygiene defect ... but treat this as hygiene, not as the shake"*,
+   and named the noisy target as the higher-yield suspect. I then measured the gain, saw 0.11..1.87,
+   and read confirmation into it. **A measurement confirms the MECHANISM EXISTS; it does not
+   establish that the mechanism produces the symptom.** The verifier had already made exactly that
+   distinction and I lost it.
+3. **Two prior "confirmations" this same evening were also wrong**, both for the same structural
+   reason — a test that changed more than one variable:
+   - *Slab shrink*: "shake gone" after setting the knobs to -1 AND crossing a cell. Later disproved
+     outright — writing HIGGS's box back to its exact baseline still jittered.
+   - *Per-frame shape mutation*: the idempotent guard was built, shipped, and changed nothing.
+     (Still correct hygiene; mutating a foreign live shape 90x/s was wrong regardless.)
+   **When a fix and an environment change land together, you have learned nothing.** Same trap as
+   the `dgDeathCut`/`dgEnable` pair earlier the same day. Twice in one session.
+4. **Damping that comes from a bug is invisible in review.** Nothing in the source said "this
+   under-shoot stabilises the box." If a system is stable only because a value is wrong, that is a
+   latent trap for the next person who reads the code and fixes the obvious error.
+5. **A knob added to Tuning.h but never written into the shipped tuning file runs on its compiled
+   default**, so the first build carrying it silently changes behaviour for everyone. Add the line
+   to `PPB_tuning.txt` in the same commit as the knob.
+
+**Open, and now correctly scoped:** the hand-box TARGET is noisy frame to frame. The honest fix is
+correct dt PLUS an explicit dialable smoothing term — deliberate damping instead of a bug's side
+effect. Not attempted yet; it needs VR feel-testing to set the constant.
+
+---
+
+## ★★ THE PREMISE WAS NEVER TESTED: a whole session spent fixing a bug that was not ours (2026-08-02)
+
+Users reported jittery VR hands. The user's framing — reasonable, and I adopted it wholesale — was
+*"we add boxes for touch accuracy, and it's obvious they're creating jitter."* I then spent an
+entire session inside `HandBox.cpp` and shipped **five** fixes for it:
+
+| # | "fix" | outcome |
+|---|---|---|
+| 1 | stop shrinking HIGGS's hand slab | not it |
+| 2 | idempotent guard on the slab write | not it (correct hygiene, zero user effect) |
+| 3 | keyframe `invDt` from real physics dt | **active regression** — made it worse |
+| 4 | explicit damping (`handBoxTrack`) | not it |
+| 5 | disable the player-space locomotion warp | not it |
+
+**It was not PPB at all.** The user tested a NEW GAME WITH PPB NOT INSTALLED. The jitter was still
+there.
+
+**The measurement that should have ended it hours earlier** (once the user noticed the jitter was
+absent in combat stance, and that it was the hand MESH not the collider): out of combat stance the
+player's hand BONE moves up to **4.2 u in a single frame** relative to HIGGS's controller-derived
+hand body; in combat stance the same walk gives **0.02 u**. ~85x on the peak. PPB never writes the
+player's hand bone — `PPBHook.cpp` bails with *"VRIK owns player arms"* — so a target moving 4 u per
+frame was always upstream, and nothing about how we FOLLOW that target could ever have fixed it.
+
+**Lessons — the most expensive in this file:**
+
+1. **VERIFY THE PREMISE BEFORE FIXING ANYTHING.** The very first action should have been "disable
+   PPB entirely and confirm the symptom is ours." It costs one minute. I never ran it, because the
+   user's framing sounded authoritative and I inherited it as fact. **A user's causal attribution is
+   a HYPOTHESIS, not a bug report.** Separate what they OBSERVED (hands jitter) from what they
+   CONCLUDED (our boxes cause it), and test the second one first.
+2. **Five consecutive "confirmed" fixes were all confounded by an untracked variable** — combat
+   stance. Every "it's fixed!" was reported right after a knob change while standing near an NPC;
+   every "it's back" while walking. I was reading the user's posture as my code. **When a symptom
+   comes and goes, find what the USER is doing differently before theorising about what the CODE is
+   doing differently.**
+3. **The user's incidental observations beat all analysis, three times running**: "no shaking with a
+   weapon equipped", "only when I move", "no jitter in combat stance", "it's the hand MESH not the
+   box". Each one collapsed the search space more than any agent, log, or measurement did. **Mine
+   the user's phrasing for discriminators and chase those FIRST.**
+4. **A dramatic measurement is not a diagnosis.** `gain` swinging 0.11..1.87 was real, and fixing
+   it was correct, and it had nothing to do with the symptom — it just LOOKED like the answer
+   because the number was shocking. The adversarial verifier had already said so ("hygiene, not the
+   shake") and I overrode it.
+5. **Every knob added during a hunt must be reset to original behaviour when the hunt ends.**
+   `handBoxStepDt` was left defaulting to 1 (the regression) and `handBoxWarp` to 0 — both would
+   have shipped as silent behaviour changes for every user. Caught only by diffing the defaults
+   at cleanup.
+
+**Kept from the wreckage:** the `SlabWrite` idempotent guard (mutating another mod's live shape
+~90x/second was wrong regardless), and the knobs as permanently available instruments. Everything
+else defaults to pre-investigation behaviour.
+
+---
+
+## Source files contain RAW control bytes inside string literals — never round-trip them through Python text mode (2026-08-03)
+
+`main.cpp` contains literals written with **real** tab/CR bytes rather than escape sequences:
+
+```cpp
+const auto x = s.find_first_not_of(" <TAB><CR>");   // legal C++: a raw tab in a literal compiles
+```
+
+A raw TAB inside a literal is legal and had compiled for months. A raw **newline** is not. Editing
+that file with `pathlib.read_text()` / `write_text()` silently converts the lone `\r` to `\n`
+(universal newlines on read) and then back to `\r\n` (os.linesep on write) — injecting a real
+newline INTO the literal and producing `error C2001: newline in string literal`.
+
+Worse, the corruption is **self-reproducing**: every subsequent `write_text` re-broke it, so three
+repair attempts each reported success and changed nothing on disk.
+
+**Rules:**
+1. **Never edit these sources with Python text mode.** Use the Edit tool (byte-faithful), or
+   `read_bytes()`/`write_bytes()` if scripting is unavoidable.
+2. **When a repair reports success but the file is unchanged, stop repeating it** — the tool is
+   part of the problem. Diff against a known-good copy instead; `tools/ppb-repo-work/src/` is a
+   committed mirror and made the damage obvious in one diff.
+3. A file that has compiled for months can still contain something this fragile. **Assume nothing
+   about byte-level content you did not author.**

@@ -5,6 +5,7 @@
 #include "PivFix.h"    // ObjectHold::PivBindRel / PivFixApply / PivFollowShoulder
 #include "Diag.h"      // Diag::OnPreDrive — read-only contact-listener registration + gated capdis spike
 #include "PerfSys.h"   // PerfSys::OnPreDrive — the child-LOD tier tick (inert until perfPreset > 0)
+#include "GenitalProbe.h"   // genProbe research instrument (2026-08-02)
 #include "NpcFingerTest.h"  // NpcFinger::OnPreDrive — the NPC finger test collider (inert until npcFingerEnable/`nfing`)
 #include "DismemberGuard.h" // DF/NGD ↔ PLANCK guard: head-clone/dismembered-actor exclusion (2026-07-26)
 
@@ -1287,6 +1288,7 @@ namespace ArmIK {
         // (the arms-off artifact), GHOST/NFING never latch onto a severed head, and PIVRESCALE
         // never fights a detached ragdoll. See DismemberGuard.h.
         DismemberGuard::Tick(actor);
+        GenitalProbe::Tick(actor);   // no-op unless genProbe 1
         if (DismemberGuard::IsExcluded(actor)) return;
 
         // PIVGUARD (2026-07-29 v2): per-actor PLANCK pivot-collapse scoping + stranded-pivot

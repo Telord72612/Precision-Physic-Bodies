@@ -37,6 +37,7 @@ add_library(PPB SHARED
     src/Interop.cpp     # HIGGS interface handshake + IsActorGrabbedByPlayer (PivFix grab gate)
     src/PpbApi.cpp      # public touch API: contact engine + messaging interface + PPB_Touch natives
     src/DismemberGuard.cpp # 2026-07-26 DF/NGD ↔ PLANCK guard: death-grace ignore + head-clone exclusion
+    src/GenitalProbe.cpp   # 2026-08-02 research instrument: which signal tracks schlong exposure (genProbe)
 
     src/Probe.cpp       # `probe` console command: read-only actor physics/animation state dump
     src/Diag.cpp        # 2026-07-08 wave-2 gate: read-only contact counter + step timer + census + capdis spike

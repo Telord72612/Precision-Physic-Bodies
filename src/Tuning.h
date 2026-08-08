@@ -676,6 +676,116 @@ namespace ObjectHold {
                                          // the only way to judge the band-aid by eye.
                                         // drives (global stays stock 1), with stranded-pivot self-heal
         float dgHeadPlanck     = 0.f;   // 1 = do NOT PLANCK-ignore severed-head clones (grab test)
+        // dgVictimPlanck (2026-08-02, the floating-draugr fix — user-reported, A/B-confirmed):
+        // 1 = a dismembered VICTIM (a real actor that died) is LEFT UNDER PLANCK, exactly as it
+        // is when PPB is not installed. Only genuine head-clone PROPS (NGD IsHead, or an FF-ref
+        // spawn that never died) keep the permanent ignore PPB was built for.
+        // 0 = pre-fix behaviour: any DF/NGD-touched actor is PLANCK-ignored PERMANENTLY, which
+        // stranded decapitated draugr in mid-air because the ONLY restore path is gated on
+        // !permanent and `permanent` is never cleared.
+        float dgVictimPlanck   = 1.f;
+
+        // genProbe (2026-08-02) — RESEARCH INSTRUMENT for the coming MALE bodies. Logs, per
+        // actor, which candidate signal actually tracks "the schlong is exposed": chain-node
+        // presence, geometry under the chain, the kHidden flag, and body-slot armor/revealing.
+        // Edge-logged (one line per state CHANGE). Ships OFF; measures only, moves nothing.
+        float genProbe         = 0.f;
+
+        // ── HAND-BOX JITTER (2026-08-02 deep dive) ──────────────────────────────────────────
+        // handBoxRelAlpha: the mode-2 relation filter in UpdateEffFrames. The box target is
+        //   E = T_higgs · EMA(R), R = T_higgs⁻¹ · T_handnode. The two sources are sampled at
+        //   DIFFERENT points in the frame: the bone snapshot is fresh this frame, while the HIGGS
+        //   anchor body has had its velocity set but has NOT been stepped yet (we run before
+        //   stepDeltaTime), so it still holds LAST step's result. R therefore carries a whole
+        //   frame of motion, and a 0.05 EMA (~20-frame time constant) cannot track it — the
+        //   residual (EMA(R) − R) displaces the box from the hand every frame, scaling with
+        //   speed and frame-time variance. That is "shakes, worse outdoors, worse when the
+        //   engine struggles". HIGGS has no equivalent: it never measures a relation at runtime
+        //   (cachedTransform · a CONSTANT config offset), one source, no filter.
+        //   1.0 = unfiltered; algebraically identical to mode 1's target (EMA(R) == R, E == T_hand).
+        //   0.05 = pre-2026-08-02 shipped behaviour.
+        // SHIPS AT 0.05 (unchanged) — this build alters nothing until you set it. Live knob.
+        float handBoxRelAlpha  = 0.05f;
+        // handBoxPhaseLog: HBOXPH diagnostic. Logs per hand at ~10 Hz: the real physics step dt
+        // (from our own chain hook, which has always received it and discarded it), our clock's
+        // dt, their ratio (the keyframe gain), how far the box target sits from the hand bone,
+        // how much that moved THIS frame (= the shake, measured), and where the body actually
+        // ENDED UP versus where it was commanded (outcome, not command).
+        float handBoxPhaseLog  = 0.f;
+        // handBoxStepDt (2026-08-02): source invDt from the REAL physics time accumulated across
+        // the frame's substeps, not a wall clock. The wall clock was measurably wrong — 764 live
+        // samples gave it 3.4x the variance of the true step and a gain of 0.11..1.87 (mean 0.92).
+        // ⚠ HISTORY: turning this on ALONE made the hands jitter, because gain then became exactly
+        // 1.000 = DEADBEAT tracking, and the box reproduced its target's own frame-to-frame noise
+        // (dR 0.007..0.057 u/frame). The old clock's chronic under-shoot had been an ACCIDENTAL
+        // low-pass, and it was load-bearing. The damping is now explicit (handBoxTrack), so this
+        // can be correct without being twitchy. Both must be set together.
+        // ⚠ 2026-08-02 OUTCOME: the hand jitter these knobs were built to chase was NOT PPB.
+        // Verified by the user on a NEW GAME WITHOUT PPB INSTALLED — the jitter was still there.
+        // All three below therefore default to ORIGINAL (pre-investigation) behaviour and exist
+        // only as instruments. Measured for the record: out of combat stance the player's hand
+        // BONE moves up to 4.2 u in one frame relative to HIGGS's controller-derived hand body;
+        // in combat stance the same walk gives 0.02 u. ~85x on the peak. That oscillation is
+        // upstream (VRIK/HIGGS/engine); PPB never writes the player's hand bone
+        // (PPBHook.cpp: "if (actor == PlayerCharacter) return; // VRIK owns player arms").
+        float handBoxStepDt    = 0.f;
+
+        // handBoxTrack — the fraction of the remaining position error the box closes each frame.
+        // 1.0 = deadbeat (follows target noise exactly — the jitter). Lower = smoother.
+        // This is the DELIBERATE version of what the broken clock was doing by accident, with the
+        // crucial difference that it is CONSTANT: the old gain swung 0.11..1.87 frame to frame and
+        // could overshoot (>1); this never exceeds 1, so the box can only ever approach its target.
+        // Steady-state lag is bounded and tiny: lag = v * dt * (1-k)/k, i.e. at k=0.88, dt=12 ms
+        // and a 1 m/s hand that is ~1.6 mm. Dial DOWN if any twitch remains, UP toward 1 if the
+        // hand feels like it trails.
+        float handBoxTrack     = 1.f;
+
+        // handBoxWarp (2026-08-02) — the player-space locomotion warp. Teleports all 8 boxes by
+        // the player's per-frame position delta BEFORE the keyframe, copied from HIGGS.
+        // ⚠ WE DO NOT NEED IT, AND IT IS PHASED WRONG.
+        //   * HIGGS needs it because its hand transform is ROOM-space; ours is derived from the
+        //     hand bones' world.translate, which ALREADY contains the player's movement — so the
+        //     warp applies locomotion a SECOND time.
+        //   * HIGGS's own source notes the player's position is not updated until end-of-frame,
+        //     which is why HIGGS uses the char-proxy + room nodes instead of GetPosition(). Ours
+        //     samples GetPosition() at pre-physics, so the delta is a frame stale.
+        // Net: a position error proportional to PLAYER SPEED — zero standing still, growing as
+        // you run. User-reported and matched exactly ("jitter when I move, fine when still"),
+        // and independent of the slab / clock / relation filter, which is why none of those
+        // fixed it. 0 = off (the keyframe closes the full world-space error anyway), 1 = legacy.
+        float handBoxWarp      = 1.f;
+
+        // sceneSuspendHands (2026-08-03) — destroy the player's hand colliders while an
+        // OStim/SexLab scene is running. During a scene OStimVR keeps your hands CONTROLLER-
+        // TRACKED (TrackHands=1) and the animation puts them inside the partner, so our boxes
+        // are live colliders in the middle of it. Nothing else suppresses them: HIGGS gates only
+        // held-object/two-handing (hand.cpp:658), and PLANCK's scene behaviour is incidental.
+        // NOTE FIRST: OStim Standalone VR ships DisablePLANCKduringScenes in OStimVR.ini and it
+        // defaults to 0 — that is the PLANCK half and is likely the bigger lever. This is the PPB
+        // half. 0 = ships (unchanged), 1 = suspend.
+        //   0 = never suspend (ships)
+        //   1 = suspend for the WHOLE scene
+        //   2 = suspend ONLY while the scene camera is in THIRD person; the boxes come
+        //       back the moment you return to first person, so precise touch is kept
+        //       exactly where the hands are controller-tracked and lost only where the
+        //       animation is driving them (which is what put them inside the partner).
+        float sceneSuspendHands = 0.f;
+        // sceneFirstDistU (2026-08-07): mode 2's first/third-person signal. The engine's
+        // IsInFirstPerson() NEVER flips in VR (verified in-game: one THIRD-person line at scene
+        // start, none after), so mode 2 measures what the mode actually IS: the distance from
+        // the CAMERA (HMD) to the scene body's head. First person = the HMD rides the head
+        // (a few units); third person = you float away as a ghost (tens to hundreds).
+        float sceneFirstDistU  = 40.f;
+
+        // pivGuardCombatLoose (2026-08-03) — let PLANCK's pivot loosen apply to PPB-skeleton
+        // actors WHILE IN COMBAT. Coherent because (18_PLANCK_Internals_Reference) the loosen
+        // exists so the ragdoll CAN MATCH THE ANIM POSE. PivGuard runs our actors at loosen-0 so
+        // our baked joints are never collapsed — right for ordinary movement, but it forbids the
+        // ragdoll from reaching poses our joints cannot express, and extreme combat animations are
+        // exactly that. A body that cannot follow its animation reads as STRETCHED.
+        // COST: during combat our joints collapse to the anim pose, so capsule fit and touch
+        // accuracy degrade exactly then. 0 = ships (unchanged), 1 = loose while in combat.
+        float pivGuardCombatLoose = 0.f;
         float dgHeadGrabFix    = 1.f;   // clear the severed head's anchor ragdoll sub-layer so
                                         // HIGGS's hand can contact it (Report 09 §6)
         float dgHeadPark       = 1.f;   // park every severed-head body ON the COM anchor + cut its
@@ -1123,7 +1233,17 @@ namespace ObjectHold {
     float    DgHeadSkelHoldS();  // max hold time for the swap
     bool     DgHeadParkOn();     // park head bodies at the anchor (dgHeadPark)
     bool     DgHeadGrabFixOn();  // clear head anchor sub-layer for HIGGS (dgHeadGrabFix)
-    bool     DgHeadPlanckOn();   // leave head clones under PLANCK (dgHeadPlanck)
+    bool     DgHeadPlanckOn();    // leave head clones under PLANCK (dgHeadPlanck)
+    bool     DgVictimPlanckOn();  // leave dismembered VICTIMS under PLANCK (dgVictimPlanck)
+    bool     GenProbeOn();        // genital dress-signal research probe (genProbe)
+    float    HandBoxRelAlpha();   // mode-2 relation filter; 1 = unfiltered (jitter fix)
+    bool     HandBoxPhaseLogOn(); // HBOXPH jitter diagnostic (handBoxPhaseLog)
+    bool     HandBoxStepDtOn();   // invDt from real physics dt (handBoxStepDt)
+    float    HandBoxTrack();      // per-frame error-closure fraction (handBoxTrack)
+    bool     HandBoxWarpOn();     // player-space locomotion warp (handBoxWarp)
+    int      SceneSuspendHandsMode(); // 0 off / 1 whole scene / 2 third-person only
+    float    SceneFirstDistU();       // mode-2 HMD-to-head threshold (game units)
+    bool     PivGuardCombatLooseOn(); // allow PLANCK loosen during combat
     bool     PlanckLoosenOursOn();// PivGuard v2 master (planckLoosenOurs)
     float    PlanckLoosenGlobal();      // -1 leave alone / 0 force off / 1 force on
     bool     TouchProbeHudOn();  // mapping HUD (touchProbeHud)

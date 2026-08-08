@@ -1,5 +1,79 @@
 # Changelog
 
+## 1.4.1
+
+### Per-NPC head fitting finally works (the random-skull bug)
+
+Reported as NPCs spawning with visibly wrong Havok head sizes — one skull ~150%. Three stacked
+defects, all fixed:
+
+1. **Any mesh could compete for the face landmarks.** The nose/chin UV walk admitted every
+   readable mesh in the actor's tree; on some outfits a boots/body vertex pair won and hit the
+   1.6x clamp. Candidates must now be **skinned to the head bone**.
+2. **The real head was locked out.** The facegen path gated on the trishape's vertex count, which
+   the engine reports wrongly (tens of thousands for a 3,832-vert head); the partition's count is
+   the true one. Verified by dissecting facegen NIFs on disk: parts are small (mouth 141, eyes
+   176, head 996–8464), and the old ≥500 floor excluded them all — so head fitting had silently
+   never worked and the walk fell through to the clothing lottery above.
+3. **Custom head parts could read a landmark from outside the buffer.** Head parts carrying a
+   skin vertex map (some custom NPCs) could map one landmark index past the position block —
+   heap garbage, a 116u "face", and a correct head thrown away by the sanity gate. Maps are now
+   fully validated with an in-envelope fallback.
+
+Verified in VR across mapped and unmapped head parts: three NPCs, three genuinely different
+measured faces (x0.888 / x1.011 / x1.029), zero garbage candidates.
+
+### Dismembered victims no longer hang in the air
+
+The permanent PLANCK-ignore that protects severed-head props was applied to every DF/NGD-touched
+actor — including real victims, whose only restore path was gated on a flag that never cleared.
+A decapitated draugr could float forever. Victims now stay under PLANCK (the state the game is in
+without PPB installed); only genuine head-clone props keep the permanent ignore.
+`dgVictimPlanck` (ships 1) reverts to the old behaviour at 0.
+
+### The synchronized "spasm" near two NPCs
+
+Standing near two roughly equidistant NPCs made both twitch in lockstep ~1/s. The mouth-gate's
+nearest-actor tracker flapped between them every second, and its phoneme writer dirtied the
+tracked actor's facegen 90x/s even at a constant zero. Tracking is now sticky (a challenger must
+be 20% closer) and phonemes write only on change.
+
+### OStim / SexLab scenes
+
+Hand colliders now suspend during scenes (`sceneSuspendHands`, ships at mode **2**: suspended in
+third person, restored in first person so precise touch is kept where hands are
+controller-tracked). First/third detection measures HMD-to-head distance — the engine's
+`IsInFirstPerson()` never changes in VR. Addresses the scene-collision weirdness reports.
+
+### Combat stretching
+
+`pivGuardCombatLoose` (ships 1): PLANCK's constraint loosening — whose purpose is letting the
+ragdoll MATCH the animation pose — is allowed on PPB actors while they are in combat, so extreme
+combat animations no longer read as a stretched body. Capsule fit is intentionally traded away
+only for the duration of combat.
+
+### Also fixed
+
+- HIGGS's hand collision shape was rewritten every frame; now once per body (hygiene).
+- A re-scale sequence abandoned by walking out of range now re-arms on approach instead of
+  waiting for a ragdoll rebuild that may never come (NPCs stuck with a low skull).
+- Every silent exit on the re-scale path now logs a receipt.
+
+### Hair coverage
+
++28 touch rigs: Valkyr HDT-SMP Hairstyles (all 6), Tullius SMP Hair (14), KS Hairdos SMP for Men
+(7), and KS Lavender (wrongly skipped by the original census). 267 rigs total. The generator is
+now maintained in-repo.
+
+### Compatibility
+
+- **Mu Joint Fix**: its FixHeight/AutoHighheel writes the same skeleton node offset PPB's heel
+  handling reads — heel-offset errors on heeled NPCs. Disable `[FixHeight]` in MuJointFix.ini
+  when running both.
+- Note for scene mods: PPB touch capsules and OStim VR coexist as of this release; OStimVR's own
+  `DisablePLANCKduringScenes` (its ini, defaults 0) covers the PLANCK half and is worth enabling.
+
+
 ## 1.4.0
 
 ### Touch API: sub-regions and a depth ladder

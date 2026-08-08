@@ -27,7 +27,7 @@
 namespace logger = SKSE::log;
 
 SKSEPluginInfo(
-    .Version              = { 1, 4, 0 },
+    .Version              = { 1, 4, 1 },
     .Name                 = "PPB",
     .Author               = "mad72",
     .StructCompatibility  = SKSE::StructCompatibility::Independent,
@@ -484,6 +484,36 @@ public:
 };
 static ObodyEventSink g_obodySink;
 
+// ── SCENE SINK (2026-08-03) — OStim / SexLab scene suspension ────────────────────────────────
+// Verified from source: HIGGS has NO scene gating (hand collision is disabled only for held
+// objects and two-handing, hand.cpp:658), and PLANCK's scene behaviour is incidental — its
+// Actor::SetPosition hook temp-ignores repositioned actors for 3-5 s, which scene alignment
+// happens to trigger repeatedly. So suppressing OUR hand colliders during a scene has to be ours.
+// OStim fires "ostim_start" / "ostim_end" as SKSE ModEvents (OStim Standalone Scripts/Source).
+// Note OStimVR ships its own DisablePLANCKduringScenes knob — that covers PLANCK, not us.
+class SceneEventSink : public RE::BSTEventSink<SKSE::ModCallbackEvent> {
+public:
+    RE::BSEventNotifyControl ProcessEvent(const SKSE::ModCallbackEvent* ev,
+                                          RE::BSTEventSource<SKSE::ModCallbackEvent>*) override
+    {
+        if (!ev || !ev->eventName.c_str()) return RE::BSEventNotifyControl::kContinue;
+        const char* n = ev->eventName.c_str();
+        const bool start = _stricmp(n, "ostim_start") == 0 || _stricmp(n, "StartSexLabAnimation") == 0
+                        || _stricmp(n, "AnimationStart") == 0;
+        const bool end   = _stricmp(n, "ostim_end")   == 0 || _stricmp(n, "EndSexLabAnimation")   == 0
+                        || _stricmp(n, "AnimationEnd") == 0;
+        if (!start && !end) return RE::BSEventNotifyControl::kContinue;
+        HandBox::SetSceneSuspended(start);
+        logger::info("SCENE: '{}' -> hand colliders {} (sceneSuspendHands {})", n,
+                     start ? "SUSPENDED" : "restored",
+                     ObjectHold::SceneSuspendHandsMode() == 0 ? "0 - tracked but NOT acted on"
+                     : ObjectHold::SceneSuspendHandsMode() == 1 ? "1 - whole scene"
+                                                               : "2 - third person only");
+        return RE::BSEventNotifyControl::kContinue;
+    }
+};
+static SceneEventSink g_sceneSink;
+
 static int SlotIndexByName(const std::string& s)
 {
     if (s == "hand")   return 0;
@@ -578,8 +608,8 @@ static void ApplySkeletonIni()
             if (eqg != std::string::npos) {
                 std::string k = line.substr(0, eqg), v = line.substr(eqg + 1);
                 auto trimg = [](std::string& s) {
-                    const auto x = s.find_first_not_of(" 	"); if (x == std::string::npos) { s.clear(); return; }
-                    const auto y = s.find_last_not_of(" 	"); s = s.substr(x, y - x + 1);
+                    const auto x = s.find_first_not_of(" \t\r\n"); if (x == std::string::npos) { s.clear(); return; }
+                    const auto y = s.find_last_not_of(" \t\r\n"); s = s.substr(x, y - x + 1);
                 };
                 trimg(k); trimg(v);
                 std::string kl = k; for (auto& c : kl) c = (char)::tolower((unsigned char)c);
@@ -945,8 +975,10 @@ static void OnSKSEMessage(SKSE::MessagingInterface::Message* msg)
         // final, no actor 3D exists yet, and nothing else in this load order writes skeleton paths.
         ApplySkeletonIni();   // user-facing skeleton assignment (runs FIRST)
             ApplySkeletonMap();
-        if (auto* mcSrc = SKSE::GetModCallbackEventSource())
+        if (auto* mcSrc = SKSE::GetModCallbackEventSource()) {
             mcSrc->AddEventSink(&g_obodySink);   // OBody push re-fit (Obody_ApplyMorph)
+            mcSrc->AddEventSink(&g_sceneSink);   // OStim/SexLab scene suspension (ostim_start/ostim_end)
+        }
         Interop::AcquireHiggs();    // grab-gate handshake retry (the AIHands kPostPostLoad+kDataLoaded pattern)
         Interop::AcquireSkee();     // Body-Scale morph handshake retry (SKEE may register after kPostPostLoad)
         Interop::AcquireVrik();     // finger-pose handshake retry (same pattern)
@@ -1027,7 +1059,7 @@ SKSEPluginLoad(const SKSE::LoadInterface* skse)
     SKSE::Init(skse);
 
     logger::info("==================================================");
-    logger::info("PPB v1.4.0 (Precision Physic Bodies) loaded.");
+    logger::info("PPB v1.4.1 (Precision Physic Bodies) loaded.");
     if (auto dir = SKSE::log::log_directory()) {
         logger::info("Log file: {}\\PPB.log", dir->string());
     }

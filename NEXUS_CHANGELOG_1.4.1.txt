@@ -1,0 +1,9 @@
+1.4.1
+- Per-NPC Havok HEAD fitting finally works (the random/oversized skull bug): face landmarks can no longer be read from clothing meshes, the real facegen head is no longer locked out by the engine's lying vertex count, and custom head parts with skin maps can no longer mis-read a landmark. Verified: three NPCs, three correctly different head sizes.
+- Dismembered victims no longer hang in the air (DF/PLANCK interaction) - victims stay under PLANCK, only severed-head props keep the permanent exclusion. dgVictimPlanck 0 reverts.
+- Fixed the synchronized twitch when standing near two NPCs (mouth-gate tracker flapping + needless per-frame phoneme writes).
+- OStim/SexLab: hand colliders suspend during scenes; in first person they return so precise touch keeps working (sceneSuspendHands, ships on).
+- Combat: stretched-looking bodies during extreme combat animations fixed (pivGuardCombatLoose, ships on; capsule fit trades away only in combat).
+- HIGGS hand shape written once per body instead of every frame; walked-away re-scales now resume on approach.
+- +28 SMP hair touch rigs: Valkyr (6), Tullius (14), KS for Men (7), KS Lavender. 267 total.
+- Compatibility note: Mu Joint Fix's FixHeight conflicts with heel handling - disable its [FixHeight] when running both.

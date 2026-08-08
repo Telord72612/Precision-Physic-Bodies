@@ -26,6 +26,19 @@
 // ============================================================================
 namespace HandBox {
 
+    // Called from Hooks::StepChainHook with the EXACT float hkpWorld::stepDeltaTime is about to
+    // integrate. PPB has always received this value at that seam and discarded it; the jitter
+    // diagnostic needs it to compute the real keyframe gain (dtStep x our invDt). Cheap relaxed
+    // atomic store, safe unconditionally on the physics thread — no allocation, no float math.
+    void NotePhysicsStepDt(float dt);
+
+    // Scene suspension (2026-08-03). Set true while an OStim/SexLab scene is running: the hand
+    // rigs are destroyed for the duration via the SAME path handBoxEnable 0 uses, so no new code
+    // path is introduced. Restored automatically on scene end.
+    void SetSceneSuspended(bool on);
+    bool IsSceneSuspended();
+
+
     // Register the HIGGS PrePhysicsStep callback (vfunc 21). Idempotent; called
     // from PerfSys::RegisterHiggs (the kPostPostLoad + kDataLoaded handshake
     // site). ALL body create/destroy/keyframe work runs inside that callback —

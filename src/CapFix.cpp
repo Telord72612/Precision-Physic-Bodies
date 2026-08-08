@@ -1163,8 +1163,36 @@ namespace GrabDiag {
                         auto& g3 = geom->GetGeometryRuntimeData();
                         auto* si3 = g3.skinInstance.get();
                         auto* sp3 = si3 ? si3->skinPartition.get() : nullptr;
-                        if (sp3 && sp3->numPartitions > 0 && sp3->vertexCount >= 500) {
+                        // >= 100, not >= 500 (2026-08-07): disk dissection of a real facegen NIF
+                        // proved the parts are SMALL -- mouth 141, eyes 176, brows 371, the head
+                        // itself 996..8464 -- and the runtime partition count EQUALS the disk
+                        // block's true count. The old 500 floor locked every real facegen part out
+                        // of this path (which then fell to the static walk, where boots and feet
+                        // competed for the nose -- the random-skull bug). uvErr + anatomy + the
+                        // bigger-mesh tie-break sort head from mouth/eyes below.
+                        if (sp3 && sp3->numPartitions > 0 && sp3->vertexCount >= 100) {
                             auto& pt3 = sp3->partitions[0];
+                            // partition-local -> global index map for POSITIONS. When the counts
+                            // match the map is identity in practice; verify by sampling and drop
+                            // it if any mapped index escapes the dynamic buffer bounds.
+                            const std::uint16_t* vmap3 = pt3.vertexMap;
+                            {
+                                // 2026-08-08 (Carmella nose at z=0 in a 110..131 block): the
+                                // 24-entry SAMPLE validation let one specific mapped index escape
+                                // the block and read heap garbage past the disk vector -- her
+                                // nose landed 116u from her chin and anatomy threw the whole
+                                // (correct!) head away. 3832 entries cost nothing: validate ALL,
+                                // any escapee -> identity. Her disk block itself was verified
+                                // clean offline (every vertex z in [110.2, 131.6]).
+                                bool vmOk = vmap3 != nullptr;
+                                const int nAll = static_cast<int>(sp3->vertexCount);
+                                for (int j = 0; vmOk && j < nAll; ++j)
+                                    if (vmap3[j] >= sp3->vertexCount) vmOk = false;
+                                if (!vmOk) vmap3 = nullptr;
+                            }
+                            auto mapIdx3 = [&](int j) -> int {
+                                return vmap3 ? static_cast<int>(vmap3[j]) : j;
+                            };
                             const int n3 = static_cast<int>(sp3->vertexCount);
                             const int st3 = pt3.buffData
                                 ? static_cast<int>(pt3.buffData->vertexDesc.GetSize()) : 0;
@@ -1247,7 +1275,15 @@ namespace GrabDiag {
                                     }
                                     if (bi3[0] >= 0 && bi3[1] >= 0) {
                                         const float e0 = std::sqrt(bd3[0]), e1 = std::sqrt(bd3[1]);
-                                        float pn[3], pc[3]; rdPos(bi3[0], pn); rdPos(bi3[1], pc);
+                                        float pn[3], pc[3];
+                                        auto rdLm = [&](int j, float o3[3]) {
+                                            rdPos(mapIdx3(j), o3);
+                                            // landmark must live inside the block's own sampled
+                                            // z-envelope; a mapped escapee reads garbage -> retry
+                                            // the UNMAPPED index before rejecting the head.
+                                            if (o3[2] < lo3 - 10.f || o3[2] > hi3 + 10.f) rdPos(j, o3);
+                                        };
+                                        rdLm(bi3[0], pn); rdLm(bi3[1], pc);
                                         const bool bodySp = (lo3 > 60.f);
                                         const float ln3[3] = { pn[0] - (bodySp ? kHeadBindX : 0.f),
                                                                pn[1] - (bodySp ? kHeadBindY : 0.f),
@@ -1299,9 +1335,32 @@ namespace GrabDiag {
                             }
                         }
                     }
+                    // -- HEAD-SKIN GATE (2026-08-07, the random-skull fix) -----------------------
+                    // The nose/chin walk admitted ANY readable mesh as a candidate, defended only
+                    // by uvErr + the anatomy gate. In-game result: three fresh NPCs, three head
+                    // sizes, one skull at ~150% -- a BOOT/body vertex pair that sat at nose-like
+                    // UVs, roughly centred, ~8u apart, walked straight through and hit the 1.6x
+                    // clamp. (The log had been saying it plainly: cand='Feet',
+                    // cand='MRTDefaultBootsAA...' evaluated as nose candidates.)
+                    // A face landmark can only live on a mesh SKINNED TO THE HEAD BONE. Feet,
+                    // boots and outfits are skinned to leg/spine bones -- excluded before they
+                    // can compete. Facegen heads/brows/eyes ARE head-skinned, so the unreadable
+                    // diagnostics for the real head stay intact.
+                    bool headSkinned = false;
+                    if (auto* gAs = geom->AsTriShape()) {
+                        auto& gr2 = gAs->GetGeometryRuntimeData();
+                        if (auto* siH = gr2.skinInstance.get()) {
+                            const std::uint32_t nb = siH->skinData ? siH->skinData->bones : 0;
+                            for (std::uint32_t b = 0; b < nb && b < 512 && siH->bones; ++b) {
+                                RE::NiAVObject* nd = siH->bones[b];
+                                const char* nm = nd ? nd->name.c_str() : nullptr;
+                                if (nm && std::strcmp(nm, "NPC Head [Head]") == 0) { headSkinned = true; break; }
+                            }
+                        }
+                    }
                     BodyMesh bm;
-                    const bool readable = !fgDone && ResolveMeshSource(geom, bm, true);
-                    if (!fgDone && !readable) {
+                    const bool readable = !fgDone && headSkinned && ResolveMeshSource(geom, bm, true);
+                    if (!fgDone && headSkinned && !readable) {
                         // the 17:57 candidate dump proved the REAL head never reaches the resolver
                         // (every accepted candidate was clothing/hair). Name the unreadable shapes
                         // so the next look tells us what the facegen head IS and why it fails.

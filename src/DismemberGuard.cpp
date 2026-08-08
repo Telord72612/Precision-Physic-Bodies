@@ -109,6 +109,10 @@ namespace {
         double stripAt        = 0.0;   // clone body-strip due time (0 = not scheduled)
         bool   planckIgnored  = false; // we currently hold a PLANCK ignore on it
         bool   permanent      = false; // NGD/DF-touched: ignore + PPB skip forever
+        bool   planckPerm     = false; // the PLANCK ignore specifically is FOREVER (clone props
+                                       // only). Kept separate from `permanent`, which also means
+                                       // "detection settled, stop probing, PPB skip" — conflating
+                                       // the two is what stranded decapitated victims (2026-08-02).
         bool   exclPpb        = false; // PPB per-actor systems skip this actor
         bool   firstProbeDone = false; // FF refs block PPB work only until this flips
         int    grabFixTries   = 0;     // Report 09 §6 sub-layer fix attempts
@@ -224,11 +228,39 @@ namespace {
         // ⚠ This is the setting whose absence originally caused the artifacts PPB was built to
         // stop (PLANCK driving the clone's invisible skeleton — floating head, driven SMP hair).
         // If those return, that is the trade and the answer is "PLANCK is required for the grab".
+        // ── VICTIM vs CLONE PROP (2026-08-02, the floating-draugr fix) ──────────────────────
+        // User report, A/B-confirmed twice: decapitated draugr hang in mid-air, and the bug
+        // disappears with PPB removed OR dgEnable 0 — while dgDeathCut 0 alone does NOT fix it,
+        // which acquits our death-cut and convicts this ignore.
+        // The defect: `permanent` gates the ONLY PlanckRestore call site (`!r.permanent`) and is
+        // never cleared anywhere, so ANY DF/NGD-touched actor was dropped from PLANCK FOREVER —
+        // including a real victim that merely lost a limb. PLANCK's documented "re-adds unmanaged
+        // ragdolls within 50u" recovery is defeated by the ignore too, so nothing ever took the
+        // body back.
+        // The reasoning behind the fix is the reporter's own known-good state rather than any
+        // theory about PLANCK's internals: WITH PPB UNINSTALLED THE VICTIM STAYS UNDER PLANCK.
+        // So to match the state we know works, a victim must stay under PLANCK. Only genuine
+        // head-clone PROPS — the invisible full-skeleton actors PPB was built to stop PLANCK
+        // driving — keep the permanent ignore. Same test the clone classifier already uses.
+        // `exclPpb` still applies to victims, so the arms-off artifact stays fixed.
+        const bool cloneProp = isHead || (r.deathTime == 0.0 && a->GetFormID() >= 0xFF000000);
+        const bool leaveVictim = !cloneProp && ObjectHold::DgVictimPlanckOn();
+        r.planckPerm = cloneProp;   // ONLY props are ignored forever
+
         const bool skipIgnore = isHead && ObjectHold::DgHeadPlanckOn();
         if (skipIgnore) {
             if (DgLog())
                 logger::info("DG: {:08X} head clone LEFT UNDER PLANCK (dgHeadPlanck 1) — grab test",
                              a->GetFormID());
+        } else if (leaveVictim) {
+            // A dismembered VICTIM. Never add an ignore here, and release one an earlier stage
+            // (the pre-sever decapitate-handler ignore) may still be holding — that one exists
+            // only to make the sever happen on an un-driven ragdoll, and its job is done by now.
+            if (r.planckIgnored) PlanckRestore(a, r, "victim — sever done, back to PLANCK");
+            if (DgLog())
+                logger::info("DG: {:08X} '{}' is a dismembered VICTIM (not a clone prop) -> PPB "
+                             "skip, but LEFT UNDER PLANCK so the ragdoll falls normally "
+                             "(dgVictimPlanck 1)", a->GetFormID(), ActorName(a));
         } else {
             PlanckIgnore(a, r, "dismember-touched");
         }
@@ -1138,7 +1170,19 @@ namespace DismemberGuard {
             // it could not make at hit time (main thread, public API, DF keeps full authority).
             if (!r.cutDone && r.cutAt > 0.0 && now >= r.cutAt) {
                 r.cutDone = true;
-                if (a) RequestDeathDismember(a, it->first);
+                // 2026-08-02: a draugr kill produced a scheduled cut and ZERO DEATH-CUT lines,
+                // although every exit inside RequestDeathDismember logs. The one silent path is
+                // this `if (a)` — a handle that fails to resolve for a just-dying actor — so the
+                // skip now says so instead of vanishing. Same rule as the heel receipt: a branch
+                // that declines to act must leave a trace, or its silence gets read as "it ran
+                // and found nothing".
+                if (a) {
+                    RequestDeathDismember(a, it->first);
+                } else if (DgLog()) {
+                    logger::info("DG: DEATH-CUT {:08X} SKIPPED — actor handle did not resolve at "
+                                 "the scheduled cut ({:.2f}s after death); no cut was offered.",
+                                 it->first, now - r.deathTime);
+                }
             }
 
             // Death-grace expiry: hand an ordinary corpse back to PLANCK. dgGraceDeadS <= 0 =
@@ -1148,7 +1192,11 @@ namespace DismemberGuard {
             // never cover it — corpses now stay ignored for good by default; the knob remains
             // for experiments).
             const float graceS = ObjectHold::DgGraceDeadS();
-            if (!r.permanent && r.planckIgnored && r.deathTime > 0.0 && graceS > 0.f &&
+            // 2026-08-02: was `!r.permanent`, which no dismember-touched actor could ever
+            // satisfy (permanent is set at detection and never cleared) — the restore was dead
+            // code for exactly the actors that needed it. Now keyed on the PLANCK-specific flag,
+            // so clone props stay ignored forever and victims come back after the grace.
+            if (!r.planckPerm && r.planckIgnored && r.deathTime > 0.0 && graceS > 0.f &&
                 now - r.deathTime > graceS) {
                 PlanckRestore(a, r, "grace expired");
                 r.graceDone = true;   // corpse handed back to PLANCK — never re-ignore it

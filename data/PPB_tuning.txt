@@ -1631,7 +1631,6 @@ lmNeutArmChord 6.437
 # top of es. Faralda: sculpt 0.914 x race 1.08 = 0.99 -> capsules at her true face.
 lmNeutNoseChin 5.161
 lmGainHead 1.0
-
 # --- ReTouch GHOST ZONES + MOUTH TOUCH (2026-07-24, Path B test) --------------
 # Havok-native touch: detection recomputed per frame from live transforms (tracks
 # the body EXACTLY, zero physics cost). Markers refresh ~4 Hz for dialing.
@@ -1800,6 +1799,91 @@ dgHeadGrabFix 1
 # absence stopped PLANCK driving the clone (floating head / driven SMP hair). If those artifacts come
 # back, that IS the trade-off answer. Set 0 to revert.
 dgHeadPlanck 0
+
+# dgVictimPlanck (2026-08-02) — the floating-draugr fix.
+# 1 = a dismembered VICTIM (a real actor that died) is LEFT UNDER PLANCK, exactly as it is
+#     when PPB is not installed, so its ragdoll falls normally. Only genuine head-clone PROPS
+#     keep the permanent PLANCK ignore.
+# 0 = pre-fix behaviour (any DF/NGD-touched actor ignored forever). Set 0 to A/B the fix.
+dgVictimPlanck 1
+
+# genProbe (2026-08-02) — RESEARCH INSTRUMENT for the coming MALE bodies. Measures only.
+# Set 1, then dress/undress a male NPC in VR. One GENPROBE line is written to PPB.log each
+# time the signal state CHANGES, with every candidate dress-signal side by side:
+#   nodes=n/10   how many SOS chain bones exist (NOT a male test — females have them too)
+#   hidden=      how many of those bones carry the NiAVObject kHidden flag
+#   geom=        geometry shapes found under the chain (the actual schlong mesh)
+#   geomHidden=  how many of those are hidden
+#   bodyArmor= / revealing= / armor='name'   the biped-slot-32 signal
+# Whichever column flips in lockstep with what you SEE is the signal the rig can trust.
+genProbe 0
+
+# ── HAND JITTER (2026-08-02 investigation) ────────────────────────────────────────────
+# handBoxRelAlpha — the mode-2 relation filter. The box target is E = T_higgs . EMA(R),
+# where R = T_higgs^-1 . T_handnode. The two sources are read at DIFFERENT points in the
+# frame: the hand bones are sampled fresh, but the HIGGS anchor body has had its velocity
+# set and NOT yet been stepped, so it still holds last step's result. R therefore carries a
+# whole frame of motion, and a 0.05 EMA (~20-frame time constant) cannot track it. The
+# residual displaces the box from the hand every frame, scaling with speed and frame-time
+# variance -- "shakes, worse outdoors, worse when the engine struggles".
+#   1    = unfiltered. Algebraically identical to mode 1's target (EMA(R) == R, E == T_hand).
+#          THIS IS THE CANDIDATE FIX -- set it to 1 and compare.
+#   0.05 = shipped behaviour (unchanged). Revert here instantly if the sustained-press
+#          judder from 2026-07-12 comes back; both are live, no rebuild.
+handBoxRelAlpha 0.05
+# handBoxStepDt — source of invDt for the hand-box keyframe.
+#   1 = the REAL physics time accumulated across the frame's substeps. Correct by the Havok
+#       contract, and makes tracking deadbeat (gain 1.000 measured). BUT deadbeat means the box
+#       reproduces its target's own frame-to-frame noise exactly.
+#   0 = legacy steady_clock. Measurably WRONG (gain 0.11..1.87, mean 0.92) but the chronic
+#       under-shoot damped the target noise, which is the configuration the hands were stable in.
+handBoxStepDt 0
+# handBoxTrack — fraction of the remaining position error the hand box closes each frame.
+#   1.00 = deadbeat: follows the target's own frame-to-frame noise = the jitter.
+#   0.88 = shipped. Smooth, and the lag is ~1.6 mm at a 1 m/s hand (v*dt*(1-k)/k).
+# Lower it (0.80, 0.75) if any twitch remains; raise it toward 1.00 if the hand feels like it
+# trails your real hand. This is the DELIBERATE version of the damping the old broken clock was
+# providing by accident — constant instead of swinging 0.11..1.87, and it can never overshoot.
+handBoxTrack 1.0
+# handBoxWarp — player-space locomotion warp. 1 = legacy behaviour, 0 = off.
+handBoxWarp 1
+
+# ── OStim / SexLab scene + combat gates (2026-08-03) ──────────────────────────────────
+# sceneSuspendHands — destroy the player's hand colliders while a scene is running.
+# During a scene OStimVR keeps your hands CONTROLLER-TRACKED (TrackHands=1) and the
+# animation puts them inside your partner, so our boxes are live colliders in the middle
+# of it. Nothing else suppresses them: HIGGS gates only held-object/two-handing, and
+# PLANCK's scene behaviour is incidental (its SetPosition hook temp-ignores repositioned
+# actors for 3-5s, which scene alignment happens to trigger).
+# ⚠ TRY THIS FIRST, IT IS NOT OURS: OStim Standalone VR ships DisablePLANCKduringScenes in
+#   SKSE/Plugins/OStimVR.ini and it DEFAULTS TO 0. That is the PLANCK half and is probably
+#   the bigger lever for scene weirdness. This knob is the PPB half.
+# 0 = never  |  1 = whole scene  |  2 = THIRD PERSON ONLY (fingers return in first person)
+# OStim VR ships DefaultThirdPerson=1, so scenes START third-person; the OStim Wheel switches.
+sceneSuspendHands 2
+
+# sceneFirstDistU — mode 2's first/third-person signal (the engine's IsInFirstPerson never
+# flips in VR). First person = the HMD rides the scene body's head within this distance;
+# third person = the ghost floats beyond it. Raise if first person is not detected.
+sceneFirstDistU 40
+# pivGuardCombatLoose — let PLANCK's pivot loosen apply to PPB actors while IN COMBAT.
+# PLANCK's loosen exists so the ragdoll CAN MATCH THE ANIM POSE. PivGuard runs our actors
+# at loosen-0 so our baked joints are never collapsed — right for ordinary movement, but it
+# forbids the ragdoll from reaching poses our joints cannot express, and extreme combat
+# animations are exactly that. A body that cannot follow its animation reads as STRETCHED.
+# COST: during combat our joints collapse to the anim pose, so capsule fit and touch
+# accuracy degrade exactly then.
+pivGuardCombatLoose 1
+# handBoxPhaseLog — HBOXPH diagnostic, ~5 Hz, both hands per line. Measures the shake
+# directly rather than inferring it:
+#   dRel   = how far the box target moved RELATIVE to the hand bone this frame = THE SHAKE
+#   relErr = how far the target currently sits from the bone
+#   gain   = (real physics step dt) x (the invDt we feed the keyframe); 1.000 = deadbeat
+# CONFIRMS the filter diagnosis: dRel ~0 standing still, rising while running outdoors,
+#   while gain stays near 1.0 -> the target is displaced, the keyframe is faithful.
+# REFUTES it: dRel stays ~0 through a visibly shaking session -> filter innocent, and the
+#   gain column then names the next suspect.
+handBoxPhaseLog 0
 # MAPPING SESSION HUD (2026-07-29): with touchProbe on, an actual TOUCH (closer than
 # touchProbeHudU) pops 'PPB: <slot>[side] C<n> = <proposed name>' in your view. Confirm or
 # correct each label by voice; every shown line is also logged as TOUCHHUD for the record.

@@ -3,7 +3,8 @@
 #include "PPBHook.h"
 #include "DismemberGuard.h"
 #include "PivFix.h"     // PivGuard flag bracket (2026-07-29 v2)  // PlanckSetSetting — the loosen-scope restore (2026-07-29)
-#include "Diag.h"       // Diag::Armed / OnPhysicsStep — the physics-step timer sink
+#include "Diag.h"
+#include "HandBox.h"       // Diag::Armed / OnPhysicsStep — the physics-step timer sink
 
 #include <atomic>
 #include <string>
@@ -334,6 +335,9 @@ namespace Hooks {
 
     static std::int32_t StepChainHook(void* world, float dt)
     {
+        // Unconditional, ahead of the Diag gate: this is the ONLY place PPB can see the real
+        // integration delta, and the hand-jitter diagnostic needs it even when Diag is disarmed.
+        HandBox::NotePhysicsStepDt(dt);
         if (!Diag::Armed() || !s_chainedStep)
             return s_chainedStep ? s_chainedStep(world, dt) : 0;
 

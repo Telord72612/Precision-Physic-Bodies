@@ -389,6 +389,8 @@ namespace {
     // struct suffices, no double-buffer.
     struct Snapshot {
         std::uint64_t id = 0;
+        float dtOwnMs  = 0.f;   // wall-clock interval (legacy source), diagnostic
+        float dtUsedMs = 0.f;   // what actually fed invDt this frame
         float invDt = 90.f;                    // 1/frame-dt captured at snapshot time
         bool  valid[2] = { false, false };     // [0]=right, [1]=left
         float pos[2][kNodeCount][3]{};
@@ -422,7 +424,42 @@ namespace {
         QuatW rot{ 1.f, 0.f, 0.f, 0.f };
     };
     RelState g_rel[2];                       // smoothed hand-node-in-HIGGS-body relation
-    constexpr float kRelAlpha = 0.05f;       // heavy smoothing — the relation is near-constant
+    // kRelAlpha was a compile-time 0.05. It is now the live knob handBoxRelAlpha (2026-08-02):
+    // the residual (EMA(R) - R) displaces the box from the hand every frame, and at alpha 1 the
+    // algebra collapses to E == T_handnode (byte-identical to mode 1's target). Ships at 0.05.
+    constexpr float kRelAlphaDefault = 0.05f;
+
+    // ── JITTER DIAGNOSTIC (2026-08-02) ────────────────────────────────────────────────────
+    // The boxes are MOTION_KEYFRAMED with infinite mass, so contacts CANNOT move them: their
+    // position is 100% commanded. Any shake therefore lives in the command, and these channels
+    // measure the command's two halves separately — how far the TARGET strays from the hand
+    // bone (relErr/dRel), and whether the body actually LANDS where it was told (gain).
+    std::atomic<std::uint32_t> g_stepDtBits{ 0 };   // last real hkpWorld step dt, raw float bits
+    // Physics time accumulated across every substep since the last keyframe. THIS is the interval
+    // the previous keyframe's velocity was actually integrated over, and therefore the correct
+    // basis for the next one. Integer microseconds so the physics-thread add stays trivial.
+    // MEASURED 2026-08-02, 764 samples in a live shaking session:
+    //   dtStep (real)  mean 13.92 ms  stdev  6.82
+    //   dtOwn  (clock) mean 19.81 ms  stdev 23.08   <- 3.4x the variance, saturates its 100 ms clamp
+    //   gain = dtStep x invDt: range 0.11..1.87, stdev 0.26, 37% of frames outside 0.80..1.25.
+    // A gain of 0.11 executes 11% of the commanded motion; 1.87 executes 187%. That multiplicative
+    // per-frame noise on position IS the shake.
+    std::atomic<bool> g_sceneSuspend{ false };   // an OStim/SexLab scene is running
+    std::atomic<std::uint32_t> g_stepAccumUs{ 0 };
+    float g_prevRelErr[2][3]{};
+    bool  g_prevRelErrOk[2]{};
+    float g_dRelU[2]{};                            // per-frame movement of the box RELATIVE to
+                                                   // the hand = the shake, in game units
+    float g_relErrU[2]{};
+    float g_prevRelPos[2][3]{};                    // last frame's RAW (unfiltered) relation
+    bool  g_prevRelPosOk[2]{};
+    float g_dRU[2]{};                              // per-frame movement of the RAW relation R.
+                                                   // This is the DRIVER of the whole effect and
+                                                   // stays meaningful at every alpha — unlike
+                                                   // dRel, which is identically 0 at alpha 1 by
+                                                   // construction. If the two sources were truly
+                                                   // in phase, dR would be ~0; whatever dR reads
+                                                   // is the frame-of-motion the anchor is stale by.
 
     inline void QuatToMat3(const QuatW& q, float m[9]) {
         const float xx=q.x*q.x, yy=q.y*q.y, zz=q.z*q.z;
@@ -514,13 +551,42 @@ namespace {
                 relPos[c] = gR[0*3+c]*d[0] + gR[1*3+c]*d[1] + gR[2*3+c]*d[2];
             QuatW relQ = Mat3ToQuat(relRot);
             RelState& rs = g_rel[hand];
-            if (!rs.init) {
+            const float relAlpha = ObjectHold::HandBoxRelAlpha();
+            if (!rs.init || relAlpha >= 0.999f) {
+                // alpha 1 -> S == R -> E == T_handnode exactly: no filter, no phase residual.
                 rs.init = true;
                 std::memcpy(rs.pos, relPos, sizeof(relPos));
                 rs.rot = relQ;
             } else {
-                for (int c = 0; c < 3; ++c) rs.pos[c] += (relPos[c] - rs.pos[c]) * kRelAlpha;
-                rs.rot = QuatNlerp(rs.rot, relQ, kRelAlpha);
+                for (int c = 0; c < 3; ++c) rs.pos[c] += (relPos[c] - rs.pos[c]) * relAlpha;
+                rs.rot = QuatNlerp(rs.rot, relQ, relAlpha);
+            }
+            // ── CHANNEL A: the shake, measured. Because gR is orthonormal, |E.pos - hp| is
+            // EXACTLY |rs.pos - relPos| in game units — not a proxy for the displacement, it IS
+            // the displacement of the box target from the hand bone it should sit on.
+            {
+                const float ex = rs.pos[0]-relPos[0], ey = rs.pos[1]-relPos[1], ez = rs.pos[2]-relPos[2];
+                g_relErrU[hand] = std::sqrt(ex*ex + ey*ey + ez*ez);
+                if (g_prevRelErrOk[hand]) {
+                    const float dx = ex-g_prevRelErr[hand][0], dy = ey-g_prevRelErr[hand][1],
+                                dz = ez-g_prevRelErr[hand][2];
+                    g_dRelU[hand] = std::sqrt(dx*dx + dy*dy + dz*dz);
+                } else g_dRelU[hand] = 0.f;
+                g_prevRelErr[hand][0]=ex; g_prevRelErr[hand][1]=ey; g_prevRelErr[hand][2]=ez;
+                g_prevRelErrOk[hand] = true;
+            }
+            // ── CHANNEL A2: the RAW relation's per-frame movement. Survives alpha = 1 (where the
+            // filtered residual is identically zero), so the instrument still reports something
+            // in the SHIPPED configuration — the failure mode this project has now hit twice.
+            {
+                if (g_prevRelPosOk[hand]) {
+                    const float rx = relPos[0]-g_prevRelPos[hand][0],
+                                ry = relPos[1]-g_prevRelPos[hand][1],
+                                rz = relPos[2]-g_prevRelPos[hand][2];
+                    g_dRU[hand] = std::sqrt(rx*rx + ry*ry + rz*rz);
+                } else g_dRU[hand] = 0.f;
+                std::memcpy(g_prevRelPos[hand], relPos, sizeof(relPos));
+                g_prevRelPosOk[hand] = true;
             }
             // E = T_higgs · R_rel_smoothed
             float sR[9];
@@ -1002,9 +1068,31 @@ namespace {
             // shrink-only REGARDLESS (only X may ever exceed baseline); if a grown slab still misses
             // contacts, the fallback is the same as elsewhere (recreate at the next HIGGS body rebuild).
             const float xCapHi = ObjectHold::HiggsSlabAllowGrow() ? (2.0f * sb.half[0]) : sb.half[0];
-            box->halfExtents[0] = (kx >= 0.f) ? std::min(std::max(kx, kSlabFloorM), xCapHi)    : sb.half[0];
-            box->halfExtents[1] = (ky >= 0.f) ? std::min(std::max(ky, kSlabFloorM), sb.half[1]) : sb.half[1];
-            box->halfExtents[2] = (kz >= 0.f) ? std::min(std::max(kz, kSlabFloorM), sb.half[2]) : sb.half[2];
+            const float wantX = (kx >= 0.f) ? std::min(std::max(kx, kSlabFloorM), xCapHi)     : sb.half[0];
+            const float wantY = (ky >= 0.f) ? std::min(std::max(ky, kSlabFloorM), sb.half[1]) : sb.half[1];
+            const float wantZ = (kz >= 0.f) ? std::min(std::max(kz, kSlabFloorM), sb.half[2]) : sb.half[2];
+            // ── IDEMPOTENT SKIP (2026-08-02, user-reproduced hand shake) ─────────────────────
+            // These three lines used to be written UNCONDITIONALLY, every frame, into a LIVE
+            // hkpBoxShape that HIGGS keyframes and Havok is actively deriving contacts from.
+            // Our OWN boxes never did that — ResolveGeometryLive writes "only when a knob
+            // actually moved" — and a comment there even claims this function is the source of
+            // that idiom ("the SlabWrite idiom ... idempotent skip"). It never was.
+            // In-VR, user-reproduced: hand shake that vanished the moment these writes stopped,
+            // and which was ABSENT WITH A WEAPON EQUIPPED — because HIGGS swaps to the weapon
+            // collision body then, so the body being rewritten is no longer the active one.
+            // That discriminator is what identified this site.
+            // Writing only on change means one write per HIGGS body recreation instead of ~90/s.
+            if (box->halfExtents[0] != wantX ||
+                box->halfExtents[1] != wantY ||
+                box->halfExtents[2] != wantZ) {
+                box->halfExtents[0] = wantX;
+                box->halfExtents[1] = wantY;
+                box->halfExtents[2] = wantZ;
+                logger::info("HBOX slab {} extents -> [{:.4f} {:.4f} {:.4f}]m (was [{:.4f} {:.4f} "
+                             "{:.4f}]) — one write per body, not per frame",
+                             hand == 1 ? "L" : "R", wantX, wantY, wantZ,
+                             sb.half[0], sb.half[1], sb.half[2]);
+            }
         }
     }
 
@@ -1053,7 +1141,50 @@ namespace {
     {
         for (int hand = 0; hand < 2; ++hand) {
             auto& rig = g_rig[hand];
-            const bool want = ObjectHold::HandBoxEnabled() && g_snap.valid[hand] &&
+            // Scene gate (2026-08-03): during an OStim/SexLab scene the player's hands stay
+            // CONTROLLER-TRACKED (OStimVR TrackHands=1) and sit inside the partner, so our boxes
+            // are live colliders in the middle of the animation. Nothing else in the stack
+            // suppresses them — HIGGS gates only held/two-handing, and PLANCK's own scene
+            // behaviour is incidental (its SetPosition hook temp-ignores repositioned actors).
+            // Reuses the handBoxEnable-0 teardown path exactly; no new lifecycle.
+            // mode 2 = suspend ONLY in third person. In OStim VR first person the hands stay
+            // CONTROLLER-tracked (TrackHands=1) and sit where the player actually reaches, so
+            // the boxes are wanted there. It is third person that hands them to the ANIMATION,
+            // which is what buried them inside the partner. Camera is polled every frame, so a
+            // mid-scene wheel switch flips the rigs within a frame (recreate carries the usual
+            // 100 ms collision-off grace).
+            bool sceneOff = false;
+            if (g_sceneSuspend.load(std::memory_order_relaxed)) {
+                const int mode = ObjectHold::SceneSuspendHandsMode();
+                if (mode == 1) sceneOff = true;
+                else if (mode >= 2) {
+                    // IsInFirstPerson() never flips in VR (in-game verified 2026-08-07: one
+                    // THIRD line at scene start, none on wheel switches, boxes gone in both
+                    // views). Measure the mode instead: HMD-to-scene-head distance. First
+                    // person rides the head; the third-person ghost floats away.
+                    bool first = false;
+                    auto* cam = RE::PlayerCamera::GetSingleton();
+                    RE::NiAVObject* camRoot = cam ? cam->cameraRoot.get() : nullptr;
+                    auto* pl = RE::PlayerCharacter::GetSingleton();
+                    auto* r3 = pl ? pl->Get3D(false) : nullptr;
+                    RE::NiAVObject* head = r3 ? r3->GetObjectByName(RE::BSFixedString("NPC Head [Head]")) : nullptr;
+                    if (camRoot && head) {
+                        const auto& c = camRoot->world.translate;
+                        const auto& hd = head->world.translate;
+                        const float dx = c.x-hd.x, dy = c.y-hd.y, dz = c.z-hd.z;
+                        const float lim = ObjectHold::SceneFirstDistU();
+                        first = (dx*dx + dy*dy + dz*dz) < lim * lim;
+                    }
+                    sceneOff = !first;
+                    static int s_lastFirst = -1;
+                    if (s_lastFirst != (int)first) {
+                        s_lastFirst = (int)first;
+                        logger::info("SCENE camera -> {} person: hand colliders {}",
+                                     first ? "FIRST" : "THIRD", first ? "RESTORED" : "suspended");
+                    }
+                }
+            }
+            const bool want = ObjectHold::HandBoxEnabled() && g_snap.valid[hand] && !sceneOff &&
                               !(beast && !ObjectHold::HandBoxBeast());
             if (rig.live) {
                 if (rig.bhkWorld != authWorld) {
@@ -1140,6 +1271,7 @@ namespace {
     // path in KeyframeAll recovers those cleanly with a zero-velocity snap.
     void PlayerSpaceWarp(void* authWorld, RE::PlayerCharacter* player)
     {
+        if (!ObjectHold::HandBoxWarpOn()) { g_prevPlayerPosValid = false; return; }
         if (!player) { g_prevPlayerPosValid = false; return; }
         const RE::NiPoint3 pp = player->GetPosition();
         const float cur[3] = { pp.x, pp.y, pp.z };
@@ -1365,7 +1497,36 @@ namespace {
         if (s_last.time_since_epoch().count() != 0)
             dt = std::chrono::duration<float>(now - s_last).count();
         s_last = now;
-        g_snap.invDt = 1.f / std::clamp(dt, 1e-4f, 0.1f);
+
+        // ── invDt SOURCE (2026-08-02, measurement-driven) ────────────────────────────────────
+        // applyHardKeyFrame sets v = (target - current) * invDt and Havok then integrates that
+        // velocity for however long it actually steps. So invDt must be the INVERSE OF THE
+        // PHYSICS TIME the body will be carried for. It never was: PPB measured wall-clock
+        // between snapshots instead, and a live 764-sample capture of a shaking session showed
+        // that clock has 3.4x the variance of the real step (stdev 23.08 ms vs 6.82 ms), pegs its
+        // own 100 ms clamp, and drives the executed fraction (gain = dtStep * invDt) across
+        // 0.11..1.87 with 37% of frames outside 0.80..1.25. Executing 11% of the commanded motion
+        // one frame and 187% the next IS the visible shake.
+        // Now: use the physics time actually accumulated across every substep since the previous
+        // keyframe — the exact interval the last command was integrated over, and the best
+        // estimate of the next. Falls back to the old clock if the step hook has not reported
+        // yet (first frames, or the hook failed to install).
+        const std::uint32_t accUs = g_stepAccumUs.exchange(0, std::memory_order_relaxed);
+        const float stepDt = static_cast<float>(accUs) * 1.0e-6f;
+        const bool  useStep = ObjectHold::HandBoxStepDtOn() && stepDt > 1e-4f && stepDt < 0.5f;
+        // ── EXPLICIT DAMPING (2026-08-02) ────────────────────────────────────────────────────
+        // applyHardKeyFrame drives v = (target - here) * invDt, so scaling invDt by k makes the
+        // box close k of the remaining error per frame: a first-order low-pass with a CONSTANT,
+        // known coefficient. k = 1 is deadbeat and reproduces the target's own noise, which is
+        // the jitter users reported once the dt was corrected. The previous stability came from
+        // the broken clock under-shooting by a random 0.11..1.87 — same averaged effect, but
+        // noisy and able to OVERSHOOT. This cannot exceed 1, so the box only ever approaches.
+        // Error decays geometrically (no ringing) and steady-state lag is v*dt*(1-k)/k ~ 1.6 mm
+        // at k=0.88 / 12 ms / 1 m/s.
+        const float track = ObjectHold::HandBoxTrack();
+        g_snap.invDt = track / std::clamp(useStep ? stepDt : dt, 1e-4f, 0.1f);
+        g_snap.dtOwnMs  = dt * 1000.f;          // diagnostic only
+        g_snap.dtUsedMs = (useStep ? stepDt : dt) * 1000.f;
         g_snap.valid[0] = g_snap.valid[1] = false;
 
         // slab-only mode needs no node snapshot — the poses are only for the boxes
@@ -1401,7 +1562,41 @@ namespace {
     }
 
     // ── the PrePhysicsStep consumer (registered on HIGGS vfunc 21) ───────────
-    void OnPrePhysicsStep(void* worldArg)
+    // ── HBOXPH (2026-08-02) — the jitter instrument ───────────────────────────────────────
+    // Emitted from the once-per-frame consumer, AFTER the keyframe command, so it always runs
+    // whenever boxes exist. ~5 Hz, both hands on one line.
+    //   dtStep = the REAL delta hkpWorld is integrating (from our own chain hook, which has
+    //            always received it and thrown it away). dtOwn = the steady_clock interval PPB
+    //            actually feeds applyHardKeyFrame. gain = dtStep x invDt; 1.0 = deadbeat.
+    //   relErr = how far the box TARGET sits from the hand bone (game units).
+    //   dRel   = how far that moved THIS frame. THIS IS THE SHAKE, measured directly.
+    // READING IT: dRel ~0 standing still and rising while running outdoors, with gain staying
+    // near 1.0, means the TARGET is being displaced and the keyframe executes it faithfully ->
+    // the relation filter is the cause, and handBoxRelAlpha 1 is the fix. If dRel stays ~0
+    // through a visibly shaking session, the filter is innocent and gain is the next suspect.
+    void PhaseLog()
+    {
+        if (!ObjectHold::HandBoxPhaseLogOn()) return;
+        static std::chrono::steady_clock::time_point s_last{};
+        const auto now = std::chrono::steady_clock::now();
+        if (s_last.time_since_epoch().count() != 0 &&
+            now - s_last < std::chrono::milliseconds(200)) return;   // ~5 Hz
+        s_last = now;
+        const std::uint32_t bits = g_stepDtBits.load(std::memory_order_relaxed);
+        float dtStep = 0.f;
+        std::memcpy(&dtStep, &bits, sizeof(dtStep));
+        const float invDt  = g_snap.invDt;
+        const float dtOwn  = (invDt > 1e-6f) ? (1.f / invDt) : 0.f;
+        const float gain   = dtStep * invDt;
+        logger::info("HBOXPH dtStep={:.2f}ms dtUsed={:.2f}ms dtOwn={:.2f}ms gain={:.3f} | L relErr={:.3f}u "
+                     "dRel={:.3f}u dR={:.3f}u | R relErr={:.3f}u dRel={:.3f}u dR={:.3f}u | alpha={:.2f} track={:.2f}",
+                     dtStep * 1000.f, g_snap.dtUsedMs, g_snap.dtOwnMs, gain,
+                     g_relErrU[1], g_dRelU[1], g_dRU[1],
+                     g_relErrU[0], g_dRelU[0], g_dRU[0],
+                     ObjectHold::HandBoxRelAlpha(), ObjectHold::HandBoxTrack());
+    }
+
+        void OnPrePhysicsStep(void* worldArg)
     {
         if (!AnythingActive()) return;                       // zero-knob cost: a few float reads
 
@@ -1413,7 +1608,7 @@ namespace {
         void* authWorld = cell ? static_cast<void*>(cell->GetbhkWorld()) : nullptr;
         if (!authWorld || worldArg != authWorld) return;
 
-        // review N1: act exactly ONCE per frame (the OnFrame counter is the frame
+    // review N1: act exactly ONCE per frame (the OnFrame counter is the frame
         // edge) — the 2nd physics substep of a slow frame has a zero transform
         // delta and would re-keyframe the boxes into momentum-less ghosts mid-frame.
         if (g_snap.id == g_lastConsumedSnap) return;
@@ -1431,6 +1626,7 @@ namespace {
         FilterRefresh(authWorld);         // on-change word write + UpdateCollisionFilterOnEntity
         PlayerSpaceWarp(authWorld, player);  // 2026-07-12: locomotion delta moved POSITIONALLY (HIGGS parity)
         KeyframeAll(authWorld);           // 8× applyHardKeyFrame + clamp (consumes the re-solved def)
+        PhaseLog();                       // HBOXPH jitter diagnostic (no-op unless handBoxPhaseLog)
         DumpIfRequested(authWorld);
         BoxDumpIfRequested();             // per-box readback (edge on handBoxDumpNow)
     }
@@ -1438,6 +1634,23 @@ namespace {
 }  // namespace
 
 namespace HandBox {
+
+    void SetSceneSuspended(bool on) { g_sceneSuspend.store(on, std::memory_order_relaxed); }
+    bool IsSceneSuspended()         { return g_sceneSuspend.load(std::memory_order_relaxed); }
+
+
+    // Relaxed store only — physics thread, no allocation, no float math (the collision-callback
+    // discipline: this seam has produced a movaps CTD before).
+    void NotePhysicsStepDt(float dt)
+    {
+        std::uint32_t bits;
+        std::memcpy(&bits, &dt, sizeof(bits));
+        g_stepDtBits.store(bits, std::memory_order_relaxed);
+        if (dt > 0.f && dt < 1.f)
+            g_stepAccumUs.fetch_add(static_cast<std::uint32_t>(dt * 1.0e6f),
+                                    std::memory_order_relaxed);
+    }
+
 
     // ── ReTouch fingertip export (2026-07-24): the mouth-touch gate wants "where is the
     // player's pointing finger" — that is one of OUR boxes. Returns the box CENTER (the boxes
