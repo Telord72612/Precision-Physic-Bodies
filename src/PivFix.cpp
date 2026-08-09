@@ -768,7 +768,12 @@ namespace ObjectHold {
         // reaching poses our joints cannot express. Extreme combat animations are exactly that,
         // and a body that cannot follow its animation reads as stretched (user-reported).
         // With the knob on, leave PLANCK's global loosen alone while the actor is in combat.
-        if (ObjectHold::PivGuardCombatLooseOn() && actor->IsInCombat()) {
+        // 2026-08-08 refinement (user: a surrendered NPC must keep full-fit touch): the loosen
+        // exists for EXTREME COMBAT ANIMS, and an in-combat NPC with her weapon away is not
+        // performing any -- so require the weapon DRAWN too. A surrendered NPC keeps precise
+        // capsule fit; the moment she re-draws, the loosen returns.
+        if (ObjectHold::PivGuardCombatLooseOn() && actor->IsInCombat() &&
+            actor->AsActorState() && actor->AsActorState()->IsWeaponDrawn()) {
             static std::mutex s_cmbMx;
             static std::set<std::uint32_t> s_cmbSeen;
             bool first = false;

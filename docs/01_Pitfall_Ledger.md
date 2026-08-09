@@ -1707,3 +1707,62 @@ repair attempts each reported success and changed nothing on disk.
    committed mirror and made the damage obvious in one diff.
 3. A file that has compiled for months can still contain something this fragile. **Assume nothing
    about byte-level content you did not author.**
+
+---
+
+## A sheathed weapon is NOT gone — HIGGS keeps its rigid body alive on the controller, and "collision disabled" doesn't cover custom layers (2026-08-09)
+
+The "ghost weapon" report: equip a weapon, leave combat stance (no VRIK holster involved), and the
+empty hand still shoves SMP hair/tail capsules around and fires touch contacts, exactly as if the
+blade were still there.
+
+**Fact 1 — the weapon body never leaves.** When the player sheathes, HIGGS does NOT destroy or
+detach its weapon collision rigid body. It stays alive, riding the controller ~8–13 u from the
+palm, forever. `GetWeaponRigidBody()` keeps returning it. "I see no weapon" tells you nothing
+about the physics world.
+
+**Fact 2 — HIGGS's own shutoff is convention, not physics.** `DisableWeaponCollision()` sets a
+bit (bit 14) in the body's filter info. That convention is honored **only where HIGGS's own filter
+logic checks it**. PPB's capsules live on a custom layer (56) whose pair decisions HIGGS never
+wrote rules for — so the "disabled" weapon body still collided with every PPB body at full force.
+Both receipts were TRUE (`drawn=0`, `higgsColDis=1/1`) while the symptom continued: the telemetry
+was honest and the disable was real, it just didn't apply to the pairs that mattered.
+
+**The fix ladder (all three ship in 1.4.2):**
+1. **Probe gate** (`apiWeaponDrawnOnly`): stop *reporting* weapon contacts while sheathed — kills
+   phantom API/VRTouchEvents events, does nothing to physics.
+2. **HIGGS shutoff** (`weaponSheathedColOff`): call `DisableWeaponCollision()` while sheathed —
+   fixes HIGGS-checked pairs only.
+3. **Pair rejection at filter dispatch**: while sheathed, any Havok pair of (published weapon
+   body) × (PPB layer-56 body) returns Ignore inside the `AddCollisionFilterComparisonCallback`
+   splice. This is the layer that actually stopped the capsule shove; there is nothing below
+   Havok's dispatch for a ghost to survive in.
+
+**Lessons:**
+1. **"Disabled" in another mod's API means "disabled for the pairs that mod knows about."** Any
+   custom-layer body must enforce its own pair policy at the filter callback; inheriting another
+   plugin's conventions silently fails for exactly your bodies.
+2. The user's correction — "it's combat stance changing, I never mentioned holstering" — redefined
+   the bug. VRIK holsters UNEQUIP (weapon body goes null); stance flips don't. Two superficially
+   identical symptoms with different mechanisms. **Restate the repro in the user's exact terms
+   before fixing.**
+3. The WPNSTATE receipt (drawn flag + higgsColDis + hilt-to-palm, ~2 Hz under `apiLog`) settled in
+   one in-game minute what three sessions of theory could not. **Instrument the state you're
+   arguing about.**
+
+---
+
+## PLANCK reordered its interface vtable between 0.7.1 and 0.8.x — select the layout by build number (2026-08-09)
+
+A Nexus CTD report (execute-AV in `activeragdoll.dll` with `loosenRagdollConstraintPivots` in RDX)
+decoded to this: PLANCK 0.7.1 has settings calls at vtable slots 3/4 and actor-ignore at 5/6;
+0.8.x moved ignores to 3/4 and settings to 13/14. PPB's interface struct matched 0.8.x only, so on
+an outdated 0.7.1 install our first settings call jumped into an RTTI descriptor. The current
+Nexus release is 0.8.1 — the reporter simply hadn't updated — but outdated installs are a
+permanent population.
+
+**Fix (ships in 1.4.2):** slot 0 (`GetBuildNumber`) is identical in both layouts, so it is always
+safe to call. `DismemberGuard.cpp` reads it once at acquire and routes every subsequent PLANCK
+call through the matching layout (`IPlanck071` mirror struct for < 80000; builds < 70000 are
+refused with a log warning). **A plugin interface obtained by messaging is a raw vtable — version
+it before the second call, because the first wrong-slot call is an arbitrary jump, not an error.**

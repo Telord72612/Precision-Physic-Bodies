@@ -1,5 +1,48 @@
 # Changelog
 
+## 1.4.2
+
+### The ghost weapon is dead (sheathed weapons no longer touch anything)
+
+Reported as: equip a weapon, leave combat stance, and the empty hand still pushes SMP hair and
+tails around and fires touch contacts — as if the blade were still there. It was. HIGGS keeps its
+weapon collision body alive on the controller when you sheathe; its own "collision disabled" flag
+is a convention that PPB's custom collision layer never consulted, so the invisible body kept
+colliding with every PPB capsule at full force.
+
+Fixed with three stacked layers, all shipping on:
+
+1. **Contact reporting is weapon-drawn-gated** (`apiWeaponDrawnOnly`) — no phantom weapon
+   contacts to the Touch API or consumers (VRTouchEvents etc.) while sheathed.
+2. **HIGGS's weapon collision is switched off while sheathed** (`weaponSheathedColOff`) and
+   restored the instant you draw.
+3. **Havok-level pair rejection** — while sheathed, any collision pair of (weapon body) × (PPB
+   capsule) is refused at the collision filter itself, so the ghost cannot push anything.
+
+Verified in VR: stance flips near SMP-rigged NPCs — capsules still, log silent while sheathed;
+drawing restores blade collision and contact reporting instantly (both engine-narrowphase and
+geometric attribution confirmed live).
+
+### No more CTD on outdated PLANCK installs (0.7.1 vtable compat)
+
+A reported on-load crash in `activeragdoll.dll` decoded to a vtable mismatch: PLANCK reordered
+its plugin interface between 0.7.1 and 0.8.x, so on an old install PPB's first settings call
+jumped into unrelated memory. PPB now reads PLANCK's build number (the one slot stable across
+layouts) and routes every call through the matching layout — 0.8.x and 0.7.x both work, and
+builds older than 0.7.0 are refused with a log warning instead of a crash. You should still
+update PLANCK to the current Nexus release (0.8.1).
+
+### Surrendered NPCs keep precise touch
+
+The 1.4.1 combat loosen (`pivGuardCombatLoose`) applied to any NPC flagged in-combat, including
+one who had surrendered with her weapon away — degrading capsule fit exactly when you might
+touch her. The loosen now requires the weapon actually drawn; it returns the moment she re-draws.
+
+### Diagnostics
+
+New `WPNSTATE` receipt (under `apiLog 1`): weapon drawn state, HIGGS collision-disable state,
+and hilt-to-palm distance at ~2 Hz — the instrument that solved the ghost weapon.
+
 ## 1.4.1
 
 ### Per-NPC head fitting finally works (the random-skull bug)

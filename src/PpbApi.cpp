@@ -503,7 +503,88 @@ namespace {
             auto* hk = *reinterpret_cast<void**>(reinterpret_cast<std::uintptr_t>(ni) + 0x10);
             return (reinterpret_cast<std::uintptr_t>(hk) & 7) ? nullptr : hk;
         };
-        if (hig) Diag::PublishWeaponBodies(hkpOf(hig->GetWeaponRigidBody(false)),
+        // -- SHEATHED-WEAPON GATE (2026-08-08, user-reported phantom) --------------------
+        // HIGGS keeps its weapon rigid body ALIVE when the weapon is sheathed (it only turns
+        // the body's collision off -- which is why the NPC never moved). Our probe had no
+        // drawn-state check at all, so a VRIK-holstered weapon kept registering WEAPON
+        // contacts, and the FSMP push channel visibly shoved wig chords from a weapon that
+        // was on the player's hip. HIGGS's own weapon collision is gated on exactly this
+        // state (hand.cpp:863) -- we copied the probe but not the gate.
+        // -- WPNSTATE receipt (2026-08-08, the stance-change ghost) -----------------------
+        // The stance-change reproduction proved a REAL Havok weapon contact (src=ENG) but the
+        // log could not say what the drawn flag read AT that moment, nor where the weapon body
+        // sat relative to the hand. Guessing has missed twice on this bug; measure instead.
+        // ~2 Hz while apiLog is on: the drawn flag, HIGGS's own collision-disabled state, and
+        // the weapon-body-to-palm distance per hand. One stance flip in front of the log picks
+        // the correct gate (flag vs position vs HIGGS DisableWeaponCollision).
+        if (ObjectHold::ApiLogEnabled() && hig) {
+            static std::uint64_t s_wpnLog = 0;
+            const std::uint64_t nowMs = static_cast<std::uint64_t>(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch()).count());
+            if (nowMs - s_wpnLog > 500) {
+                s_wpnLog = nowMs;
+                auto* plS = RE::PlayerCharacter::GetSingleton();
+                const bool drawnNow = plS && plS->AsActorState() && plS->AsActorState()->IsWeaponDrawn();
+                float dR = -1.f, dL = -1.f;
+                for (int h2 = 0; h2 < 2; ++h2) {
+                    float wp[3], wq[3], pad;
+                    if (!GrabDiag::WeaponSegmentU(h2 == 1, wp, wq, &pad)) continue;
+                    float palm[3];
+                    if (!HandBox::BoxCenterWorldU(h2, 3, palm)) continue;
+                    const float dx = wp[0]-palm[0], dy = wp[1]-palm[1], dz = wp[2]-palm[2];
+                    (h2 ? dL : dR) = std::sqrt(dx*dx + dy*dy + dz*dz);
+                }
+                logger::info("WPNSTATE drawn={} higgsColDis(R/L)={}/{} hilt-to-palm R={:.1f}u L={:.1f}u",
+                             drawnNow ? 1 : 0,
+                             hig->IsWeaponCollisionDisabled(false) ? 1 : 0,
+                             hig->IsWeaponCollisionDisabled(true)  ? 1 : 0,
+                             dR, dL);
+            }
+        }
+        bool wpnDrawn = true;
+        // -- SHEATHED-WEAPON COLLISION SHUTOFF (2026-08-08, measured) ---------------------
+        // WPNSTATE telemetry through live stance flips proved all three facts at once:
+        // the drawn flag tracks the stance HONESTLY (0/1 crisp on every toggle); HIGGS's
+        // weapon collision body NEVER leaves the controller (hilt-to-palm ~13u while
+        // sheathed -- not on the hip); and nothing ever disables its collision
+        // (higgsColDis stayed 0/0 throughout). That body is the "ghost sword" physically
+        // shoving hair while the hand is visibly empty. HIGGS's public API exists for
+        // exactly this arbitration (slots 13-15, same calls Physical Collision VR uses),
+        // so: drawn=0 -> DisableWeaponCollision, drawn=1 -> Enable. Paired with our own
+        // flag so we never fight another mod's disable and only ever re-enable what WE
+        // turned off.
+        if (ObjectHold::ApiWeaponDrawnOnly()) {
+            auto* pl = RE::PlayerCharacter::GetSingleton();
+            wpnDrawn = pl && pl->AsActorState() && pl->AsActorState()->IsWeaponDrawn();
+        }
+        {
+            static bool s_weDisabled[2] = { false, false };
+            for (int h = 0; h < 2; ++h) {
+                const bool left = h == 1;
+                if (!hig) break;
+                if (!wpnDrawn && ObjectHold::WeaponSheathedColOff() && !s_weDisabled[h]) {
+                    if (!hig->IsWeaponCollisionDisabled(left)) {
+                        hig->DisableWeaponCollision(left);
+                        s_weDisabled[h] = true;
+                        logger::info("WPNSTATE {} weapon collision OFF (sheathed) via HIGGS API",
+                                     left ? "L" : "R");
+                    }
+                } else if ((wpnDrawn || !ObjectHold::WeaponSheathedColOff()) && s_weDisabled[h]) {
+                    hig->EnableWeaponCollision(left);
+                    s_weDisabled[h] = false;
+                    logger::info("WPNSTATE {} weapon collision restored (drawn) via HIGGS API",
+                                 left ? "L" : "R");
+                }
+            }
+        }
+        // feed the pair-rejection filter EVERY tick (identity is needed precisely when
+        // sheathed; the nullptr publish below only gates ENG attribution, not this)
+        if (hig)
+            NpcFinger::NoteWeaponBodies(hkpOf(hig->GetWeaponRigidBody(false)),
+                                        hkpOf(hig->GetWeaponRigidBody(true)), !wpnDrawn);
+        if (hig && wpnDrawn)
+                 Diag::PublishWeaponBodies(hkpOf(hig->GetWeaponRigidBody(false)),
                                            hkpOf(hig->GetWeaponRigidBody(true)));
         else     Diag::PublishWeaponBodies(nullptr, nullptr);
         for (int hand = 0; hand < 2; ++hand) {
@@ -536,7 +617,7 @@ namespace {
             // the blade tip never registered (user-verified miss, 2026-07-30). The point
             // fallback inside WeaponSegmentU covers unreadable shapes; its one-shot log
             // names the shape actually carried.
-            if (GrabDiag::WeaponSegmentU(isLeft, hp.weapon.p, hp.weapon.q, &hp.weapon.pad)) {
+            if (wpnDrawn && GrabDiag::WeaponSegmentU(isLeft, hp.weapon.p, hp.weapon.q, &hp.weapon.pad)) {
                 // ── BLADE-RADIUS CAP (2026-07-31, user-caught) ──────────────────────────
                 // The form-bound radius is the weapon's second extent — for an axe that is
                 // the blade PLANE's breadth (23u), making the probe a 46u-diameter barrel:

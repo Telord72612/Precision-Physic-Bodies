@@ -776,6 +776,15 @@ namespace ObjectHold {
         // the CAMERA (HMD) to the scene body's head. First person = the HMD rides the head
         // (a few units); third person = you float away as a ghost (tens to hundreds).
         float sceneFirstDistU  = 40.f;
+        // apiWeaponDrawnOnly (2026-08-08): the weapon probe only reports while the player's
+        // weapon is actually DRAWN. Off = pre-fix behaviour (a VRIK-sheathed weapon kept
+        // registering phantom contacts and pushing wigs from the hip). 1 = ships.
+        float apiWeaponDrawnOnly = 1.f;
+        // weaponSheathedColOff (2026-08-08): while the weapon is sheathed, actively disable
+        // HIGGS's weapon COLLISION via its public API (and restore on draw). Measured: the
+        // collision body rides the controller ~13u from the palm even when sheathed, and
+        // nothing else ever turns it off -- it physically shoves hair from an empty hand.
+        float weaponSheathedColOff = 1.f;
 
         // pivGuardCombatLoose (2026-08-03) — let PLANCK's pivot loosen apply to PPB-skeleton
         // actors WHILE IN COMBAT. Coherent because (18_PLANCK_Internals_Reference) the loosen
@@ -1243,6 +1252,8 @@ namespace ObjectHold {
     bool     HandBoxWarpOn();     // player-space locomotion warp (handBoxWarp)
     int      SceneSuspendHandsMode(); // 0 off / 1 whole scene / 2 third-person only
     float    SceneFirstDistU();       // mode-2 HMD-to-head threshold (game units)
+    bool     ApiWeaponDrawnOnly();    // weapon probe only while drawn (apiWeaponDrawnOnly)
+    bool     WeaponSheathedColOff();  // disable HIGGS weapon collision while sheathed
     bool     PivGuardCombatLooseOn(); // allow PLANCK loosen during combat
     bool     PlanckLoosenOursOn();// PivGuard v2 master (planckLoosenOurs)
     float    PlanckLoosenGlobal();      // -1 leave alone / 0 force off / 1 force on

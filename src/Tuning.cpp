@@ -196,7 +196,7 @@ namespace ObjectHold {
                     PK_NOSNAP(dgDeferDf), PK_NOSNAP(dgHeadTrack),
                     PK_NOSNAP(dgDeathCut), PK_NOSNAP(dgDeathCutDelayS), PK_NOSNAP(dgDeathNodeTries),
                     PK_NOSNAP(dgHitLocated), PK_NOSNAP(dgHitMaxDistU),
-                    PK_NOSNAP(dgHeadSkel), PK_NOSNAP(dgHeadSkelHoldS), PK_NOSNAP(dgHeadPark), PK_NOSNAP(dgHeadStripHair), PK_NOSNAP(dgHeadGrabFix), PK_NOSNAP(dgHeadPlanck), PK_NOSNAP(dgVictimPlanck), PK_NOSNAP(genProbe), PK_NOSNAP(handBoxRelAlpha), PK_NOSNAP(handBoxPhaseLog), PK_NOSNAP(handBoxStepDt), PK_NOSNAP(handBoxTrack), PK_NOSNAP(handBoxWarp), PK_NOSNAP(sceneSuspendHands), PK_NOSNAP(sceneFirstDistU), PK_NOSNAP(pivGuardCombatLoose), PK_NOSNAP(planckLoosenOurs), PK_NOSNAP(planckLoosenGlobal), PK_NOSNAP(touchProbeHud), PK_NOSNAP(touchProbeHudU),
+                    PK_NOSNAP(dgHeadSkel), PK_NOSNAP(dgHeadSkelHoldS), PK_NOSNAP(dgHeadPark), PK_NOSNAP(dgHeadStripHair), PK_NOSNAP(dgHeadGrabFix), PK_NOSNAP(dgHeadPlanck), PK_NOSNAP(dgVictimPlanck), PK_NOSNAP(genProbe), PK_NOSNAP(handBoxRelAlpha), PK_NOSNAP(handBoxPhaseLog), PK_NOSNAP(handBoxStepDt), PK_NOSNAP(handBoxTrack), PK_NOSNAP(handBoxWarp), PK_NOSNAP(sceneSuspendHands), PK_NOSNAP(sceneFirstDistU), PK_NOSNAP(apiWeaponDrawnOnly), PK_NOSNAP(weaponSheathedColOff), PK_NOSNAP(pivGuardCombatLoose), PK_NOSNAP(planckLoosenOurs), PK_NOSNAP(planckLoosenGlobal), PK_NOSNAP(touchProbeHud), PK_NOSNAP(touchProbeHudU),
                     PK_NOSNAP(lmBrAYc), PK_NOSNAP(lmBrAYm), PK_NOSNAP(lmBrBYc), PK_NOSNAP(lmBrBYm),
                     PK_NOSNAP(lmBrAZc), PK_NOSNAP(lmBrAZm), PK_NOSNAP(lmBrBZc), PK_NOSNAP(lmBrBZm),
                     PK_NOSNAP(lmBrRc),  PK_NOSNAP(lmBrRm),  PK_NOSNAP(lmBrAX),
@@ -843,6 +843,8 @@ namespace ObjectHold {
     bool  HandBoxWarpOn()       { return g_tune.handBoxWarp > 0.5f; }
     int   SceneSuspendHandsMode()  { return (int)(g_tune.sceneSuspendHands + 0.5f); }
     float SceneFirstDistU()        { return g_tune.sceneFirstDistU; }
+    bool  ApiWeaponDrawnOnly()     { return g_tune.apiWeaponDrawnOnly > 0.5f; }
+    bool  WeaponSheathedColOff()   { return g_tune.weaponSheathedColOff > 0.5f; }
     bool  PivGuardCombatLooseOn()  { return g_tune.pivGuardCombatLoose > 0.5f; }
     bool  PlanckLoosenOursOn()  { return g_tune.planckLoosenOurs > 0.5f; }
     float PlanckLoosenGlobal() { return g_tune.planckLoosenGlobal; }

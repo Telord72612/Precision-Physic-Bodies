@@ -1,0 +1,5 @@
+1.4.2
+- The ghost weapon is dead: sheathing a weapon (or leaving combat stance with one equipped) left an invisible weapon collision body on your hand that still pushed SMP hair/tails and fired touch contacts. HIGGS keeps that body alive when sheathed and its "collision disabled" flag never applied to PPB's collision layer. Fixed with three stacked layers: contact reporting is weapon-drawn-gated, HIGGS weapon collision is switched off while sheathed, and sheathed weapon-vs-PPB collision pairs are refused at the Havok filter itself. Drawing restores everything instantly. Verified in VR.
+- No more crash-on-load with an outdated PLANCK (0.7.1): PLANCK reordered its plugin interface between 0.7.1 and 0.8.x, and calling through the wrong layout crashed in activeragdoll.dll. PPB now detects PLANCK's build and uses the matching layout - both versions work. Please still update PLANCK to 0.8.1.
+- Surrendered NPCs keep precise touch: the 1.4.1 combat loosen now also requires the weapon actually drawn, so an NPC who yielded with her weapon away keeps full capsule fit.
+- New WPNSTATE diagnostic under apiLog 1 (weapon state / HIGGS collision state / hilt-to-palm distance).

@@ -54,6 +54,27 @@ namespace {
         virtual bool SetSettingDouble(const char* name, double val) = 0;
     };
 
+    // -- PLANCK 0.7.x vtable order (2026-08-08, the Nexus CTD report) ------------------------
+    // PLANCK REORDERED its interface vtable between 0.7.1 and 0.8.x: in 0.7.1 (an OLDER
+    // public release still on many users' machines — the current Nexus release is 0.8.1;
+    // 0.7.1 layout source-verified from tools/_research/planck/include/pluginapi.h) the
+    // settings sit at slots 3/4 and the ignore calls at 5/6; in 0.8.x the ignores sit at 3/4
+    // and the settings at 13/14. The struct above matches 0.8.x ONLY, so an outdated 0.7.1
+    // user's first settings call jumped into an RTTI descriptor -- execute-AV at
+    // activeragdoll+0084FC0 with "loosenRagdollConstraintPivots" still in RDX, exactly as
+    // reported. Slot 0 (GetBuildNumber) is identical in both layouts, so the build number
+    // read through EITHER declaration is safe and selects the layout below.
+    struct IPlanck071 {
+        virtual unsigned int GetBuildNumber() = 0;                                  // 0 (same)
+        virtual bool Deprecated1(const std::string_view& name, double& out) = 0;    // 1
+        virtual bool Deprecated2(const std::string& name, double val) = 0;          // 2
+        virtual bool GetSettingDouble(const char* name, double& out) = 0;           // 3
+        virtual bool SetSettingDouble(const char* name, double val) = 0;            // 4
+        virtual void AddIgnoredActor(RE::Actor* actor) = 0;                         // 5
+        virtual void RemoveIgnoredActor(RE::Actor* actor) = 0;                      // 6
+    };
+    unsigned int g_planckBuild = 0;   // resolved at acquire; selects the layout for every call
+
     // The handshake message (planckinterface001.cpp): dispatch to "PLANCK", it fills the
     // function pointer, GetApiFunction(1) returns the v1 interface.
     struct PlanckMessage {
@@ -180,7 +201,8 @@ namespace {
             }
             return;
         }
-        g_planck->AddIgnoredActor(a);
+        if (g_planckBuild >= 80000) g_planck->AddIgnoredActor(a);
+        else reinterpret_cast<IPlanck071*>(g_planck)->AddIgnoredActor(a);
         r.planckIgnored = true;
         if (DgLog())
             logger::info("DG: PLANCK-ignore {:08X} '{}' ({})", a->GetFormID(), ActorName(a), why);
@@ -191,7 +213,8 @@ namespace {
         if (!r.planckIgnored) return;
         r.planckIgnored = false;   // clear even if the actor is gone — never double-restore
         if (!g_planck || !a) return;
-        g_planck->RemoveIgnoredActor(a);
+        if (g_planckBuild >= 80000) g_planck->RemoveIgnoredActor(a);
+        else reinterpret_cast<IPlanck071*>(g_planck)->RemoveIgnoredActor(a);
         if (DgLog())
             logger::info("DG: PLANCK-restore {:08X} '{}' ({})", a->GetFormID(), ActorName(a), why);
     }
@@ -944,11 +967,15 @@ namespace DismemberGuard {
     // PLANCK runtime settings passthrough (used by the per-actor loosen scoping in Hooks.cpp).
     bool PlanckGetSetting(const char* name, double& out)
     {
-        return g_planck ? g_planck->GetSettingDouble(name, out) : false;
+        if (!g_planck) return false;
+        if (g_planckBuild >= 80000) return g_planck->GetSettingDouble(name, out);
+        return reinterpret_cast<IPlanck071*>(g_planck)->GetSettingDouble(name, out);
     }
     bool PlanckSetSetting(const char* name, double val)
     {
-        return g_planck ? g_planck->SetSettingDouble(name, val) : false;
+        if (!g_planck) return false;
+        if (g_planckBuild >= 80000) return g_planck->SetSettingDouble(name, val);
+        return reinterpret_cast<IPlanck071*>(g_planck)->SetSettingDouble(name, val);
     }
 
 
@@ -967,6 +994,20 @@ namespace DismemberGuard {
                          sizeof(PlanckMessage*), "PLANCK");
         if (!pm.GetApiFunction) { logger::info("DG: PLANCK did not answer the interface handshake."); return; }
         g_planck = static_cast<IPlanckInterface001*>(pm.GetApiFunction(1));
+        if (g_planck) {
+            g_planckBuild = g_planck->GetBuildNumber();   // slot 0: identical in every layout
+            if (g_planckBuild < 70000) {
+                logger::warn("DG: PLANCK build {} predates the 0.7.1 interface this plugin "
+                             "knows -- interface calls DISABLED (detection-only). Update PLANCK.",
+                             g_planckBuild);
+                g_planck = nullptr;
+            } else {
+                logger::info("DG: PLANCK build {} -> {} vtable layout (settings@{}, ignores@{})",
+                             g_planckBuild, g_planckBuild >= 80000 ? "0.8.x" : "0.7.x",
+                             g_planckBuild >= 80000 ? "13/14" : "3/4",
+                             g_planckBuild >= 80000 ? "3/4" : "5/6");
+            }
+        }
         if (!g_planck) { logger::info("DG: PLANCK GetApiFunction(1) returned null."); return; }
         logger::info("DG: PLANCK interface=OK build={} — dismember guard live (dgEnable={}, grace={:.0f}s).",
                      g_planck->GetBuildNumber(), DgOn() ? 1 : 0, ObjectHold::DgGraceDeadS());

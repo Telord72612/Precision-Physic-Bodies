@@ -3005,8 +3005,43 @@ namespace NpcFinger {
         return false;
     }
 
-    int FilterDecision(std::uint32_t infoA, std::uint32_t infoB)
+    // -- SHEATHED-WEAPON PAIR REJECTION state (2026-08-08) ------------------------------
+    // The ghost-sword endgame. Measured in order: the drawn flag is honest; the weapon
+    // body rides the controller ~8-13u from the palm even when sheathed; HIGGS's
+    // DisableWeaponCollision DID engage (higgsColDis=1/1) and the API contacts stopped --
+    // yet the body STILL bulldozed our chord capsules, because HIGGS's disable convention
+    // is honored by the filters HIGGS manages, and our chords live on our own layer-56
+    // words: that pairing never consults it. So we reject the pair ourselves, here, where
+    // we already sit inside the filter dispatch. Words captured on the main thread each
+    // API tick; relaxed atomics only (collision threads -- never log here).
+    static std::atomic<std::uint32_t> g_wpnWord[2] = { 0, 0 };
+    static std::atomic<bool>          g_wpnSheathed{ false };
+
+    void NoteWeaponBodies(void* rHkp, void* lHkp, bool sheathed)
     {
+        g_wpnSheathed.store(sheathed, std::memory_order_relaxed);
+        void* bodies[2] = { rHkp, lHkp };
+        for (int h = 0; h < 2; ++h) {
+            std::uint32_t w = 0;
+            if (auto* hk = static_cast<hkpRigidBody*>(bodies[h])) {
+                if (const hkpCollidable* col = hk->getCollidable())
+                    w = col->getBroadPhaseHandle()->getCollisionFilterInfo();
+            }
+            g_wpnWord[h].store(w, std::memory_order_relaxed);
+        }
+    }
+
+    int FilterDecision(std::uint32_t infoA, std::uint32_t infoB)
+    {        // Sheathed ghost weapon vs ANY of our layer-56 bodies -> Ignore. First non-Continue
+        // wins in HIGGS's dispatch, so this must sit ahead of everything.
+        if (g_wpnSheathed.load(std::memory_order_relaxed)) {
+            const std::uint32_t wr = g_wpnWord[0].load(std::memory_order_relaxed);
+            const std::uint32_t wl = g_wpnWord[1].load(std::memory_order_relaxed);
+            const auto isWpn = [&](std::uint32_t f) { return f != 0 && (f == wr || f == wl); };
+            const auto isOurs = [](std::uint32_t f) { return (f & 0x7Fu) == kHiggsLayer && (f & kBit15) != 0; };
+            if ((isWpn(infoA) && isOurs(infoB)) || (isWpn(infoB) && isOurs(infoA)))
+                return -1;
+        }
         // ── GRAB-PHANTOM SHIELD (2026-07-15, Report 18 §5 wig-freeze fix) ──────────
         // The wig-grab HANG root cause: HIGGS's grab-candidate cast forces its phantom
         // to layer 44 (near, hand.cpp:333) or 40 (far, hand.cpp:434) and only selects a

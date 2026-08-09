@@ -68,6 +68,10 @@ namespace NpcFinger {
     // the girth-defining vertices so the user verifies band placement by eye. Part-29 layer-56
     // words — FilterDecision ignores every pair; keyframe-still via zero gravity + tiny mass.
     // Main thread; the live world is resolved fresh from the actor each call.
+    // Sheathed-ghost-weapon pair rejection (2026-08-08): PpbApi feeds the weapon hkp bodies
+    // + sheathed state each tick; FilterDecision then Ignores (weapon x any PPB layer-56
+    // body) pairs while sheathed -- the layer HIGGS's own disable convention never covers.
+    void NoteWeaponBodies(void* rHkp, void* lHkp, bool sheathed);
     void UpdateMeshMarkers(RE::Actor* actor, const float posU[][3], int count);
 
     // kPreLoadGame: the world is still alive at PRE-load — remove properly

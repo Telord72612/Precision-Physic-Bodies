@@ -1866,6 +1866,18 @@ sceneSuspendHands 2
 # flips in VR). First person = the HMD rides the scene body's head within this distance;
 # third person = the ghost floats beyond it. Raise if first person is not detected.
 sceneFirstDistU 40
+
+# apiWeaponDrawnOnly — the weapon probe reports only while the player's weapon is DRAWN.
+# Fixes the sheathed-weapon phantom: HIGGS keeps its weapon body alive when holstered (only
+# its collision is turned off), and PPB's probe measured it anyway — phantom WEAPON contacts,
+# and the FSMP push visibly shoving wig capsules from a weapon on your hip. 0 = old behaviour.
+apiWeaponDrawnOnly 1
+
+# weaponSheathedColOff — while your weapon is sheathed, PPB disables HIGGS's weapon COLLISION
+# through HIGGS's own API, and restores it the moment you draw. Measured cause: the weapon's
+# collision body rides your controller ~13u from the palm even when sheathed, and nothing else
+# ever turns it off — the "ghost sword" that shoved hair from an empty hand. 0 = old behaviour.
+weaponSheathedColOff 1
 # pivGuardCombatLoose — let PLANCK's pivot loosen apply to PPB actors while IN COMBAT.
 # PLANCK's loosen exists so the ragdoll CAN MATCH THE ANIM POSE. PivGuard runs our actors
 # at loosen-0 so our baked joints are never collapsed — right for ordinary movement, but it
