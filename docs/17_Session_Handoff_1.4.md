@@ -1,12 +1,27 @@
 # 17 — SESSION HANDOFF: PPB 1.4 (2026-07-31 → 08-01)
 
-**READ THIS FIRST after a context compaction.** Written deliberately mid-session because context
-was about to compact with three problems open. Everything below is verified from logs, code or
-git — nothing here is remembered.
+> ## ⛔ HISTORICAL — DO NOT ACT ON §1. Superseded 2026-08-09.
+>
+> This was a mid-session snapshot written with three problems open. **All three are closed**, and
+> a fresh agent following §1 would chase bugs that no longer exist:
+>
+> | §1 problem | status |
+> |---|---|
+> | 1.1 ReShape sampler never runs / Carmella's face 3u low | **FIXED in 1.4.1.** Three stacked defects: face landmarks could resolve on clothing meshes (candidates must now be skinned to the head bone), the facegen path gated on the trishape's lying vertex count (the partition's count is the true one), and skin-mapped head parts could read a landmark past the position block. Verified across three NPCs at ×0.888 / ×1.011 / ×1.029. See CHANGELOG 1.4.1 + doc 04. |
+> | 1.2 ENG vs GEO weapon coverage never read | **STILL OPEN** — the only live item here. The per-slot histogram and the ENG-vs-GEO agreement line are deployed and have still never been read; it needs one slow rapier pass face→feet. Not a release blocker. |
+> | 1.3 Packaging 1.4.0 | **DONE**, and 1.4.1 + 1.4.2 shipped after it. |
+>
+> **Current shipped state: 1.4.2** (2026-08-09) — repo commit `255f9af`, tag `V1.4.2`, GitHub
+> release live, deployed DLL md5 `ced7a8b6` byte-identical to the release asset. 1.4.2 carries the
+> ghost-weapon fix (doc 16 §6), PLANCK 0.7.1-vs-0.8.x vtable compat (ledger + doc 18), and the
+> surrendered-NPC precision fix (`pivGuardCombatLoose` now requires combat AND weapon drawn).
+>
+> §§2–6 below remain accurate and useful: the three expensive lessons (§3), the method lessons
+> (§4) and the file map (§6) are all still current. Read those; skip §1 and §5.
 
 ---
 
-## 0. STATE AS OF THIS WRITING
+## 0. STATE AS OF THIS WRITING (2026-08-01 — historical)
 
 | | |
 |---|---|

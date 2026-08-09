@@ -283,6 +283,14 @@ is `0x14` today and you should not hardcode that assumption in a way that breaks
 **Hover counts as contact.** The default threshold is 1.0 unit (~1 cm), so a near-miss registers
 briefly. If you want presses only, filter on `distU < 0`.
 
+**A sheathed weapon never touches anything (1.4.2).** `WEAPON:` contacts are reported only while
+the player's weapon is actually drawn (`IsWeaponDrawn()` — the VR combat-stance flag). This is not
+a filter you can turn off from the consumer side, and it is deliberate: HIGGS keeps the weapon's
+collision body alive on the controller after you sheathe, so before 1.4.2 an invisible blade rode
+the player's hand and reported contacts (and shoved SMP hair) with no weapon in sight. Out of
+stance, the hand still reports normally as `FINGER` / `PALM` / `FIST` — only the weapon probe
+sleeps. Knob: `apiWeaponDrawnOnly` (ships 1; 0 restores the old always-on weapon probe).
+
 ---
 
 ## 6. Two streams — digest and raw

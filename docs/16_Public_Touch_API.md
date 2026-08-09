@@ -163,6 +163,39 @@ radius 23u = the blade PLANE's breadth, making the probe a 46u-diameter barrel) 
    her, not wielding at her; its weapon probe is skipped for HER (stays live vs everyone else).
    `HandProbes::grabActorId`, masked per-actor in `ScanActor`.
 
+**2026-08-09 — the ghost weapon: a SHEATHED weapon is not gone, and 1.4.2 kills it three ways.**
+User report: equip a weapon, drop combat stance (no VRIK holster involved), and the empty hand
+still shoved SMP hair capsules and fired weapon contacts. The cause is upstream and worth knowing
+before touching any weapon code: **HIGGS does not destroy or detach its weapon collision rigid
+body when you sheathe.** It stays alive riding the controller ~8–13u from the palm, and
+`GetWeaponRigidBody()` keeps returning it forever. (Contrast a VRIK holster, which *unequips* —
+there the body genuinely goes null, which is why holstering never showed the bug.) Worse,
+HIGGS's own `DisableWeaponCollision()` is a **convention** — it sets bit 14 in the filter word,
+honoured only where HIGGS's own filter logic checks it, and nothing checks it for pairs against
+PPB's custom layer 56. So "collision disabled" was TRUE and the capsules still got shoved.
+
+The three shipped layers, in the order they were forced by evidence:
+
+1. **`apiWeaponDrawnOnly` (ships 1)** — the weapon probe (both ENG and GEO) runs only while
+   `PlayerCharacter::AsActorState()->IsWeaponDrawn()`. Kills phantom API/consumer events; does
+   nothing to physics. **This is a public contract change — `WEAPON:` contacts do not exist while
+   sheathed** (documented in `INTEGRATION.md` §5).
+2. **`weaponSheathedColOff` (ships 1)** — PPB calls HIGGS's own
+   `DisableWeaponCollision(isLeft)` on the sheathe edge and `EnableWeaponCollision` on the draw
+   edge (interface slots 13/14/15). Fixes every pair HIGGS's filter logic actually consults.
+3. **Pair rejection at the filter callback** — while sheathed, any Havok pair of *(published
+   weapon body filter word)* × *(a PPB layer-56 + bit15 body)* returns Ignore from
+   `NpcFinger::FilterDecision`, fed by `NoteWeaponBodies(rHkp, lHkp, sheathed)` every tick.
+   Pure-integer, relaxed atomics only (the movaps rule). This is the layer that actually stopped
+   the capsule shove — there is nothing below Havok's dispatch for a ghost to survive in.
+
+Diagnostic that settled it in one in-game minute after three sessions of theory: **`WPNSTATE`**
+(under `apiLog 1`, ~2 Hz) — drawn flag, `IsWeaponCollisionDisabled(L/R)`, and hilt-to-palm
+distance. It proved the drawn flag honest, the body permanently present, and the disable really
+firing while the symptom continued — which is what pointed at the filter layer. Verified in VR
+2026-08-09: sheathed = capsules still and log silent; drawn = blade collision and both contact
+sources back instantly.
+
 ---
 
 ## 7. Emission filtering — the dwell system
@@ -327,8 +360,10 @@ PostVrikPostHiggs callback, natives registered from `Natives.cpp`, interface ans
 
 Knobs (all live, `PK_NOSNAP`): `apiTouch 1 · apiHz 4 · apiTouchU 1.0 · apiExitPadU 0.75 ·
 apiMaxActors 3 · apiRangeU 300 · apiFistTipPalmU 2 · apiEvents 1 · apiRawEvents 0 ·
-apiSuppressHeldHand 1 · apiHairTarget 0 · apiDwell{S 1.0, HeadS 1.5, ComS 2.0, SensorS 0.5,
-TailS 1.0} · apiLog 0`.
+apiSuppressHeldHand 1 · apiHairTarget 0 · apiDwell{S, HeadS, ComS, SensorS, TailS} all 0.25 ·
+apiWeaponRMaxU 6 · apiWeaponDrawnOnly 1 · weaponSheathedColOff 1 · apiLog 0`.
+(The `apiDwell*` values above are the SHIPPED ones — the 1.0/1.5/2.0/0.5 set in §7's history
+column was superseded 2026-07-31.)
 
 ### Versioning contract (do not violate)
 
