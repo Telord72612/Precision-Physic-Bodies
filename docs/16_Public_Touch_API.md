@@ -177,9 +177,11 @@ PPB's custom layer 56. So "collision disabled" was TRUE and the capsules still g
 The three shipped layers, in the order they were forced by evidence:
 
 1. **`apiWeaponDrawnOnly` (ships 1)** — the weapon probe (both ENG and GEO) runs only while
-   `PlayerCharacter::AsActorState()->IsWeaponDrawn()`. Kills phantom API/consumer events; does
-   nothing to physics. **This is a public contract change — `WEAPON:` contacts do not exist while
-   sheathed** (documented in `INTEGRATION.md` §5).
+   `PlayerCharacter::AsActorState()->IsWeaponDrawn()`. Kills the phantom events; does nothing to
+   physics. Not a contract change to consumers: every event it removes was FALSE (a body the
+   player was not wielding, at a position no weapon occupied), and drawn-weapon reporting is
+   untouched. Stated positively in `INTEGRATION.md` §5 so a modder knows weapon reactions require
+   a drawn weapon.
 2. **`weaponSheathedColOff` (ships 1)** — PPB calls HIGGS's own
    `DisableWeaponCollision(isLeft)` on the sheathe edge and `EnableWeaponCollision` on the draw
    edge (interface slots 13/14/15). Fixes every pair HIGGS's filter logic actually consults.
