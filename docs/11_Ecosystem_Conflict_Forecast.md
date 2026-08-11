@@ -388,6 +388,65 @@ So for **every** PCVR body:
 PostVrikPostHiggs). So there is no first-non-Continue-wins race between PCVR and PPB either —
 PPB's verdicts on its own bodies are final (PLANCK Continues for these pairs).
 
+## 1b. Does PCVR MODIFY the NPC's own weapon body? No — proven by its engine-function inventory
+
+The question that matters more than the filter word: does PCVR *mutate* an NPC's existing weapon
+collision (so the bow starts reacting to things around it), or does it only *add* a body of its own?
+
+PCVR binds engine functions by direct RVA (`REL::Offset`, same idiom as PPB), so its **entire**
+engine-write inventory is enumerable — ten functions, all of them:
+
+| slot | RVA | function | call sites |
+|---|---|---|---|
+| `0C3380` | `0xE06110` | `bhkRigidBodyCinfo_ctor` | stack cinfo only |
+| `0C3388` | `0x2AEC80` | `bhkRigidBody_ctor` | its own new bodies |
+| `0C3390` | `0xE085D0` | `bhkRigidBody_setActivated` | 3 |
+| `0C3398` | `0xE08040` | **`bhkRigidBody::SetMotionType`** | **3 — one per creation fn** |
+| `0C33A0` | `0xAB0CB0` | `hkpWorld_AddEntity` | **exactly 3** |
+| `0C33A8` | `0xAB0E50` | `hkpWorld_RemoveEntity` | 4 (teardown) |
+| `0C33B0` | `0xAA9030` | rigid-body transform setter | 6 |
+| `0C33B8` | `0xAF6DD0` | `applyHardKeyFrame` | 3 |
+| `0C33C0` | `0xAA7130` | `hkpEntity::activate` | 5 |
+| `0C33C8` | `0xA93600` | (unidentified) | 1 |
+
+**`hkpWorld_UpdateCollisionFilterOnEntity` (0xAB3110) is absent.** That is the only supported way to
+change a body's collision filter once it is in the world — PPB binds it in two places; PCVR binds it
+nowhere. So PCVR *cannot* re-filter the bow's own body even in principle.
+
+Three further confirmations that it only ever touches bodies it made:
+* All three `or reg,38h` filter words are written into a **stack cinfo**, between
+  `bhkRigidBodyCinfo_ctor` and `bhkRigidBody_ctor` — configuring a body being *born*.
+* `AddEntity` is called **exactly three times in the whole DLL**, once inside each creation
+  function, each under the bhkWorld write lock at `+0xC598`. It never inserts a foreign body.
+* `SetMotionType` is called only on `rbx` — the wrapper allocated moments earlier.
+
+**⇒ An NPC's own weapon collision is left byte-for-byte alone. PCVR runs a separate, parallel twin.**
+
+### The motion types — and why an NPC's weapon twin feels like rock
+
+| PCVR body | `SetMotionType` arg | meaning |
+|---|---|---|
+| player weapon proxy | `edx = 1` | `MOTION_DYNAMIC` (~1–3 kg, driven by `fMaxDriveForce`) |
+| player empty-hand body | `edx = 1` | `MOTION_DYNAMIC` (`fHandMassKg` 2.5) |
+| **NPC weapon / shield** | **`edx = 4`** | **`MOTION_KEYFRAMED` — infinite mass, immovable** |
+
+An NPC's weapon twin is keyframed, so nothing can push it: it is exactly as unyielding as a wall.
+That matches the in-VR report of an immovable invisible weapon body precisely.
+
+### ★ The consequence PCVR's author may not have intended
+
+The twin takes a **fresh** collision group instead of the wielding actor's, so it is not
+ragdoll-adjacent to its own owner. Layer 56 collides with Biped(8), BipedNoCC(33) and DeadBip(32),
+therefore **an NPC's immovable weapon twin can collide with that same NPC's own hand and arm
+capsules** — the capsules PPB fits and PLANCK drives dynamically. An infinite-mass body overlapping
+a PD-driven capsule is the marker-seizure geometry from doc 13 §6, and PCVR's own INI records the
+symptom without naming this cause: *"It was the prime suspect for NPC weapons jittering or sitting
+oddly in the hand"* (written about `bOpponentPushLimbs`, which they tested and cleared).
+
+Not PPB's to filter — those are the actor's own ragdoll bodies, so `NpcFinger::FilterDecision`
+correctly returns Continue. Mitigated in practice by PCVR destroying the twin on
+`"out of range or sheathed"`.
+
 ## 2. PPB's filter rules, and why PCVR cannot trip any of them
 
 PPB's constants: `kHiggsLayer = 56`, `kFingerPart = 30`, `kBit15 = 0x8000`, HandBox part = 4.
