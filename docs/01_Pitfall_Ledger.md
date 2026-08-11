@@ -1766,3 +1766,41 @@ safe to call. `DismemberGuard.cpp` reads it once at acquire and routes every sub
 call through the matching layout (`IPlanck071` mirror struct for < 80000; builds < 70000 are
 refused with a log warning). **A plugin interface obtained by messaging is a raw vtable — version
 it before the second call, because the first wrong-slot call is an arbitrary jump, not an error.**
+
+---
+
+## Answering "can mod X conflict with us" — read X's FILTER WORD and its CALLBACK REGISTRATIONS out of the shipped DLL (2026-08-10)
+
+A user report of an immovable invisible body at a sheathed NPC's hand raised the question of whether
+another mod's weapon collision could fight PPB's capsules. It was settled with **no build, no test
+save, and three instructions** read out of the other mod's binary. The method generalises to every
+"is this other mod conflicting with us" question in this project.
+
+**The two things to extract, in order:**
+
+1. **The filter word the mod stamps on its bodies.** Route: find a distinctive format string → its
+   `.rdata` RVA → scan `.text` for the `lea reg,[rip+disp]` that resolves to it → look up the
+   enclosing function in `.pdata`'s RUNTIME_FUNCTION table → disassemble that window. The
+   construction is almost always a 3-instruction idiom (`shl reg,10h` / `or reg,<layer>`), and
+   counting its occurrences enumerates the mod's **entire** body population.
+2. **Whether it registers a collision-filter callback** (HIGGS vtable slot 20 = `call qword ptr
+   [reg+0A0h]`). If it does not, there is no first-non-Continue-wins race and our verdicts on our
+   own bodies are final.
+
+**NEGATIVE greps carried as much weight as positive ones.** *No* `or reg,8000h` anywhere in the DLL
+proved nothing that mod creates is ragdoll-adjacent (bit15 clear), which alone made it unable to
+trip PPB's force-Collide branch. *No* `+0A0h` call proved it never arbitrates filtering. A negative
+is only evidence if the same scan finds positives elsewhere — run that control (we did: six
+`shl reg,10h`, three `or reg,38h`).
+
+**Why the answer was definitive rather than probabilistic:** PPB identifies its own capsules with a
+**conjunctive three-field signature** (layer 56 AND part 30 AND bit15). A foreign body matching one
+field cannot be confused for ours, and our force-Collide branch demands bit15 on the *other* side
+too. Conjunctive signatures are what make cross-mod guarantees provable instead of statistical —
+worth preserving whenever the filter code is touched.
+
+**And the finding that mattered was not the one asked about:** the other mod allocates a *fresh*
+collision group per body rather than reusing the wielding actor's, so its weapon body is not
+ragdoll-adjacent to its own owner and CAN contact that NPC's ragdoll (layer 56 × Biped/BipedNoCC/
+DeadBip all collide). PPB cannot filter that pair — those are the actor's own bodies, not ours.
+**Audit the pairs you cannot see, not only the ones you can.** Full analysis: doc 11, final section.

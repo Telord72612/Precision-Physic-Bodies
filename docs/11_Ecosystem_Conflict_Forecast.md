@@ -342,3 +342,104 @@ plan: Report 17. Severity tags are the specialists' own.
 ## [38] [LOW] (6b, in passing) AIHands' own InstallPreDriveHook (AIHands-plugin/src/Hooks.cpp:187-208) still lacks the 0xE8 self-abort byte check that PPB added to all of its installers after the 2026-07-08 review (PPB Hooks.cpp:205-213 calls itself out as having been 'the ONLY one of PPB's three installers lacking the 0xE8 check' — AIHands never got the same retrofit; its OTHER installer at 0x703367 does have the guard).
 **Scenario**: On a future exe/Address-Library mismatch where module+0xB266AB is not a 5-byte CALL, PPB and collviz abort cleanly but AIHands write_call<5>s over a non-CALL instruction → corrupted instruction → CTD at first NPC animation update, and because all three DLLs share the seam the crash would naturally (and wrongly) be blamed on the chain rather than the one unguarded installer.
 **Prevention**: Port PPB's 4-line p[0]!=0xE8 guard into AIHands' InstallPreDriveHook (out of scope for the PPB repo but same family, one-line fix at the next AIHands build).
+
+---
+
+# ★ Physical Collision VR (PCVR) × PPB — the definitive filter-word analysis (2026-08-10)
+
+**Verdict up front: PPB's garment/hair/tail capsules can NEVER contact a PCVR body. Not "unlikely" —
+structurally impossible, guaranteed by three independent bit fields. The one real interaction is
+PPB's player HAND BOXES, which meet PCVR bodies through the vanilla layer table.**
+
+Prompted by an in-VR report of an invisible, rock-solid body at a sheathed NPC's hand (Auri, bow).
+Both sides read from primary sources: PCVR from its shipped binary (v3.0.0,
+`PhysicalCollisionVR.dll`, disassembled) and its own live log; PPB from its source.
+
+## 1. PCVR's filter word — read from the binary
+
+Every collision body PCVR creates is built by the SAME three-instruction idiom. There are exactly
+**three** `or reg,38h` sites in the whole DLL — the complete population of its bodies:
+
+| RVA | function | body |
+|---|---|---|
+| `0x21706` | `CreateHandBody` | the player's empty-hand body (`bHandBodyCollision`) |
+| `0x21E5E` | `CreateOpponent` | **an NPC's weapon / shield** |
+| `0x22CDC` | `CreateProxy` | the player's weapon proxy |
+
+```asm
+inc   dword ptr [rax+4Ch]     ; ++bhkWorld.nextCollisionGroup  (wraps 0xFFFF -> 10)
+mov   ebx, r12d
+shl   ebx, 10h                ; group << 16
+or    ebx, 38h                ; | 56   (L_HIGGSCOLLISION)
+```
+
+So for **every** PCVR body:
+
+| field | value |
+|---|---|
+| layer (bits 0–6) | **56** — the HIGGS layer |
+| part (bits 8–12) | **0** |
+| bit14 (collision-off) | clear |
+| **bit15 (ragdoll adjacency)** | **CLEAR** — there is no `or reg,8000h` anywhere in the DLL |
+| group (bits 16–31) | a **fresh unique** group taken from the world counter, never the actor's own |
+
+**PCVR registers NO collision-filter callback.** The DLL contains no call to HIGGS vtable slot 20
+(`+0A0h`); it only uses slots 24/25 (`+0C0h`/`+0C8h`, get hand/weapon body) and 33 (`+108h`,
+PostVrikPostHiggs). So there is no first-non-Continue-wins race between PCVR and PPB either —
+PPB's verdicts on its own bodies are final (PLANCK Continues for these pairs).
+
+## 2. PPB's filter rules, and why PCVR cannot trip any of them
+
+PPB's constants: `kHiggsLayer = 56`, `kFingerPart = 30`, `kBit15 = 0x8000`, HandBox part = 4.
+
+**`NpcFinger::FilterDecision`** (governs every pair involving a PPB garment/hair/tail/finger capsule):
+* Our capsule signature is **conjunctive**: layer 56 **AND** part 30 **AND** bit15. PCVR's word has
+  layer 56 but part 0 and no bit15 → *a PCVR body is never mistaken for one of ours*.
+* With one side ours and the other PCVR's, the ONLY force-Collide branch requires the foreign word
+  to carry **bit15** and part ∈ {2,3,5,6,4} (HIGGS hand / wielded weapon / our HandBox). PCVR has
+  neither → not taken.
+* Grab-phantom shield needs foreign layer 40/44 → no. Marker rule needs part 29 → no. The
+  widening and own-body knobs ship OFF.
+* → falls through to `return 2` = **Ignore**. **Zero contacts, ever.**
+
+**`HandBox::FilterDecision`** (the player's four boxes):
+* `isBox` needs bit15 + our part + our group → a PCVR body is not a box.
+* The Ignore belt needs the foreign body in **our** group with part ∈ {2,3,5,6}; PCVR always takes
+  a fresh group → not taken.
+* → `return 0` = fall through to the vanilla table. HIGGS's layer-56 bitfield
+  `0x01053343161B7FFF` has **bit 56 set**, so 56 × 56 **collides**.
+* **⇒ This is the single PPB↔PCVR contact surface.** Both bodies are keyframed/infinite-mass, so
+  there is no `a = F/m` blow-up (the 2026-07-13 massless-grab freeze class needs a tiny mass) and
+  no 256-point cliff (single boxes, not list shapes). Cost is a handful of contact points.
+
+**`PerfSys::FilterCB`** own rules only fire on bit15 pairs (thigh/pelvis) → PCVR skips both → Continue.
+
+## 3. The one genuine hazard found — and it is not PPB's to filter
+
+Because PCVR allocates a **fresh** collision group rather than reusing the wielding actor's, its
+NPC weapon body is not ragdoll-adjacent to its own owner. Layer 56 collides with Biped(8),
+BipedNoCC(33) and DeadBip(32) in HIGGS's bitfield, so **a PCVR weapon body can contact the ragdoll
+of the very NPC holding it**, and every other NPC's. If such a body were ever orphaned inside a
+PLANCK-driven arm, that is precisely the marker-seizure geometry from doc 13 §6 (an immovable
+layer-56 body embedded in driven capsules → fighting, seizure, playerImpact storms).
+
+PPB cannot filter that pair: those are the actor's own ragdoll bodies, not PPB bodies, so
+`NpcFinger::FilterDecision` never sees them as "ours" and correctly returns Continue.
+
+**In practice PCVR closes the hole itself**: `DestroyOpponent` carries the reason string
+**`"out of range or sheathed"`**, i.e. it tears the body down on sheathe. Measured across two full
+sessions of its own log: **0 `[opp] created`, 0 `synthesised`, 76 `cannot build`** — including 69
+of *"no collision shape, and its bounds are empty (radius 0.0u) — almost certainly sheathed"*
+logged against Auri while the player stood 57u away. PCVR also refuses bows by config
+(`bSkipBows`) and by an explicit *"not a drawn melee weapon (fists, a sheathed weapon, a bow, a
+staff or a spell)"* path.
+
+## 4. Reusable method
+
+The whole question was settled without a single build, by reading **three instructions** out of the
+other mod's binary. The route: string → `.rdata` RVA → scan `.text` for the `lea reg,[rip+disp]`
+that resolves to it → `.pdata` RUNTIME_FUNCTION for the enclosing function → disassemble that
+window. `tools/ppb-scratch/` has the pattern. Two negative checks did as much work as the positive
+one: *no* `or reg,8000h` anywhere (⇒ nothing PCVR makes is ragdoll-adjacent) and *no* `+0A0h` call
+(⇒ it registers no filter callback). **When asking "can mod X conflict with us", the answer lives in
+X's filter word and its callback registrations — both are readable from a shipped DLL.**
