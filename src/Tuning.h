@@ -691,6 +691,30 @@ namespace ObjectHold {
         // Edge-logged (one line per state CHANGE). Ships OFF; measures only, moves nothing.
         float genProbe         = 0.f;
 
+        // ── MALE GEOMETRY GATE (2026-08-13) — SHIPS OFF, and off is the SAFE state ───────────
+        // PPB decides "do we own this actor's geometry?" with a SHAPE test: COM is a bhkListShape
+        // (GrabDiag::ActorCarriesBake). That was sufficient proof only while PPB shipped FEMALE
+        // skeletons exclusively — every stock skeleton (male, draugr, creature) keeps a single
+        // bhkCapsuleShape COM, so "COM is a list" meant "we baked it".
+        //
+        // A male PPB skeleton breaks that inference, and BOTH geometry writers re-arm on males:
+        //   * CapFixApply       writes the globally FEMALE-DIALLED cap* knobs into his capsules;
+        //   * PivScaleCorrect   rewrites his 17 ragdoll pivots off the female kBaseArc 48.045;
+        //   * ReShape feeds those writes ratios measured from kUvLandmarks — CBBE/3BA FEMALE
+        //     atlas coordinates (nipple / breast up+down / chest centre / butt cheek). On a male
+        //     mesh they land on unrelated geometry. That exact failure was already eye-confirmed
+        //     for beast HEADS and is hard-gated there; there is no equivalent male gate on the
+        //     body channel.
+        // That combination IS the 2026-07-15 "males re-scaled + capsules shrunk" regression,
+        // returning through a new door.
+        //
+        // 1 = trust a male's bake and let the geometry writers touch him. Flip this ONLY once a
+        // male neutral body has been captured and male UV landmarks exist — otherwise the fitter
+        // measures him against a female atlas. Live-polled (not cached), so a flip takes effect
+        // within one tuning poll, and it IS snapshot-participating so flipping it on re-dresses
+        // everyone rather than waiting for an unrelated knob to arm a generation.
+        float maleGeometry     = 0.f;
+
         // ── HAND-BOX JITTER (2026-08-02 deep dive) ──────────────────────────────────────────
         // handBoxRelAlpha: the mode-2 relation filter in UpdateEffFrames. The box target is
         //   E = T_higgs · EMA(R), R = T_higgs⁻¹ · T_handnode. The two sources are sampled at
@@ -1245,6 +1269,7 @@ namespace ObjectHold {
     bool     DgHeadPlanckOn();    // leave head clones under PLANCK (dgHeadPlanck)
     bool     DgVictimPlanckOn();  // leave dismembered VICTIMS under PLANCK (dgVictimPlanck)
     bool     GenProbeOn();        // genital dress-signal research probe (genProbe)
+    bool     MaleGeometryOn();   // let the geometry writers touch a male carrying a PPB bake (maleGeometry)
     float    HandBoxRelAlpha();   // mode-2 relation filter; 1 = unfiltered (jitter fix)
     bool     HandBoxPhaseLogOn(); // HBOXPH jitter diagnostic (handBoxPhaseLog)
     bool     HandBoxStepDtOn();   // invDt from real physics dt (handBoxStepDt)

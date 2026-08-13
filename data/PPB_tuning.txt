@@ -1795,6 +1795,19 @@ dgVictimPlanck 1
 # Whichever column flips in lockstep with what you SEE is the signal the rig can trust.
 genProbe 0
 
+# maleGeometry: 0 = the geometry writers REFUSE a male even if he carries a PPB bake.
+# PPB decides "we own this actor's geometry" by a SHAPE test (COM is a bhkListShape). That was
+# proof only while PPB shipped female skeletons exclusively -- every stock skeleton, male included,
+# keeps a single-capsule COM. Once a male PPB skeleton exists the inference breaks and BOTH writers
+# re-arm on him: the capsule fitter writes the globally FEMALE-dialled cap* knobs into his capsules,
+# the arc re-scale rewrites his 17 ragdoll pivots off the female base 48.045, and ReShape feeds both
+# from CBBE/3BA FEMALE UV landmarks (nipple / breast / butt) that land on unrelated geometry on a
+# male mesh. That combination is the 2026-07-15 "males re-scaled + capsules shrunk" regression.
+# Flip to 1 ONLY after a male neutral body is captured and male UV landmarks exist.
+# Live (takes effect within one poll) and snapshot-participating (flipping it re-dresses everyone).
+# Receipt when it refuses: "CapFix <id> '<name>' carries a PPB bake but is MALE - geometry writers REFUSED".
+maleGeometry 0
+
 # ── HAND JITTER (2026-08-02 investigation) ────────────────────────────────────────────
 # handBoxRelAlpha — the mode-2 relation filter. The box target is E = T_higgs . EMA(R),
 # where R = T_higgs^-1 . T_handnode. The two sources are read at DIFFERENT points in the

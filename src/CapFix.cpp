@@ -15,6 +15,7 @@
 #include <cstring>
 #include <map>
 #include <unordered_map>
+#include <unordered_set>   // ActorCarriesBake male-refusal receipt (one line per actor)
 #include <atomic>
 #include <xmmintrin.h>   // _mm_store_ps
 
@@ -3142,20 +3143,53 @@ namespace GrabDiag {
     bool ActorCarriesBake(RE::Actor* actor) {
         if (!actor) return false;
         const std::uint32_t id = actor->GetFormID();
+        bool isBake;
         auto it = s_carriesBake.find(id);
-        if (it != s_carriesBake.end() && it->second != 0) return it->second == 1;
-        auto* hn = FindNode(actor, "NPC COM [COM ]");
-        if (!hn) return false;
-        auto* colObj = hn->collisionObject.get();
-        if (!colObj) return false;
-        auto* body = static_cast<RE::bhkCollisionObject*>(colObj)->GetRigidBody();
-        auto* hkp  = body ? body->GetRigidBody() : nullptr;
-        auto* col  = hkp ? hkp->GetCollidableRW() : nullptr;
-        const RE::hkpShape* shape = col ? col->shape : nullptr;
-        if (!shape) return false;                        // 3D mid-load — retry next tick, don't cache
-        const bool isBake = (shape->type == RE::hkpShapeType::kList);
-        s_carriesBake[id] = isBake ? 1 : 2;
-        return isBake;
+        if (it != s_carriesBake.end() && it->second != 0) {
+            isBake = (it->second == 1);                  // shape verdict is stable per 3D build
+        } else {
+            auto* hn = FindNode(actor, "NPC COM [COM ]");
+            if (!hn) return false;
+            auto* colObj = hn->collisionObject.get();
+            if (!colObj) return false;
+            auto* body = static_cast<RE::bhkCollisionObject*>(colObj)->GetRigidBody();
+            auto* hkp  = body ? body->GetRigidBody() : nullptr;
+            auto* col  = hkp ? hkp->GetCollidableRW() : nullptr;
+            const RE::hkpShape* shape = col ? col->shape : nullptr;
+            if (!shape) return false;                    // 3D mid-load — retry next tick, don't cache
+            isBake = (shape->type == RE::hkpShapeType::kList);
+            s_carriesBake[id] = isBake ? 1 : 2;
+        }
+        if (!isBake) return false;
+
+        // ── MALE GATE (2026-08-13) — deliberately NOT cached, the knob is live ────────────────
+        // The shape test above proves "someone baked a list COM onto this actor", NOT "PPB owns
+        // this actor's geometry". Those were the same statement only while PPB shipped FEMALE
+        // skeletons exclusively (every stock skeleton — male, draugr, creature — keeps a single
+        // bhkCapsuleShape COM). A male PPB skeleton breaks the inference, and both writers that
+        // share this gate would then deform him: CapFixApply writes the globally FEMALE-dialled
+        // cap* knobs into his capsules, PivScaleCorrect rewrites his 17 pivots off the female
+        // kBaseArc 48.045, and ReShape feeds both from kUvLandmarks — CBBE/3BA FEMALE atlas UVs.
+        // That is the 2026-07-15 "males re-scaled + capsules shrunk" regression, re-armed.
+        // Refuse until the user has a male neutral + male landmarks and flips maleGeometry.
+        if (!ObjectHold::MaleGeometryOn()) {
+            auto* base = actor->GetActorBase();
+            if (base && !base->IsFemale()) {
+                // A silent refusal is indistinguishable from a bug (ledger: every quiet exit gets
+                // a receipt). One line per actor, not per drive.
+                static std::unordered_set<std::uint32_t> s_maleRefused;
+                if (s_maleRefused.insert(id).second) {
+                    const char* nm = base->GetFullName();
+                    logger::info("CapFix {:08X} '{}' carries a PPB bake but is MALE — geometry "
+                                 "writers REFUSED (maleGeometry 0). The capsule fitter and the arc "
+                                 "re-scale would measure him against the female UV atlas. Set "
+                                 "maleGeometry 1 once a male neutral + male landmarks exist.",
+                                 id, (nm && *nm) ? nm : "<unnamed>");
+                }
+                return false;
+            }
+        }
+        return true;
     }
 
     void InvalidateBodyScale(std::uint32_t id)   // any thread (the OBody VM event sink)

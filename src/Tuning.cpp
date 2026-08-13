@@ -196,7 +196,7 @@ namespace ObjectHold {
                     PK_NOSNAP(dgDeferDf), PK_NOSNAP(dgHeadTrack),
                     PK_NOSNAP(dgDeathCut), PK_NOSNAP(dgDeathCutDelayS), PK_NOSNAP(dgDeathNodeTries),
                     PK_NOSNAP(dgHitLocated), PK_NOSNAP(dgHitMaxDistU),
-                    PK_NOSNAP(dgHeadSkel), PK_NOSNAP(dgHeadSkelHoldS), PK_NOSNAP(dgHeadPark), PK_NOSNAP(dgHeadStripHair), PK_NOSNAP(dgHeadGrabFix), PK_NOSNAP(dgHeadPlanck), PK_NOSNAP(dgVictimPlanck), PK_NOSNAP(genProbe), PK_NOSNAP(handBoxRelAlpha), PK_NOSNAP(handBoxPhaseLog), PK_NOSNAP(handBoxStepDt), PK_NOSNAP(handBoxTrack), PK_NOSNAP(handBoxWarp), PK_NOSNAP(sceneSuspendHands), PK_NOSNAP(sceneFirstDistU), PK_NOSNAP(apiWeaponDrawnOnly), PK_NOSNAP(weaponSheathedColOff), PK_NOSNAP(pivGuardCombatLoose), PK_NOSNAP(planckLoosenOurs), PK_NOSNAP(planckLoosenGlobal), PK_NOSNAP(touchProbeHud), PK_NOSNAP(touchProbeHudU),
+                    PK_NOSNAP(dgHeadSkel), PK_NOSNAP(dgHeadSkelHoldS), PK_NOSNAP(dgHeadPark), PK_NOSNAP(dgHeadStripHair), PK_NOSNAP(dgHeadGrabFix), PK_NOSNAP(dgHeadPlanck), PK_NOSNAP(dgVictimPlanck), PK_NOSNAP(genProbe), PK(maleGeometry), PK_NOSNAP(handBoxRelAlpha), PK_NOSNAP(handBoxPhaseLog), PK_NOSNAP(handBoxStepDt), PK_NOSNAP(handBoxTrack), PK_NOSNAP(handBoxWarp), PK_NOSNAP(sceneSuspendHands), PK_NOSNAP(sceneFirstDistU), PK_NOSNAP(apiWeaponDrawnOnly), PK_NOSNAP(weaponSheathedColOff), PK_NOSNAP(pivGuardCombatLoose), PK_NOSNAP(planckLoosenOurs), PK_NOSNAP(planckLoosenGlobal), PK_NOSNAP(touchProbeHud), PK_NOSNAP(touchProbeHudU),
                     PK_NOSNAP(lmBrAYc), PK_NOSNAP(lmBrAYm), PK_NOSNAP(lmBrBYc), PK_NOSNAP(lmBrBYm),
                     PK_NOSNAP(lmBrAZc), PK_NOSNAP(lmBrAZm), PK_NOSNAP(lmBrBZc), PK_NOSNAP(lmBrBZm),
                     PK_NOSNAP(lmBrRc),  PK_NOSNAP(lmBrRm),  PK_NOSNAP(lmBrAX),
@@ -836,6 +836,7 @@ namespace ObjectHold {
     bool  DgHeadPlanckOn()      { return g_tune.dgHeadPlanck > 0.5f; }
     bool  DgVictimPlanckOn()    { return g_tune.dgVictimPlanck > 0.5f; }
     bool  GenProbeOn()          { return g_tune.genProbe > 0.5f; }
+    bool  MaleGeometryOn()      { return g_tune.maleGeometry > 0.5f; }
     float HandBoxRelAlpha()     { return std::clamp(g_tune.handBoxRelAlpha, 0.f, 1.f); }
     bool  HandBoxPhaseLogOn()   { return g_tune.handBoxPhaseLog > 0.5f; }
     bool  HandBoxStepDtOn()     { return g_tune.handBoxStepDt > 0.5f; }
