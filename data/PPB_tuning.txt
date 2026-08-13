@@ -462,7 +462,7 @@ capSpine0C7BX 4.955
 capSpine0C7BY 2.29
 capSpine0C7BZ 12.975
 capSpine0C7R 3.300
-capSpine0C8Enable 1.0
+capSpine0C8Enable 0
 capSpine0C8AX 0.0
 capSpine0C8AY 0.0
 capSpine0C8AZ 0.0
@@ -470,7 +470,7 @@ capSpine0C8BX 0.0
 capSpine0C8BY 0.0
 capSpine0C8BZ 2.0
 capSpine0C8R 0.500
-capSpine0C9Enable 1.0
+capSpine0C9Enable 0
 capSpine0C9AX 0.0
 capSpine0C9AY 0.0
 capSpine0C9AZ 0.0
@@ -534,7 +534,7 @@ capSpine1C6BX -6.443
 capSpine1C6BY 6.929
 capSpine1C6BZ 14.58
 capSpine1C6R 2.178
-capSpine1C7Enable 1.0
+capSpine1C7Enable 0
 capSpine1C7AX 0.0
 capSpine1C7AY 0.0
 capSpine1C7AZ 0.0
@@ -542,7 +542,7 @@ capSpine1C7BX 0.0
 capSpine1C7BY 0.0
 capSpine1C7BZ 2.0
 capSpine1C7R 0.495
-capSpine1C8Enable 1.0
+capSpine1C8Enable 0
 capSpine1C8AX 0.0
 capSpine1C8AY 0.0
 capSpine1C8AZ 0.0
@@ -554,7 +554,12 @@ capSpine1C8R 0.495
 # values 25u behind the body from an old session; they were inert only because the
 # apply loop stopped at C8. Raising the bound would have made them live. Reset to the
 # buried seed here — dial from zero.
-capSpine1C9Enable 1
+# 2026-08-13 DISABLED (user-spotted): C9 was Enable 1 with a dialled 6.03u-radius capsule parked
+# 5.485u behind the spine, with its left twin C10 still a buried seed — a half-finished dial, not
+# anatomy. The NIF holds a 0.5u buried seed at this child on ALL FOUR skeletons (verified by
+# pynifly dump), so Enable 0 leaves a tiny invisible rod = a true removal, not just a stop.
+# Values kept below for provenance; re-enable only if the back capsules are ever dialled as a PAIR.
+capSpine1C9Enable 0
 capSpine1C9AX 0.0
 capSpine1C9AY 5.485
 capSpine1C9AZ 7.56
@@ -1347,38 +1352,11 @@ capHeadC22R 0.5
 # skeletonbeast_female.nif (spine0 10 / spine1 9 / spine2 17). Human + Khajiit spines are
 # unchanged, so these knobs are silently skipped there — per-race by EXISTENCE, no race gate.
 # Seeded TINY at each bone's origin (never A==B — the degenerate/invisible trap): dial them out.
-capSpine0C8Enable 1
-capSpine0C8AX 0.0
-capSpine0C8AY 0.0
-capSpine0C8AZ 0.0
-capSpine0C8BX 0.0
-capSpine0C8BY 0.0
-capSpine0C8BZ 2.0
-capSpine0C8R 0.500
-capSpine0C9Enable 1
-capSpine0C9AX 0.0
-capSpine0C9AY 0.0
-capSpine0C9AZ 0.0
-capSpine0C9BX 0.0
-capSpine0C9BY 0.0
-capSpine0C9BZ 2.0
-capSpine0C9R 0.500
-capSpine1C7Enable 1
-capSpine1C7AX 0.0
-capSpine1C7AY 0.0
-capSpine1C7AZ 0.0
-capSpine1C7BX 0.0
-capSpine1C7BY 0.0
-capSpine1C7BZ 2.0
-capSpine1C7R 0.495
-capSpine1C8Enable 1
-capSpine1C8AX 0.0
-capSpine1C8AY 0.0
-capSpine1C8AZ 0.0
-capSpine1C8BX 0.0
-capSpine1C8BY 0.0
-capSpine1C8BZ 2.0
-capSpine1C8R 0.495
+# 2026-08-13: duplicate capSpine0C8/C9 block removed (identical seeds, last-wins ambiguous).
+# 2026-08-13: the DUPLICATE capSpine1C7/C8 block that used to sit here has been removed. Both
+# copies were byte-identical seeds, but two definitions of one key is last-wins-ambiguous (the
+# ledger's 2026-07-29 warning) and would silently override any future edit made in the canonical
+# block above. Canonical definitions now live in ONE place only, next to C6.
 capSpine2C15Enable 1
 capSpine2C15AX 0.0
 capSpine2C15AY 0.0
