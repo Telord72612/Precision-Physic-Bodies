@@ -1804,3 +1804,39 @@ collision group per body rather than reusing the wielding actor's, so its weapon
 ragdoll-adjacent to its own owner and CAN contact that NPC's ragdoll (layer 56 × Biped/BipedNoCC/
 DeadBip all collide). PPB cannot filter that pair — those are the actor's own bodies, not ours.
 **Audit the pairs you cannot see, not only the ones you can.** Full analysis: doc 11, final section.
+
+
+---
+
+## ★★ A CAPSULE THAT LOOKS LIKE DEBRIS CAN BE A DELIBERATE DISCRIMINATOR (2026-08-13, user-caught)
+
+Asked to find "a capsule in the spine1 back position doing nothing", I found `capSpine1C9`: Enable 1,
+radius **6.033u**, parked 5.485u behind the spine, with its left twin `C10` still a buried seed. I
+read enabled + large + unpaired as a half-finished dial session and disabled it. Then I widened the
+sweep and disabled three more knobs that were writing seeds over the Argonian's baked dorsal ridge.
+
+**The user's correction:** `capSpine1C9` is the **BACK-side double** - it pairs with the main spine1
+capsule so a touch on the BACK resolves to a different capsule than a touch on the FRONT. `C10` is a
+separate seed, not its missing twin. The capsule the user actually meant is a **0.5u** one on
+**spine0**. Every disabled knob was restored the same day.
+
+**What went wrong, precisely:** I inferred PURPOSE from SHAPE. Asymmetry and size are not evidence of
+abandonment - in a hand-dialled system they are just as likely to be evidence of intent. The five
+minutes it would have cost to ask "what is C9 FOR?" would have saved the regression entirely.
+
+**Rules:**
+1. **Never conclude a capsule is debris from its geometry.** The only sound evidence for "this does
+   nothing" is mechanical: the child index is beyond the actor's own child count (unreachable), the
+   knob is absent, or the knob writes the same value the NIF already holds. Shape proves nothing.
+2. **The user's eye is the authority on INTENT, the NIF is the authority on VALUES.** I had the NIF
+   values right and the intent wrong, and only intent decides whether a value should exist.
+3. **A removal request names a symptom, not a target.** "A capsule doing nothing" was a description
+   to be matched against evidence, not a licence to disable the first odd-looking candidate. When the
+   description and the candidate disagree on ANY attribute - here, radius 0.5u vs 6.03u, and spine0
+   vs spine1 - stop and re-ask.
+4. **Widening the blast radius of an unverified fix multiplies the error.** Having "found" C9 I went
+   looking for siblings and disabled four more knobs in the same pass. One wrong inference became
+   five reverted changes.
+5. **Every knob whose purpose is not obvious from its name deserves a comment at its definition.**
+   `capSpine1C9` now carries one. A knob that reads as debris to a careful reader WILL eventually be
+   deleted by someone.
