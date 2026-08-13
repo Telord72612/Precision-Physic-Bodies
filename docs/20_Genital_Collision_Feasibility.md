@@ -42,6 +42,43 @@ world, but can never be *stopped* by your hand or by a wall. Physical resistance
 own hand is unreachable without making one side dynamic, which re-opens the freeze class.
 **Decide which half of "collide" the feature needs before building.**
 
+### ★★ RESOLVED 2026-08-12 — DYNAMIC, and the fork matters less than it looked
+
+The user supplied the fact that decides it: **the genitals already have arousal mechanics and SMP
+movement.** Two consequences, and they overturn the "keyframed for v1" recommendation this document
+originally carried.
+
+**1. The visible BEND never comes from the Havok capsule — it comes from SMP.** Exactly as breasts
+bend under CBPC/SMP and not under a Havok body, and exactly as PPB's own hair bends: PPB does not
+push the hair mesh, it **injects force into SMP's bullet bodies**. That channel is already built and
+is **generic** — `FsmpLink` matches an SMP rigid body by world-position proximity (`<1.5u`,
+`FsmpLink.cpp:104,130`) to any *published chord-host bone*, with nothing hair- or tail-specific about
+it (`PublishTargets`, `:403`; published from `NpcFingerTest.cpp:1903`). If the schlong chain is
+SMP-simulated, PPB can bend it today with the shipped mechanism.
+
+So the loop for *"her hand bends it"* is the tail loop, end to end:
+`her hand capsule → displaces our dynamic chord capsule → displacement sensed → force injected into
+SMP's bullet body → SMP bends the visible mesh → our capsule follows the bone.`
+
+**2. A KEYFRAMED genital would BLOCK her hand.** Infinite mass versus her dynamic, PLANCK-driven hand
+capsule means *her hand stops dead on it* — the exact inverse of the intended behaviour ("hands are
+stronger than the genital, like breasts"). Mass ratio is what expresses that hierarchy, and only a
+dynamic body has one.
+
+**Revised recommendation: dynamic, tail-type, for both NPC and player**, with these constraints:
+* **Keep part 30** — it inherits the grab-phantom shield (`NpcFingerTest.cpp:3066-3072`) and with it
+  the freeze protection.
+* **Mass floor well above the 0.05 kg wig value.** The freeze needs `m → 0` under two stiff
+  constraints (ledger `01:486-507`); a heavier body is the ledger's own fix #1, and the user's
+  instinct here was correct.
+* **Leave statics/clutter Ignored.** It does not need to collide with walls, and widening that is
+  what oscillates (`NpcFingerTest.cpp:3196`).
+* The **player** rig still needs a new lifecycle host — the rig seam never runs for the player
+  (`PPBHook.cpp:1282`). That, not the motion type, is the real work.
+
+Keyframed is retired as the v1 choice. It remains the correct answer only for a *detection-only*
+collider, which is not what this feature is.
+
 Verifier 2's surviving form: *"it can copy only HandBox's BODY FACTORY and snapshot/keyframe idiom,
 explicitly NOT `PlayerSpaceWarp` … and NOT the garment rig's dynamic body factory or its
 NPC-drive-seam lifecycle (unreachable for the player, `PPBHook.cpp:1282`). And a purely keyframed rig
