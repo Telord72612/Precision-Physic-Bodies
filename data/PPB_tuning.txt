@@ -199,10 +199,10 @@ pivAutoSeat 0
 # foot + com are MANUAL (no bounding joints) — enable to discover, then dial like the old days.
 capSpine0Enable 1
 capSpine0AX -5.775
-capSpine0AY 3.728
+capSpine0AY -16.272
 capSpine0AZ 10.238
 capSpine0BX 5.775
-capSpine0BY 3.728
+capSpine0BY -16.272
 capSpine0BZ 10.238
 capSpine0R 4.401
 capSpine1Enable 1
@@ -231,10 +231,10 @@ capNeckBZ 10.29
 capNeckR 3.575
 capThighEnable 1
 capThighAX -2.2
-capThighAY -3.2
+capThighAY -23.200
 capThighAZ -6.0
 capThighBX 0.7
-capThighBY -0.3
+capThighBY -20.300
 capThighBZ 27.4
 capThighR 2.472
 capCalfEnable 1
@@ -313,42 +313,42 @@ capForeC1BZ 11.3
 capForeC1R 2.0
 capThighC1Enable 1
 capThighC1AX 0.138
-capThighC1AY -4.397
+capThighC1AY -24.397
 capThighC1AZ -3.046
 capThighC1BX -0.402
-capThighC1BY -2.902
+capThighC1BY -22.902
 capThighC1BZ 0.78
 capThighC1R 5.564
 capThighC2Enable 1
 capThighC2AX -1.62
-capThighC2AY -0.62
+capThighC2AY -20.620
 capThighC2AZ -9.62
 capThighC2BX 1.105
-capThighC2BY 0.105
+capThighC2BY -19.895
 capThighC2BZ -1.645
 capThighC2R 3.503
 capThighC3Enable 1
 capThighC3AX -0.7
-capThighC3AY -1.7
+capThighC3AY -21.700
 capThighC3AZ -1.0
 capThighC3BX -0.275
-capThighC3BY -0.975
+capThighC3BY -20.975
 capThighC3BZ 5.975
 capThighC3R 6.079
 capThighC4Enable 1
 capThighC4AX 0.482
-capThighC4AY -1.018
+capThighC4AY -21.018
 capThighC4AZ 7.5
 capThighC4BX 0.12
-capThighC4BY -0.08
+capThighC4BY -20.080
 capThighC4BZ 12.52
 capThighC4R 5.564
 capThighC5Enable 1
 capThighC5AX 0.482
-capThighC5AY 0.082
+capThighC5AY -19.918
 capThighC5AZ 17.5
 capThighC5BX 0.82
-capThighC5BY -0.08
+capThighC5BY -20.080
 capThighC5BZ 23.52
 capThighC5R 4.018
 capCalfC1Enable 1
@@ -408,82 +408,82 @@ pivGrabGate 1
 # ============================================================================
 capSpine0C1Enable 1
 capSpine0C1AX 1.335
-capSpine0C1AY 7.875
+capSpine0C1AY -12.125
 capSpine0C1AZ 4.237
 capSpine0C1BX 7.037
-capSpine0C1BY 6.336
+capSpine0C1BY -13.664
 capSpine0C1BZ 10.097
 capSpine0C1R 2.200
 capSpine0C2Enable 1
 capSpine0C2AX -1.335
-capSpine0C2AY 7.875
+capSpine0C2AY -12.125
 capSpine0C2AZ 4.237
 capSpine0C2BX -7.037
-capSpine0C2BY 6.336
+capSpine0C2BY -13.664
 capSpine0C2BZ 10.097
 capSpine0C2R 2.200
 capSpine0C3Enable 1
 capSpine0C3AX -4.2
-capSpine0C3AY 6.825
+capSpine0C3AY -13.175
 capSpine0C3AZ 11.55
 capSpine0C3BX 4.2
-capSpine0C3BY 6.825
+capSpine0C3BY -13.175
 capSpine0C3BZ 11.55
 capSpine0C3R 3.300
 capSpine0C4Enable 1
 capSpine0C4AX -1.575
-capSpine0C4AY 7.35
+capSpine0C4AY -12.650
 capSpine0C4AZ 7.35
 capSpine0C4BX 1.575
-capSpine0C4BY 7.35
+capSpine0C4BY -12.650
 capSpine0C4BZ 7.35
 capSpine0C4R 3.300
 capSpine0C5Enable 1
 capSpine0C5AX 3.623
-capSpine0C5AY -0.819
+capSpine0C5AY -20.819
 capSpine0C5AZ 8.43
 capSpine0C5BX 2.435
-capSpine0C5BY 1.24
+capSpine0C5BY -18.760
 capSpine0C5BZ 12.975
 capSpine0C5R 3.300
 capSpine0C6Enable 1
 capSpine0C6AX -3.623
-capSpine0C6AY -0.819
+capSpine0C6AY -20.819
 capSpine0C6AZ 8.43
 capSpine0C6BX -2.435
-capSpine0C6BY 1.24
+capSpine0C6BY -18.760
 capSpine0C6BZ 12.975
 capSpine0C6R 3.300
 capSpine0C7Enable 1
 capSpine0C7AX 6.773
-capSpine0C7AY 1.281
+capSpine0C7AY -18.719
 capSpine0C7AZ 7.38
 capSpine0C7BX 4.955
-capSpine0C7BY 2.29
+capSpine0C7BY -17.710
 capSpine0C7BZ 12.975
 capSpine0C7R 3.300
 capSpine0C8Enable 1.0
 capSpine0C8AX 0.0
-capSpine0C8AY 0.0
+capSpine0C8AY -20.000
 capSpine0C8AZ 0.0
 capSpine0C8BX 0.0
-capSpine0C8BY 0.0
+capSpine0C8BY -20.000
 capSpine0C8BZ 2.0
 capSpine0C8R 0.500
 capSpine0C9Enable 1.0
 capSpine0C9AX 0.0
-capSpine0C9AY 0.0
+capSpine0C9AY -20.000
 capSpine0C9AZ 0.0
 capSpine0C9BX 0.0
-capSpine0C9BY 0.0
+capSpine0C9BY -20.000
 capSpine0C9BZ 2.0
 capSpine0C9R 0.500
 capSpine0C10Enable 1.0
 capSpine0C10AX 1.276
-capSpine0C10AY -27.773
+capSpine0C10AY -47.773
 capSpine0C10AZ 10.238
 capSpine0C10BX 2.326
-capSpine0C10BY -27.773
+capSpine0C10BY -47.773
 capSpine0C10BZ 10.238
 capSpine0C10R 0.220
 capSpine1C1Enable 1.0
@@ -536,18 +536,18 @@ capSpine1C6BZ 14.58
 capSpine1C6R 2.178
 capSpine1C7Enable 1.0
 capSpine1C7AX 0.0
-capSpine1C7AY 0.0
+capSpine1C7AY 5.0
 capSpine1C7AZ 0.0
 capSpine1C7BX 0.0
-capSpine1C7BY 0.0
+capSpine1C7BY 5.0
 capSpine1C7BZ 2.0
 capSpine1C7R 0.495
 capSpine1C8Enable 1.0
 capSpine1C8AX 0.0
-capSpine1C8AY 0.0
+capSpine1C8AY 5.0
 capSpine1C8AZ 0.0
 capSpine1C8BX 0.0
-capSpine1C8BY 0.0
+capSpine1C8BY 5.0
 capSpine1C8BZ 2.0
 capSpine1C8R 0.495
 # spine1 C9/C10 = BACK (R/L) — 2026-07-29. ⚠ These keys ALREADY EXISTED with stale
@@ -566,12 +566,12 @@ capSpine1C9BX 0.0
 capSpine1C9BY 5.485
 capSpine1C9BZ 11.13
 capSpine1C9R 6.033
-capSpine1C10Enable 0
+capSpine1C10Enable 1
 capSpine1C10AX 0.0
-capSpine1C10AY 0.0
+capSpine1C10AY 5.0
 capSpine1C10AZ 0.0
 capSpine1C10BX 0.0
-capSpine1C10BY 0.0
+capSpine1C10BY 5.0
 capSpine1C10BZ 2.0
 capSpine1C10R 0.5
 capSpine2C1Enable 1
@@ -1003,10 +1003,10 @@ capFootC3BZ -4.0
 capFootC3R 1.2
 capThighC6Enable 1
 capThighC6AX 0.7
-capThighC6AY 0.7
+capThighC6AY -19.300
 capThighC6AZ 26.4
 capThighC6BX 0.7
-capThighC6BY -2.8
+capThighC6BY -22.800
 capThighC6BZ 28.9
 capThighC6R 1.442
 capCalfC4Enable 1
@@ -1229,7 +1229,7 @@ apiDwellTailS 0.25
 # apiLog: START/END receipt lines in PPB.log. ON for this dev session (first in-game
 # verification); the packager refuses to ship it on.
 # dev machine: 1 for verification sessions; flip to 0 at packaging (shipping default)
-apiLog 0
+apiLog 1
 npcRigRangeU 700
 npcRigRangeHystU 100
 npcRigMaxActors 2
@@ -1282,22 +1282,22 @@ fsmpContactHoldMS 200
 # seed + Enable 0 = buried for every woman; a named NPC's antlers/horns come from her npcCap or her
 # own baked NIF. Re-enable + arm a `sculpt` gate only for a future head dial (dialed values archived
 # at tools/ppb-scratch/auri_antlers.txt + yvanni_horns_baked.txt).
-capHeadC15Enable 0
-capHeadC15AX 0
-capHeadC15AY 0
-capHeadC15AZ 20
-capHeadC15BX 0
-capHeadC15BY 0
-capHeadC15BZ 22
-capHeadC15R 0.5
-capHeadC16Enable 0
-capHeadC16AX 0
-capHeadC16AY 0
-capHeadC16AZ 20
-capHeadC16BX 0
-capHeadC16BY 0
-capHeadC16BZ 22
-capHeadC16R 0.5
+capHeadC15Enable 1
+capHeadC15AX 1.85
+capHeadC15AY 0.08
+capHeadC15AZ 0.41
+capHeadC15BX 0.62
+capHeadC15BY 6.38
+capHeadC15BZ -1.16
+capHeadC15R 0.880
+capHeadC16Enable 1
+capHeadC16AX -1.85
+capHeadC16AY 0.08
+capHeadC16AZ 0.41
+capHeadC16BX -0.62
+capHeadC16BY 6.38
+capHeadC16BZ -1.16
+capHeadC16R 0.880
 capHeadC17Enable 0
 capHeadC17AX 0
 capHeadC17AY 0
@@ -1358,18 +1358,18 @@ capHeadC22R 0.5
 # block above. Canonical definitions now live in ONE place only, next to C6.
 capSpine2C15Enable 1
 capSpine2C15AX 0.0
-capSpine2C15AY 0.0
+capSpine2C15AY 5.0
 capSpine2C15AZ 0.0
 capSpine2C15BX 0.0
-capSpine2C15BY 0.0
+capSpine2C15BY 5.0
 capSpine2C15BZ 2.0
 capSpine2C15R 0.500
 capSpine2C16Enable 1
 capSpine2C16AX 0.0
-capSpine2C16AY 0.0
+capSpine2C16AY 5.0
 capSpine2C16AZ 0.0
 capSpine2C16BX 0.0
-capSpine2C16BY 0.0
+capSpine2C16BY 5.0
 capSpine2C16BZ 2.0
 capSpine2C16R 0.500
 
@@ -1638,7 +1638,7 @@ mouthRampOut 3
 mouthFingerBox 1
 # touchProbe: capsule-DIALLING aid. Logs the nearest capsule to each fingertip every 45
 # frames. Ships OFF. Flip to 1 (with touchProbeHud 1) to re-enter a mapping session.
-touchProbe 0
+touchProbe 1
 touchProbeRangeU 3.0
 lmGainThigh 1.0
 lmGainArm 1.0
@@ -1793,7 +1793,7 @@ dgVictimPlanck 1
 #   geomHidden=  how many of those are hidden
 #   bodyArmor= / revealing= / armor='name'   the biped-slot-32 signal
 # Whichever column flips in lockstep with what you SEE is the signal the rig can trust.
-genProbe 0
+genProbe 2
 
 # maleGeometry: 0 = the geometry writers REFUSE a male even if he carries a PPB bake.
 # PPB decides "we own this actor's geometry" by a SHAPE test (COM is a bhkListShape). That was
@@ -2045,11 +2045,53 @@ capSpine2C17BZ 15.015
 capSpine2C17R 6.099
 
 # Spine2 C18 = SHOULDER BLADE L
-capSpine2C18Enable 0
+capSpine2C18Enable 1
 capSpine2C18AX 0.0
-capSpine2C18AY 0.0
+capSpine2C18AY 5.0
 capSpine2C18AZ 0.0
 capSpine2C18BX 0.0
-capSpine2C18BY 0.0
+capSpine2C18BY 5.0
 capSpine2C18BZ 2.0
 capSpine2C18R 0.5
+
+# ── NEW CHILDREN 2026-08-17 ────────────────────────────────────────────────────────────────
+# capComC32/C33 = the DRESS GATE pair. Two pelvic capsules to be raised/lowered by the
+#   clothed-state signal so the orifices are not reachable while the NPC is dressed (the
+#   female counterpart of the male slot-52 test). Shipped at the buried seed, Enable 0,
+#   until they are dialled in VR. COM is now 34 children = kMaxListChildren exactly.
+# capHeadC23/C24 = AURI'S ANTLERS, relocated. Her npcCap lines moved 15/16 -> 23/24 so that
+#   head 15/16 are free for the chin seal on HER too (npcCap wins over the knob, so while
+#   her antlers sat on 15/16 she was the one female who never got the seal). These stay
+#   Enable 0 for everyone: npcCap drives a child even with no knob covering it.
+capComC32Enable 0
+capComC32AX 0.0
+capComC32AY 0.0
+capComC32AZ 0.0
+capComC32BX 0.0
+capComC32BY 0.0
+capComC32BZ 2.0
+capComC32R 0.500
+capComC33Enable 0
+capComC33AX 0.0
+capComC33AY 0.0
+capComC33AZ 0.0
+capComC33BX 0.0
+capComC33BY 0.0
+capComC33BZ 2.0
+capComC33R 0.500
+capHeadC23Enable 0
+capHeadC23AX 0.0
+capHeadC23AY 0.0
+capHeadC23AZ 0.0
+capHeadC23BX 0.0
+capHeadC23BY 0.0
+capHeadC23BZ 2.0
+capHeadC23R 0.500
+capHeadC24Enable 0
+capHeadC24AX 0.0
+capHeadC24AY 0.0
+capHeadC24AZ 0.0
+capHeadC24BX 0.0
+capHeadC24BY 0.0
+capHeadC24BZ 2.0
+capHeadC24R 0.500

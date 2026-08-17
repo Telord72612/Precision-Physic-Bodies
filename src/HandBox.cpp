@@ -1695,6 +1695,20 @@ namespace HandBox {
                      "handBoxEnable+handBoxArm or a higgsSlab* dial.", h->GetBuildNumber());
     }
 
+    // ── GRAB-BUG CENSUS (2026-08-17) ────────────────────────────────────────────────────────
+    // User-reported, log-confirmed: while one hand HIGGS-grabs an NPC limb, the OTHER hand's PPB
+    // finger boxes pass THROUGH that limb's capsule (TOUCHPROBE R[FINGER] upperarm[R].C1 d=-1.71u)
+    // while HIGGS's own hand box still collides. Node-specific: only the held node leaks.
+    // HIGGS is ruled out as the cause (its comparison hook has no logic of its own, and the only
+    // filter rewrites to (playerGroup<<16)|5 are for impacted PROJECTILES) — so the decision is
+    // being made by a registered callback (ours or PLANCK's) or by the vanilla comparator.
+    // This records the raw pair words + which branch WE took, so the next grab names the culprit.
+    // PURE INTEGER, relaxed atomics, no logging (the movaps CTD rule).
+    std::atomic<std::uint32_t> g_gbA{ 0 }, g_gbB{ 0 };   // last (ourBox, other) pair seen
+    std::atomic<std::uint32_t> g_gbBranch{ 0 };          // 0 none, 1 fellThrough(0), 2 belt-Ignore
+    std::atomic<std::uint32_t> g_gbHits{ 0 };            // pairs seen since last report
+    std::atomic<bool>          g_gbArmed{ false };       // set on the main thread while a grab is live
+
     void OnFrame()
     {
         // Deferred filter telemetry (FilterDecision must never log — collision thread).
@@ -1702,6 +1716,36 @@ namespace HandBox {
         if (!s_repIgnore && g_logFirstIgnore.load(std::memory_order_relaxed)) {
             s_repIgnore = true;
             logger::info("HBOX filter: box x HIGGS-own-body IGNORE pair seen (deferred report)");
+        }
+
+        // ── GRAB-BUG CENSUS: arm while the player is HIGGS-grabbing an actor, and report the
+        // last pair our boxes saw against her bodies. Main thread — logging is legal here.
+        {
+            bool grabbing = false;
+            if (auto* hg = Interop::GetHiggs())
+                grabbing = (hg->IsHoldingObject(false) && hg->GetGrabbedObject(false)) ||
+                           (hg->IsHoldingObject(true)  && hg->GetGrabbedObject(true));
+            g_gbArmed.store(grabbing, std::memory_order_relaxed);
+            static bool s_wasGrabbing = false;
+            if (s_wasGrabbing && !grabbing) {          // report once, on RELEASE
+                const std::uint32_t n = g_gbHits.exchange(0, std::memory_order_relaxed);
+                const std::uint32_t a = g_gbA.load(std::memory_order_relaxed);
+                const std::uint32_t b = g_gbB.load(std::memory_order_relaxed);
+                const std::uint32_t br = g_gbBranch.exchange(0, std::memory_order_relaxed);
+                if (n) {
+                    logger::info("GRABBUG {} pair(s) during the grab | ourBox=0x{:08X} "
+                                 "(layer {} part {} grp {:04X} bit15 {}) | other=0x{:08X} "
+                                 "(layer {} part {} grp {:04X} bit15 {}) | PPB verdict: {}",
+                                 n, a, a & 0x7Fu, (a >> 8) & 0x1Fu, a >> 16, (a & 0x8000u) ? 1 : 0,
+                                 b, b & 0x7Fu, (b >> 8) & 0x1Fu, b >> 16, (b & 0x8000u) ? 1 : 0,
+                                 br == 2 ? "WE returned Ignore (ours)"
+                                         : "fell through (vanilla or another mod decided)");
+                } else {
+                    logger::info("GRABBUG grab ended: our boxes were NEVER asked about her bodies "
+                                 "— the pair was rejected upstream (broadphase or an earlier callback)");
+                }
+            }
+            s_wasGrabbing = grabbing;
         }
 
         // Frame counter ONLY (2026-07-10 lag fix): the bone snapshot + the invDt
@@ -1736,7 +1780,20 @@ namespace HandBox {
             (op == 2u || op == 3u || op == 5u || op == 6u)) {
             // ⚠ never log here — collision-thread callback, fmt SIMD = CTD (see NpcFingerTest)
             g_logFirstIgnore.store(true, std::memory_order_relaxed);
+            if (g_gbArmed.load(std::memory_order_relaxed)) {
+                g_gbA.store(bA ? infoA : infoB, std::memory_order_relaxed);
+                g_gbB.store(o, std::memory_order_relaxed);
+                g_gbBranch.store(2, std::memory_order_relaxed);       // WE Ignored it
+                g_gbHits.fetch_add(1, std::memory_order_relaxed);
+            }
             return 2;
+        }
+        if (g_gbArmed.load(std::memory_order_relaxed)) {
+            // fell through to the vanilla table / the next mod's callback — record who
+            g_gbA.store(bA ? infoA : infoB, std::memory_order_relaxed);
+            g_gbB.store(o, std::memory_order_relaxed);
+            g_gbBranch.store(1, std::memory_order_relaxed);
+            g_gbHits.fetch_add(1, std::memory_order_relaxed);
         }
         // Everything else falls through to the vanilla table — layer 56's row gives
         // Biped(8)/BipedNoCC(33)/DeadBip(32) the payoff Collide and excludes

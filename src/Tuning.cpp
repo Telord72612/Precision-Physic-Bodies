@@ -248,8 +248,8 @@ namespace ObjectHold {
                     { "capSpine0C", g_tune.spine0C, 10 },
                     { "capSpine1C", g_tune.spine1C, 12 },
                     { "capSpine2C", g_tune.spine2C, 20 },   // 2026-07-16: 14 -> 16 (+Argonian ridge)
-                    { "capHeadC",   g_tune.headC,   22 },   // 2026-07-19: 16 -> 22 (+C17..C22 = the 8 head-joint horn/antler seeds; C15/C16 doubled as Khajiit ears on beast heads)
-                    { "capComC",    g_tune.comC,    32 },
+                    { "capHeadC",   g_tune.headC,   24 },   // 2026-07-19: 16 -> 22 (+C17..C22 = the 8 head-joint horn/antler seeds; C15/C16 doubled as Khajiit ears on beast heads)
+                    { "capComC",    g_tune.comC,    34 },
                 };
                 static const char* kSuf[8] = { "Enable", "AX", "AY", "AZ", "BX", "BY", "BZ", "R" };
                 char buf[40];
@@ -557,11 +557,11 @@ namespace ObjectHold {
             break;
         // ── TORSO (wave-2b bake): main + 10/7/6/12/20 buried seed children ──
         // (head=10, spine0=7 & spine1=6 in the NIF but the arrays keep MAX capacity 10; spine2=12; com=20)
-        case 3:  f = ChildPtr(g_tune.headC,   22, child, &g_tune.capHeadEnable);   break;   // 2026-07-19: 16 -> 22 (horn/antler seeds)
+        case 3:  f = ChildPtr(g_tune.headC,   24, child, &g_tune.capHeadEnable);   break;   // 2026-07-19: 16 -> 22 (horn/antler seeds)
         case 4:  f = ChildPtr(g_tune.spine0C, 10, child, &g_tune.capSpine0Enable); break;
         case 5:  f = ChildPtr(g_tune.spine1C, 12, child, &g_tune.capSpine1Enable); break;   // 2026-07-29: 10 -> 12
         case 6:  f = ChildPtr(g_tune.spine2C, 20, child, &g_tune.capSpine2Enable); break;   // 2026-07-29: 16 -> 20
-        case 11: f = ChildPtr(g_tune.comC,    32, child, &g_tune.capComEnable);    break;   // 2026-07-29: 20 -> 32
+        case 11: f = ChildPtr(g_tune.comC,    34, child, &g_tune.capComEnable);    break;   // 2026-07-29: 20 -> 32
         default: break;
         }
         if (!f) return false;
@@ -577,14 +577,14 @@ namespace ObjectHold {
         case 0:  return 5;   // hand: 5 palm rods (2026-07-12 palm fill: +C4/C5 between center and pinky)
         case 1:  return 2;   // forearm: main + taper
         case 2:  return 4;   // upper arm: main + taper + 2 shoulder-lock (2026-07-09)
-        case 3:  return 23;  // head: main + 22 seeds     (2026-07-19: +C17..C22 = horn/antler seeds; 07-16: C15/C16 ears)
+        case 3:  return 25;  // head: main + 22 seeds     (2026-07-19: +C17..C22 = horn/antler seeds; 07-16: C15/C16 ears)
         case 4:  return 10;  // spine0: main + 9 seeds    (2026-07-16: +C8/C9 = Argonian ridge)
         case 5:  return 11;  // spine1: main + 10        (2026-07-29: +C9/C10 = BACK L/R)
         case 6:  return 19;  // spine2: main + 18        (2026-07-29: +C17/C18 = SHOULDER BLADE L/R)
         case 8:  return 7;   // thigh: main + 5 rings + knee hook (2026-07-09)
         case 9:  return 5;   // calf:  main + 3 rings + knee hook (2026-07-09)
         case 10: return 4;   // foot: main + 3 sole rods (2026-07-09: +1 ankle lock)
-        case 11: return 32;  // com: main + 31           (2026-07-29: +C21..C31 pelvis sensors)
+        case 11: return 34;  // com: main + 31           (2026-07-29: +C21..C31 pelvis sensors)
         default: return 0;
         }
     }

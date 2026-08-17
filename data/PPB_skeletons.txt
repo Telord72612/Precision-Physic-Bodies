@@ -80,8 +80,8 @@ npcCap 000800:Yvanni Follower.esp spine2 12  -2.853 7.587 11.565  -5.404 11.788 
 # pending), and (b) the game-close finalization = reset capHeadC15..22 to the up-20u seed +
 # Enable 0 + comment the `sculpt skeleton_female.nif head` gate. UNCOMMENT these there. NEVER bake
 # (shared human nif → every woman would get antlers). 4 segments/side, L=X-mirror of R.
-npcCap 000D63:018Auri.esp head 15   4.0  7.8  13.2    3.7  7.0   9.2   0.5
-npcCap 000D63:018Auri.esp head 16  -4.0  7.8  13.2   -3.7  7.0   9.2   0.5
+npcCap 000D63:018Auri.esp head 23   4.0  7.8  13.2    3.7  7.0   9.2   0.5
+npcCap 000D63:018Auri.esp head 24  -4.0  7.8  13.2   -3.7  7.0   9.2   0.5
 npcCap 000D63:018Auri.esp head 17   4.3  7.6  11.4    6.42 3.73 13.37  0.5
 npcCap 000D63:018Auri.esp head 18  -4.3  7.6  11.4   -6.42 3.73 13.37  0.5
 npcCap 000D63:018Auri.esp head 19   6.3  4.1  13.1    5.5 -2.5  13.5   0.5

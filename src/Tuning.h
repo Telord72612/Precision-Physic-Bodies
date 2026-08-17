@@ -1109,7 +1109,7 @@ namespace ObjectHold {
         // 2026-07-29: spine1 10->12 (C9/C10 back), spine2 16->20 (C17/C18 shoulder blade),
         // comC 20->32 (C21..C31 = the 11 pelvis sensors). All four skeletons carry the same
         // counts so one knob index means one anatomy everywhere.
-        CapChild spine0C[10]{}, spine1C[12]{}, spine2C[20]{}, headC[22]{}, comC[32]{};
+        CapChild spine0C[10]{}, spine1C[12]{}, spine2C[20]{}, headC[24]{}, comC[34]{};
     };
     extern GrabTune g_tune;           // the live tune instance — overwritten by the hot-reload
 

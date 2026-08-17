@@ -36,7 +36,8 @@ namespace {
         int  geomHidden   = 0;      // ...of those, flagged kHidden
         bool bodyArmor    = false;  // something equipped in biped slot 32 (body)
         bool revealing    = false;  // that body armor carries a *revealing* keyword
-        bool gen52        = false;  // ★ THE CANDIDATE THAT MATTERS: biped slot 52 occupied
+        bool gen52        = false;  // ★ THE CANDIDATE: slot 52 on the actor's SKIN
+        bool gen52Worn    = false;  // control: slot 52 as an EQUIPPED item (expected always 0)
         bool isFemale     = false;
         char geomName[64] = "";     // first geometry name found under the chain (identifies the
                                     // schlong mod: SOS / SAM / TRX / UBE all name theirs)
@@ -53,7 +54,8 @@ namespace {
                  | ((std::uint64_t)(bodyArmor ? 1 : 0) << 32)
                  | ((std::uint64_t)(revealing ? 1 : 0) << 33)
                  | ((std::uint64_t)(isFemale  ? 1 : 0) << 34)
-                 | ((std::uint64_t)(gen52     ? 1 : 0) << 35);
+                 | ((std::uint64_t)(gen52     ? 1 : 0) << 35)
+                 | ((std::uint64_t)(gen52Worn ? 1 : 0) << 36);
         }
     };
 
@@ -168,11 +170,25 @@ namespace GenitalProbe {
         // eventual gate — that must walk GetInventoryChanges(false)->entryList and test
         // armo->HasPartOf(kGen) directly.
         constexpr auto kGen = RE::BIPED_MODEL::BipedObjectSlot::kModPelvisSecondary;
+        // ⚠ 2026-08-17 CORRECTION: GetWornArmor(52) is the WRONG read and returns null even on a
+        // naked male (measured: SLOT52=0 on a nude Imperial with all 10 chain bones present).
+        // TNG's genital addon is part of the actor's SKIN, not an equipped item, so the skin is
+        // what carries the slot-52 part. GetWornArmor is kept as a second column purely to show
+        // that it never fires — if it ever does, some mod really is EQUIPPING something there.
+        if (auto* skin = actor->GetSkin()) {
+            if (skin->HasPartOf(kGen)) {
+                s.gen52 = true;
+                const char* gn = skin->GetName();
+                if (!gn || !*gn) gn = skin->GetFormEditorID();
+                if (gn && *gn) std::snprintf(s.gen52Name, sizeof(s.gen52Name), "%s", gn);
+            }
+        }
         if (auto* g52 = actor->GetWornArmor(kGen)) {
-            s.gen52 = true;
-            const char* gn = g52->GetName();
-            if (!gn || !*gn) gn = g52->GetFormEditorID();
-            if (gn && *gn) std::snprintf(s.gen52Name, sizeof(s.gen52Name), "%s", gn);
+            s.gen52Worn = true;
+            if (!s.gen52Name[0]) {
+                const char* gn = g52->GetName();
+                if (gn && *gn) std::snprintf(s.gen52Name, sizeof(s.gen52Name), "%s", gn);
+            }
         }
 
         bool changed = false;
@@ -190,10 +206,10 @@ namespace GenitalProbe {
         if (auto* b = actor->GetActorBase()) if (const char* f = b->GetFullName(); f && *f) nm = f;
 
         logger::info(
-            "GENPROBE {:08X} '{}' sex={} | SLOT52={} '{}' | nodes={}/{} hidden={} "
+            "GENPROBE {:08X} '{}' sex={} | SLOT52(skin)={} worn={} '{}' | nodes={}/{} hidden={} "
             "| geom={} geomHidden={} first='{}' | bodyArmor={} revealing={} armor='{}'",
             id, nm, s.isFemale ? "F" : "M",
-            s.gen52 ? 1 : 0, s.gen52Name[0] ? s.gen52Name : "-",
+            s.gen52 ? 1 : 0, s.gen52Worn ? 1 : 0, s.gen52Name[0] ? s.gen52Name : "-",
             s.nodesFound, kGenNodeCount, s.nodesHidden,
             s.geomNear, s.geomHidden, s.geomName[0] ? s.geomName : "-",
             s.bodyArmor ? 1 : 0, s.revealing ? 1 : 0, s.armorName[0] ? s.armorName : "-");
