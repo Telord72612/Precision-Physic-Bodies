@@ -836,6 +836,7 @@ namespace ObjectHold {
     bool  DgHeadPlanckOn()      { return g_tune.dgHeadPlanck > 0.5f; }
     bool  DgVictimPlanckOn()    { return g_tune.dgVictimPlanck > 0.5f; }
     bool  GenProbeOn()          { return g_tune.genProbe > 0.5f; }
+    bool  GenProbeFast()        { return g_tune.genProbe > 1.5f; }
     bool  MaleGeometryOn()      { return g_tune.maleGeometry > 0.5f; }
     float HandBoxRelAlpha()     { return std::clamp(g_tune.handBoxRelAlpha, 0.f, 1.f); }
     bool  HandBoxPhaseLogOn()   { return g_tune.handBoxPhaseLog > 0.5f; }

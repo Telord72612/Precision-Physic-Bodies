@@ -125,7 +125,12 @@ namespace GenitalProbe {
             const std::uint64_t now = NowMs();
             auto it = g_nextPollMs.find(id);
             if (it != g_nextPollMs.end() && now < it->second) return;
-            g_nextPollMs[id] = now + 1000 + (id % 331);
+            // genProbe 2 = FAST MODE (~10 Hz): the equip-latency measurement. TNG queues its
+            // addon through ActorEquipManager, so the state flips some time AFTER the visual;
+            // at the 1 Hz default that lag is unmeasurable (resolution ~1.3 s). Use 2 for a
+            // dress/undress timing session, 1 for ordinary observation.
+            const bool fast = ObjectHold::GenProbeFast();
+            g_nextPollMs[id] = now + (fast ? 100 + (id % 37) : 1000 + (id % 331));
         }
 
         Signals s;

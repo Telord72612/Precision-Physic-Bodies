@@ -1269,6 +1269,7 @@ namespace ObjectHold {
     bool     DgHeadPlanckOn();    // leave head clones under PLANCK (dgHeadPlanck)
     bool     DgVictimPlanckOn();  // leave dismembered VICTIMS under PLANCK (dgVictimPlanck)
     bool     GenProbeOn();        // genital dress-signal research probe (genProbe)
+    bool     GenProbeFast();     // genProbe 2 = ~10 Hz poll, for measuring TNG's equip latency
     bool     MaleGeometryOn();   // let the geometry writers touch a male carrying a PPB bake (maleGeometry)
     float    HandBoxRelAlpha();   // mode-2 relation filter; 1 = unfiltered (jitter fix)
     bool     HandBoxPhaseLogOn(); // HBOXPH jitter diagnostic (handBoxPhaseLog)
