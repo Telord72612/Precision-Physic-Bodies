@@ -124,6 +124,36 @@ skeletons**, on the XP32 **male** skeleton, on `_1stperson`, `vampirelord`, `wer
 seven-to-eight on **bear, wolf, draugr, giant, horse, deer, sabrecat, riekling, chaurus, falmer,
 troll, skeever, goat**. A bone test fires on a bear. The slot-52 skin test is immune at zero cost.
 
+### ★★ MEASURED IN VR 2026-08-17 — the gate is a TWO-PART test, and it is not what was predicted
+
+First real GENPROBE data, same male NPC, dressed then naked:
+
+```
+17:37:32  Imperial sex=M | SLOT52(skin)=1 worn=1 'TNG_Skin_B07' | bodyArmor=1 armor='Clothes'
+17:38:28  Imperial sex=M | SLOT52(skin)=1 worn=0 'TNG_Skin_B07' | bodyArmor=0 armor='-'
+```
+
+**`skin->HasPartOf(52)` is 1 in BOTH states.** It is therefore *not* an exposure test — it is a
+CAPABILITY test: "TNG has assigned this actor a schlong" (the skin is `TNG_Skin_B07`). Predicting
+otherwise was wrong.
+
+**The discriminator is `GetWornArmor(52)`** — the column that was kept only as a control expected
+never to fire. It flips **1 when dressed, 0 when naked**, because TNG tags *covering* garments with
+biped slot 52; an equipped item in that slot is what hides the genital addon.
+
+```
+exposed  ==  skin->HasPartOf(52)  &&  !GetWornArmor(52)
+```
+
+Which lands exactly on the heelFix capability/state split:
+* **capability** (latch per FormID, monotone within a 3D build): `skin->HasPartOf(52)`
+* **state** (poll ~1 Hz with hysteresis): `GetWornArmor(52)` — occupied means COVERED
+
+`bodyArmor` (slot 32) also flipped here, but it is the wrong signal: a revealing outfit sets slot 32
+while leaving the crotch bare, and only the slot-52 pair separates those. `revealing` (the keyword
+substring) is confirmed junk in the same session — it read 1 on Carmella's Necromancer Black Robes.
+`geom` reads 0 in every state, as expected: a skinned mesh is never parented under its bones.
+
 ### Gate shape (heelFix template, with one inversion)
 
 `heelFix`'s latch is sticky **because the applied magnitude comes from a live externally-owned
