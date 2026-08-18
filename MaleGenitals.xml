@@ -1,0 +1,569 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<system>
+<!-- PPB sway override: chain z limits 0.05->0.35, chain z-stiffness 50000->12000, stabiliser z 0.1->0.35. 5 numeric edits from SOFTBODY's original, nothing else. ASCII comment INSIDE the root: FSMP's reader must never see it before the root tag. -->
+
+	<bone name="NPC Head [Head]"/>
+	<bone name="NPC L Clavicle [LClv]"/>
+	<bone name="NPC R Clavicle [RClv]"/>
+	<bone name="NPC L Forearm [LLar]"/>
+	<bone name="NPC R Forearm [RLar]"/>
+	<bone name="NPC L ForearmTwist1 [LLt1]"/>
+	<bone name="NPC R ForearmTwist1 [RLt1]"/>
+	<bone name="NPC L ForearmTwist2 [LLt2]"/>
+	<bone name="NPC R ForearmTwist2 [RLt2]"/>
+	<bone name="NPC L UpperArm [LUar]"/>
+	<bone name="NPC R UpperArm [RUar]"/>
+	<bone name="NPC L UpperarmTwist1 [LUt1]"/>
+	<bone name="NPC R UpperarmTwist1 [RUt1]"/>
+	<bone name="NPC L UpperarmTwist2 [LUt2]"/>
+	<bone name="NPC R UpperarmTwist2 [RUt2]"/>
+	<bone name="NPC Spine2 [Spn2]"/>
+	<bone name="NPC L Calf [LClf]"/>
+	<bone name="NPC R Calf [RClf]"/>
+	<bone name="NPC L Foot [Lft ]"/>
+	<bone name="NPC R Foot [Rft ]"/>
+	<bone name="NPC R Breast"/>
+	<bone name="NPC L Breast"/>
+
+   //futa
+   <bone name="NPC Spine1 [Spn1]"/>
+	<bone name="NPC Spine [Spn0]"/>
+	<bone name="NPC Belly"/>
+	<bone name="NPC L GenitalsScrotum [LGenScrot]"/>
+	<bone name="NPC R GenitalsScrotum [RGenScrot]"/>
+	<bone name="VaginaB1"/>
+	<bone name="Clitoral1"/>
+	<bone name="NPC L Pussy02"/>
+	<bone name="NPC R Pussy02"/>
+	<bone name="NPC Anus Deep2"/>
+	<bone name="NPC L Butt"/>
+	<bone name="NPC R Butt"/>
+	<bone name="NPC L FrontThigh"/>
+	<bone name="NPC R FrontThigh"/>
+	<bone name="NPC L RearCalf [LrClf]"/> 
+	<bone name="NPC R RearCalf [RrClf]"/> 
+	<bone name="NPC L RearThigh"/> 
+	<bone name="NPC R RearThigh"/> 
+	<bone name="NPC LT Anus2"/>
+	<bone name="NPC RT Anus2"/>
+	<bone name="NPC LB Anus2"/>
+	<bone name="NPC RB Anus2"/>
+	//male
+	<bone name="NPC GenitalsBase [GenBase]"/>
+	<bone name="NPC Genitals01 [Gen01]"/>	
+	<bone name="NPC Pelvis [Pelv]"/>
+	<bone name="NPC L Thigh [LThg]"/>
+	<bone name="NPC R Thigh [RThg]"/>
+	<bone name="NPC L Hand [LHnd]"/>
+	<bone name="NPC R Hand [RHnd]"/>
+	//wof
+	<bone name="NPC R Thigh [LThg]"/>
+
+	<bone name="GenitalsLag02"/>
+	<bone name="GenitalsLag03"/>
+	<bone name="GenitalsLag04"/>
+	<bone name="GenitalsLag05"/>
+	<bone name="GenitalsLag06"/>
+	
+
+	<bone-default>
+		<mass>0.5</mass>
+		<inertia x="50" y="50" z="50"/>
+		<centerOfMassTransform>
+			<basis x="0" y="0" z="0" w="1" />
+			<origin x="0" y="0" z="0" />
+		</centerOfMassTransform>
+		<linearDamping>0.9</linearDamping>
+		<angularDamping>0.9</angularDamping>
+		<gravity-factor>0</gravity-factor>
+		<friction>0.3</friction>
+		<rollingFriction>0.3</rollingFriction>
+		<restitution>0.2</restitution>
+		<margin-multiplier>0.5</margin-multiplier>
+	</bone-default>
+
+
+
+		<bone name="NPC Genitals02 [Gen02]"/>
+		<bone name="NPC Genitals03 [Gen03]"/>
+		<bone name="NPC Genitals04 [Gen04]"/>
+		<bone name="NPC Genitals05 [Gen05]"/>
+		<bone name="NPC Genitals06 [Gen06]"/>
+
+
+
+
+
+	<bone-default>
+		<mass>0.1</mass>
+		<inertia x="1" y="1" z="1"/>
+		<centerOfMassTransform>
+			<basis x="0" y="0" z="0" w="1" />
+			<origin x="0" y="0" z="0" />
+		</centerOfMassTransform>
+		<linearDamping>0.7</linearDamping>
+		<angularDamping>0.3</angularDamping>
+		<gravity-factor>1</gravity-factor>
+		<margin-multiplier>0.1</margin-multiplier>
+	</bone-default>
+
+		<bone name="NPC GenitalsScrotum [GenScrot]"/>
+
+	
+<generic-constraint bodyA="NPC GenitalsScrotum [GenScrot]" bodyB="NPC GenitalsBase [GenBase]">
+		<frameInB>
+			<basis x="0" y="0" z="0" w="1"/>			 
+			<origin x="0" y="0" z="0"/>
+		</frameInB>
+		<useLinearReferenceFrameA>false</useLinearReferenceFrameA>
+		<enableAngularSprings>0</enableAngularSprings>
+    	<enableLinearSprings>0</enableLinearSprings>
+		<linearLowerLimit x="0" y="0" z="0"/>
+		<linearUpperLimit x="0" y="0" z="0"/>
+		<angularLowerLimit x="-0.5" y="-0.1" z="-0.5"/>			
+		<angularUpperLimit x="0.5" y="0.1" z="0.5"/>
+	</generic-constraint>
+
+	<generic-constraint-default>
+		<frameInB>
+			<basis x="0" y="0" z="0" w="1" />
+			<origin x="0" y="0" z="0" />
+		</frameInB>
+		<useLinearReferenceFrameA>false</useLinearReferenceFrameA>
+    	<enableAngularSprings>0</enableAngularSprings>
+    	<enableLinearSprings>0</enableLinearSprings>
+    	<linearStiffnessLimited>0</linearStiffnessLimited>
+    	<angularStiffnessLimited>0</angularStiffnessLimited>
+
+    	<linearLowerLimit x="1" y="0" z="1"/>
+    	<linearUpperLimit x="0" y="0" z="0"/>
+		<angularLowerLimit x="-1.7" y="-1.7" z="-1.7" />
+    	<angularUpperLimit x="1.7" y="1.7" z="1.7" />
+    	<linearStiffness x="0" y="0" z="0" />
+    	<angularStiffness x="0" y="0" z="0"/>
+    	<linearDamping x="0" y="0" z="0" />
+    	<angularDamping x="0" y="0" z="0" />
+		<linearEquilibrium x="0" y="0" z="0" />
+    	<angularEquilibrium x="0" y="0" z="0" />
+		
+	</generic-constraint-default>
+
+      	<generic-constraint bodyA="NPC Genitals02 [Gen02]" bodyB="GenitalsLag03"/>
+		<generic-constraint bodyA="NPC Genitals03 [Gen03]" bodyB="GenitalsLag04"/>
+		<generic-constraint bodyA="NPC Genitals04 [Gen04]" bodyB="GenitalsLag05"/>
+		<generic-constraint bodyA="NPC Genitals05 [Gen05]" bodyB="GenitalsLag06"/>
+		<generic-constraint bodyA="NPC Genitals06 [Gen06]" bodyB="GenitalsLag06"/>
+
+
+	
+	<generic-constraint-default>
+		<frameInB>
+			<basis x="0" y="0" z="0" w="1" />
+			<origin x="0" y="0" z="0" />
+		</frameInB>
+		<useLinearReferenceFrameA>false</useLinearReferenceFrameA>
+    	<enableAngularSprings>1</enableAngularSprings>
+    	<enableLinearSprings>0</enableLinearSprings>
+    	<linearStiffnessLimited>0</linearStiffnessLimited>
+    	<angularStiffnessLimited>0</angularStiffnessLimited>
+
+    	<linearLowerLimit x="0" y="1" z="0" />
+    	<linearUpperLimit x="0" y="0" z="0" />
+		<angularLowerLimit x="-0.7" y="0" z="-0.35" />
+    	<angularUpperLimit x="0.7" y="0" z="0.35" />
+    	<linearStiffness x="0" y="0" z="0" />
+    	<angularStiffness x="50000" y="50000" z="12000"/>
+    	<linearDamping x="0" y="0" z="0" />
+    	<angularDamping x="150" y="150" z="150" />
+		<linearEquilibrium x="0" y="0" z="0" />
+    	<angularEquilibrium x="0" y="0" z="0" />
+		
+	</generic-constraint-default>
+
+        <generic-constraint bodyA="NPC Genitals02 [Gen02]" bodyB="NPC Genitals01 [Gen01]"/>
+		<generic-constraint bodyA="NPC Genitals03 [Gen03]" bodyB="NPC Genitals02 [Gen02]"/>
+		<generic-constraint bodyA="NPC Genitals04 [Gen04]" bodyB="NPC Genitals03 [Gen03]"/>
+		<generic-constraint bodyA="NPC Genitals05 [Gen05]" bodyB="NPC Genitals04 [Gen04]"/>
+		<generic-constraint bodyA="NPC Genitals06 [Gen06]" bodyB="NPC Genitals05 [Gen05]"/>
+
+	<generic-constraint-default>
+		<frameInB>
+			<basis x="0" y="0" z="0" w="1" />
+			<origin x="0" y="0" z="0" />
+		</frameInB>
+		<useLinearReferenceFrameA>false</useLinearReferenceFrameA>
+    	<enableAngularSprings>1</enableAngularSprings>
+    	<enableLinearSprings>1</enableLinearSprings>
+    	<linearStiffnessLimited>0</linearStiffnessLimited>
+    	<angularStiffnessLimited>0</angularStiffnessLimited>
+
+    	<linearLowerLimit x="0" y="1" z="0" />
+    	<linearUpperLimit x="0" y="0" z="0" />
+		<angularLowerLimit x="-0.5" y="0" z="-0.35" />
+    	<angularUpperLimit x="0.5" y="0" z="0.35" />
+    	<linearStiffness x="0" y="0" z="0" />
+    	<angularStiffness x="1000" y="0" z="1000"/>
+    	<linearDamping x="0" y="0" z="0" />
+    	<angularDamping x="120" y="210" z="120" />
+		<linearEquilibrium x="0" y="0" z="0" />
+    	<angularEquilibrium x="0" y="0" z="0" />
+		
+	</generic-constraint-default>
+ 
+		<generic-constraint bodyA="NPC Genitals06 [Gen06]" bodyB="NPC Genitals01 [Gen01]"/>
+
+	<per-triangle-shape name="MaleBody">
+   		<margin>0.1</margin>
+   		<penetration>0.1</penetration>	
+   	<tag>MaleBody</tag>
+		<shared>public</shared>
+		<no-collide-with-tag>MaleBody</no-collide-with-tag>
+		<no-collide-with-tag>MaleHands</no-collide-with-tag>
+		<no-collide-with-tag>Genitals</no-collide-with-tag>
+		<weight-threshold bone="NPC Head [Head]">0.2</weight-threshold>
+		<weight-threshold bone="NPC L Clavicle [LClv]">0.2</weight-threshold>
+		<weight-threshold bone="NPC R Clavicle [RClv]">0.2</weight-threshold>
+		<weight-threshold bone="NPC L Forearm [LLar]">0.2</weight-threshold>
+		<weight-threshold bone="NPC R Forearm [RLar]">0.2</weight-threshold>
+		<weight-threshold bone="NPC L ForearmTwist1 [LLt1]">0.2</weight-threshold>
+		<weight-threshold bone="NPC R ForearmTwist1 [RLt1]">0.2</weight-threshold>
+		<weight-threshold bone="NPC L ForearmTwist2 [LLt2]">0.2</weight-threshold>
+		<weight-threshold bone="NPC R ForearmTwist2 [RLt2]">0.2</weight-threshold>
+		<weight-threshold bone="NPC L UpperArm [LUar]">0.2</weight-threshold>
+		<weight-threshold bone="NPC R UpperArm [RUar]">0.2</weight-threshold>
+		<weight-threshold bone="NPC L UpperarmTwist1 [LUt1]">0.2</weight-threshold>
+		<weight-threshold bone="NPC R UpperarmTwist1 [RUt1]">0.2</weight-threshold>
+		<weight-threshold bone="NPC L UpperarmTwist2 [LUt2]">0.2</weight-threshold>
+		<weight-threshold bone="NPC R UpperarmTwist2 [RUt2]">0.2</weight-threshold>
+		<weight-threshold bone="NPC Spine [Spn0]">0.2</weight-threshold>
+		<weight-threshold bone="NPC Spine2 [Spn2]">0.2</weight-threshold>
+		<weight-threshold bone="NPC Spine1 [Spn1]">0.2</weight-threshold>
+		<weight-threshold bone="NPC Pelvis [Pelv]">0.2</weight-threshold>
+		<weight-threshold bone="NPC Belly">0.2</weight-threshold>
+		<weight-threshold bone="NPC L Hand [LHnd]">0.2</weight-threshold>
+		<weight-threshold bone="NPC R Hand [RHnd]">0.2</weight-threshold>
+		<weight-threshold bone="NPC L Thigh [LThg]">0.2</weight-threshold>
+		<weight-threshold bone="NPC R Thigh [RThg]">0.2</weight-threshold>
+		<weight-threshold bone="NPC L Calf [LClf]">0.2</weight-threshold>
+		<weight-threshold bone="NPC R Calf [RClf]">0.2</weight-threshold>
+		<weight-threshold bone="NPC L FrontThigh">0.2</weight-threshold>
+		<weight-threshold bone="NPC R FrontThigh">0.2</weight-threshold>
+		<weight-threshold bone="NPC L Foot [Lft ]">0.2</weight-threshold>
+		<weight-threshold bone="NPC R Foot [Rft ]">0.2</weight-threshold>
+		<weight-threshold bone="NPC GenitalsBase [GenBase]">0.2</weight-threshold>
+		<weight-threshold bone="NPC Genitals01 [Gen01]">0.2</weight-threshold>
+		<weight-threshold bone="NPC GenitalsScrotum [GenScrot]">0.2</weight-threshold>
+		<weight-threshold bone="NPC R Breast">0.2</weight-threshold>
+		<weight-threshold bone="NPC L Breast">0.2</weight-threshold>
+		<weight-threshold bone="NPC L Butt">0.2</weight-threshold>
+		<weight-threshold bone="NPC R Butt">0.2</weight-threshold>
+	</per-triangle-shape>
+	
+	<per-triangle-shape name="MaleGenitals">
+		<margin>0.1</margin>			
+		<penetration>0.1</penetration>
+		<wind-effect>0</wind-effect>	
+		<shared>public</shared>
+   	<tag>Genitals</tag>
+   		<no-collide-with-tag>vaginaskip</no-collide-with-tag>
+		<no-collide-with-tag>butt</no-collide-with-tag>
+   		<no-collide-with-tag>Genitals</no-collide-with-tag>	
+		<no-collide-with-tag>MaleBody</no-collide-with-tag>	
+		<no-collide-with-tag>ground</no-collide-with-tag>	
+		<no-collide-with-tag>hands</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_Br</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_Belly</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_B</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_L</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_V</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_A</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_C</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_Head</no-collide-with-tag>
+			<weight-threshold bone="NPC GenitalsScrotum [GenScrot]">1</weight-threshold>
+			<weight-threshold bone="NPC L GenitalsScrotum [LGenScrot]">1</weight-threshold>
+			<weight-threshold bone="NPC R GenitalsScrotum [RGenScrot]">1</weight-threshold>
+			<weight-threshold bone="NPC GenitalsBase [GenBase]">1</weight-threshold>
+			<weight-threshold bone="NPC Genitals01 [Gen01]">0.1</weight-threshold>
+			<weight-threshold bone="NPC Genitals02 [Gen02]">0.1</weight-threshold>
+			<weight-threshold bone="NPC Genitals03 [Gen03]">0.1</weight-threshold>
+			<weight-threshold bone="NPC Genitals04 [Gen04]">0.1</weight-threshold>
+			<weight-threshold bone="NPC Genitals05 [Gen05]">0.1</weight-threshold>
+			<weight-threshold bone="NPC Genitals06 [Gen06]">0.1</weight-threshold>
+	</per-triangle-shape>
+
+	<per-triangle-shape name="Werewolf Genitals">
+		<margin>0.1</margin>			
+		<penetration>0.1</penetration>
+		<wind-effect>0</wind-effect>	
+		<shared>public</shared>
+   	<tag>Genitals</tag>
+		<no-collide-with-tag>butt</no-collide-with-tag>
+   		<no-collide-with-tag>Genitals</no-collide-with-tag>	
+		<no-collide-with-tag>MaleBody</no-collide-with-tag>	
+		<no-collide-with-tag>ground</no-collide-with-tag>	
+		<no-collide-with-tag>hands</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_Br</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_Belly</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_B</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_L</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_V</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_A</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_C</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_Head</no-collide-with-tag>	
+	</per-triangle-shape>
+
+	<per-triangle-shape name="CBBE_Shlong">
+		<margin>0.1</margin>			
+		<penetration>0.1</penetration>
+		<wind-effect>0</wind-effect>	
+		<shared>public</shared>
+   	<tag>Genitals</tag>
+   		<no-collide-with-tag>vaginaskip</no-collide-with-tag>
+		<no-collide-with-tag>butt</no-collide-with-tag>
+   		<no-collide-with-tag>Genitals</no-collide-with-tag>	
+		<no-collide-with-tag>MaleBody</no-collide-with-tag>	
+		<no-collide-with-tag>ground</no-collide-with-tag>	
+		<no-collide-with-tag>hands</no-collide-with-tag>	
+		<no-collide-with-tag>3BCA_Br</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_Belly</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_B</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_L</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_V</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_A</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_C</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_Head</no-collide-with-tag>	
+			<weight-threshold bone="NPC GenitalsScrotum [GenScrot]">1</weight-threshold>
+			<weight-threshold bone="NPC L GenitalsScrotum [LGenScrot]">1</weight-threshold>
+			<weight-threshold bone="NPC R GenitalsScrotum [RGenScrot]">1</weight-threshold>
+			<weight-threshold bone="NPC GenitalsBase [GenBase]">1</weight-threshold>
+			<weight-threshold bone="NPC Genitals01 [Gen01]">0.1</weight-threshold>
+			<weight-threshold bone="NPC Genitals02 [Gen02]">0.1</weight-threshold>
+			<weight-threshold bone="NPC Genitals03 [Gen03]">0.1</weight-threshold>
+			<weight-threshold bone="NPC Genitals04 [Gen04]">0.1</weight-threshold>
+			<weight-threshold bone="NPC Genitals05 [Gen05]">0.1</weight-threshold>
+			<weight-threshold bone="NPC Genitals06 [Gen06]">0.1</weight-threshold>
+	</per-triangle-shape>
+
+	<per-triangle-shape name="CBBE_Schlong">
+		<margin>0.1</margin>			
+		<penetration>0.1</penetration>
+		<wind-effect>0</wind-effect>	
+		<shared>public</shared>
+   	<tag>Genitals</tag>
+   		<no-collide-with-tag>vaginaskip</no-collide-with-tag>
+		<no-collide-with-tag>butt</no-collide-with-tag>
+   		<no-collide-with-tag>Genitals</no-collide-with-tag>	
+		<no-collide-with-tag>MaleBody</no-collide-with-tag>	
+		<no-collide-with-tag>ground</no-collide-with-tag>	
+		<no-collide-with-tag>hands</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_Br</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_Belly</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_B</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_L</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_V</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_A</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_C</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_Head</no-collide-with-tag>
+			<weight-threshold bone="NPC GenitalsScrotum [GenScrot]">1</weight-threshold>
+			<weight-threshold bone="NPC L GenitalsScrotum [LGenScrot]">1</weight-threshold>
+			<weight-threshold bone="NPC R GenitalsScrotum [RGenScrot]">1</weight-threshold>
+			<weight-threshold bone="NPC GenitalsBase [GenBase]">1</weight-threshold>
+			<weight-threshold bone="NPC Genitals01 [Gen01]">0.1</weight-threshold>
+			<weight-threshold bone="NPC Genitals02 [Gen02]">0.1</weight-threshold>
+			<weight-threshold bone="NPC Genitals03 [Gen03]">0.1</weight-threshold>
+			<weight-threshold bone="NPC Genitals04 [Gen04]">0.1</weight-threshold>
+			<weight-threshold bone="NPC Genitals05 [Gen05]">0.1</weight-threshold>
+			<weight-threshold bone="NPC Genitals06 [Gen06]">0.1</weight-threshold>
+	</per-triangle-shape>
+
+	<per-triangle-shape name="CBBE Schlong">
+		<margin>0.1</margin>			
+		<penetration>0.1</penetration>
+		<wind-effect>0</wind-effect>	
+		<shared>public</shared>
+   	<tag>Genitals</tag>
+   		<no-collide-with-tag>vaginaskip</no-collide-with-tag>
+		<no-collide-with-tag>butt</no-collide-with-tag>
+   		<no-collide-with-tag>Genitals</no-collide-with-tag>	
+		<no-collide-with-tag>MaleBody</no-collide-with-tag>	
+		<no-collide-with-tag>ground</no-collide-with-tag>	
+		<no-collide-with-tag>hands</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_Br</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_Belly</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_B</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_L</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_V</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_A</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_C</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_Head</no-collide-with-tag>
+			<weight-threshold bone="NPC GenitalsScrotum [GenScrot]">1</weight-threshold>
+			<weight-threshold bone="NPC L GenitalsScrotum [LGenScrot]">1</weight-threshold>
+			<weight-threshold bone="NPC R GenitalsScrotum [RGenScrot]">1</weight-threshold>
+			<weight-threshold bone="NPC GenitalsBase [GenBase]">1</weight-threshold>
+			<weight-threshold bone="NPC Genitals01 [Gen01]">0.1</weight-threshold>
+			<weight-threshold bone="NPC Genitals02 [Gen02]">0.1</weight-threshold>
+			<weight-threshold bone="NPC Genitals03 [Gen03]">0.1</weight-threshold>
+			<weight-threshold bone="NPC Genitals04 [Gen04]">0.1</weight-threshold>
+			<weight-threshold bone="NPC Genitals05 [Gen05]">0.1</weight-threshold>
+			<weight-threshold bone="NPC Genitals06 [Gen06]">0.1</weight-threshold>
+	</per-triangle-shape>
+
+	<per-triangle-shape name="penis">
+		<margin>0.1</margin>			
+		<penetration>0.1</penetration>
+		<wind-effect>0</wind-effect>	
+		<shared>public</shared>
+   	<tag>Genitals</tag>
+   		<no-collide-with-tag>vaginaskip</no-collide-with-tag>
+		<no-collide-with-tag>butt</no-collide-with-tag>
+   		<no-collide-with-tag>Genitals</no-collide-with-tag>	
+		<no-collide-with-tag>MaleBody</no-collide-with-tag>	
+		<no-collide-with-tag>ground</no-collide-with-tag>	
+		<no-collide-with-tag>hands</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_Br</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_Belly</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_B</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_L</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_V</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_A</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_C</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_Head</no-collide-with-tag>
+			<weight-threshold bone="NPC GenitalsScrotum [GenScrot]">1</weight-threshold>
+			<weight-threshold bone="NPC L GenitalsScrotum [LGenScrot]">1</weight-threshold>
+			<weight-threshold bone="NPC R GenitalsScrotum [RGenScrot]">1</weight-threshold>
+			<weight-threshold bone="NPC GenitalsBase [GenBase]">1</weight-threshold>
+			<weight-threshold bone="NPC Genitals01 [Gen01]">0.1</weight-threshold>
+			<weight-threshold bone="NPC Genitals02 [Gen02]">0.1</weight-threshold>
+			<weight-threshold bone="NPC Genitals03 [Gen03]">0.1</weight-threshold>
+			<weight-threshold bone="NPC Genitals04 [Gen04]">0.1</weight-threshold>
+			<weight-threshold bone="NPC Genitals05 [Gen05]">0.1</weight-threshold>
+			<weight-threshold bone="NPC Genitals06 [Gen06]">0.1</weight-threshold>
+	</per-triangle-shape>
+
+	<per-triangle-shape name="peniscollision">
+		<margin>0.1</margin>			
+		<penetration>0.1</penetration>
+		<wind-effect>0</wind-effect>	
+		<shared>public</shared>
+   	<tag>Genitals</tag>
+   		<no-collide-with-tag>vaginaskip</no-collide-with-tag>
+		<no-collide-with-tag>butt</no-collide-with-tag>
+   		<no-collide-with-tag>Genitals</no-collide-with-tag>	
+		<no-collide-with-tag>MaleBody</no-collide-with-tag>	
+		<no-collide-with-tag>ground</no-collide-with-tag>	
+		<no-collide-with-tag>hands</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_Br</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_Belly</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_B</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_L</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_V</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_A</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_C</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_Head</no-collide-with-tag>
+			<weight-threshold bone="NPC GenitalsScrotum [GenScrot]">1</weight-threshold>
+			<weight-threshold bone="NPC L GenitalsScrotum [LGenScrot]">1</weight-threshold>
+			<weight-threshold bone="NPC R GenitalsScrotum [RGenScrot]">1</weight-threshold>
+			<weight-threshold bone="NPC GenitalsBase [GenBase]">1</weight-threshold>
+			<weight-threshold bone="NPC Genitals01 [Gen01]">0.1</weight-threshold>
+			<weight-threshold bone="NPC Genitals02 [Gen02]">0.1</weight-threshold>
+			<weight-threshold bone="NPC Genitals03 [Gen03]">0.1</weight-threshold>
+			<weight-threshold bone="NPC Genitals04 [Gen04]">0.1</weight-threshold>
+			<weight-threshold bone="NPC Genitals05 [Gen05]">0.1</weight-threshold>
+			<weight-threshold bone="NPC Genitals06 [Gen06]">0.1</weight-threshold>
+	</per-triangle-shape>
+
+	<per-triangle-shape name="MaleGenitals Average">
+		<margin>0.1</margin>			
+		<penetration>0.1</penetration>
+		<wind-effect>0</wind-effect>	
+		<shared>public</shared>
+   	<tag>Genitals</tag>
+		<no-collide-with-tag>butt</no-collide-with-tag>
+   		<no-collide-with-tag>Genitals</no-collide-with-tag>	
+		<no-collide-with-tag>MaleBody</no-collide-with-tag>	
+		<no-collide-with-tag>ground</no-collide-with-tag>	
+		<no-collide-with-tag>hands</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_Br</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_Belly</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_B</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_L</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_V</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_A</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_C</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_Head</no-collide-with-tag>
+			<weight-threshold bone="NPC GenitalsScrotum [GenScrot]">1</weight-threshold>
+			<weight-threshold bone="NPC L GenitalsScrotum [LGenScrot]">1</weight-threshold>
+			<weight-threshold bone="NPC R GenitalsScrotum [RGenScrot]">1</weight-threshold>
+			<weight-threshold bone="NPC GenitalsBase [GenBase]">1</weight-threshold>
+			<weight-threshold bone="NPC Genitals01 [Gen01]">0.1</weight-threshold>
+			<weight-threshold bone="NPC Genitals02 [Gen02]">0.1</weight-threshold>
+			<weight-threshold bone="NPC Genitals03 [Gen03]">0.1</weight-threshold>
+			<weight-threshold bone="NPC Genitals04 [Gen04]">0.1</weight-threshold>
+			<weight-threshold bone="NPC Genitals05 [Gen05]">0.1</weight-threshold>
+			<weight-threshold bone="NPC Genitals06 [Gen06]">0.1</weight-threshold>
+	</per-triangle-shape>
+
+	<per-triangle-shape name="MaleGenitals Regular">
+		<margin>0.1</margin>			
+		<penetration>0.1</penetration>
+		<wind-effect>0</wind-effect>	
+		<shared>public</shared>
+   	<tag>Genitals</tag>
+		<no-collide-with-tag>butt</no-collide-with-tag>
+   		<no-collide-with-tag>Genitals</no-collide-with-tag>	
+		<no-collide-with-tag>MaleBody</no-collide-with-tag>	
+		<no-collide-with-tag>ground</no-collide-with-tag>	
+		<no-collide-with-tag>hands</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_Br</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_Belly</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_B</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_L</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_V</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_A</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_C</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_Head</no-collide-with-tag>
+			<weight-threshold bone="NPC GenitalsScrotum [GenScrot]">1</weight-threshold>
+			<weight-threshold bone="NPC L GenitalsScrotum [LGenScrot]">1</weight-threshold>
+			<weight-threshold bone="NPC R GenitalsScrotum [RGenScrot]">1</weight-threshold>
+			<weight-threshold bone="NPC GenitalsBase [GenBase]">1</weight-threshold>
+			<weight-threshold bone="NPC Genitals01 [Gen01]">0.1</weight-threshold>
+			<weight-threshold bone="NPC Genitals02 [Gen02]">0.1</weight-threshold>
+			<weight-threshold bone="NPC Genitals03 [Gen03]">0.1</weight-threshold>
+			<weight-threshold bone="NPC Genitals04 [Gen04]">0.1</weight-threshold>
+			<weight-threshold bone="NPC Genitals05 [Gen05]">0.1</weight-threshold>
+			<weight-threshold bone="NPC Genitals06 [Gen06]">0.1</weight-threshold>
+	</per-triangle-shape>
+
+	<per-triangle-shape name="MaleGenitals Muscular">
+		<margin>0.1</margin>			
+		<penetration>0.1</penetration>
+		<wind-effect>0</wind-effect>	
+		<shared>public</shared>
+   	<tag>Genitals</tag>
+		<no-collide-with-tag>butt</no-collide-with-tag>
+   		<no-collide-with-tag>Genitals</no-collide-with-tag>	
+		<no-collide-with-tag>MaleBody</no-collide-with-tag>	
+		<no-collide-with-tag>ground</no-collide-with-tag>	
+		<no-collide-with-tag>hands</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_Br</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_Belly</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_B</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_L</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_V</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_A</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_C</no-collide-with-tag>
+		<no-collide-with-tag>3BCA_Head</no-collide-with-tag>
+			<weight-threshold bone="NPC GenitalsScrotum [GenScrot]">1</weight-threshold>
+			<weight-threshold bone="NPC L GenitalsScrotum [LGenScrot]">1</weight-threshold>
+			<weight-threshold bone="NPC R GenitalsScrotum [RGenScrot]">1</weight-threshold>
+			<weight-threshold bone="NPC GenitalsBase [GenBase]">1</weight-threshold>
+			<weight-threshold bone="NPC Genitals01 [Gen01]">0.1</weight-threshold>
+			<weight-threshold bone="NPC Genitals02 [Gen02]">0.1</weight-threshold>
+			<weight-threshold bone="NPC Genitals03 [Gen03]">0.1</weight-threshold>
+			<weight-threshold bone="NPC Genitals04 [Gen04]">0.1</weight-threshold>
+			<weight-threshold bone="NPC Genitals05 [Gen05]">0.1</weight-threshold>
+			<weight-threshold bone="NPC Genitals06 [Gen06]">0.1</weight-threshold>
+	</per-triangle-shape>
+
+
+</system>

@@ -260,3 +260,82 @@ COM-hosted sensors are read and reported while PLANCK has the ragdoll loosened (
    half ship female-only-plus-gentlewomen first?
 5. **Group choice for the player wand**: inherit the player group (self-Ignore) or take a fresh
    private group as PCVR does for its 19 player parts (charController interaction untested by PPB).
+
+
+---
+
+## 8. ★ 2026-08-17 — WHO OWNS THE SCHLONG BONES (measured on the live load order)
+
+The genital chain has up to four claimants. Measured ownership, not assumed:
+
+| System | Owns | Notes |
+|---|---|---|
+| **SOFTBODY** `MaleGenitals.xml` | **the SMP shaft sim** | 12 constraints, Gen02→01..Gen06→05 chain + `GenitalsLag` anchors, `public` cross-actor `Genitals` surface. The ONLY shaft simulator in the order. |
+| PPB override of that file | sway tuning | 5 numeric edits, see below |
+| **PPA** (`AccuratePenetration.dll`) | scene-time position | procedural spline solver over the same `GenBase→Gen06` bones; `HandleOpeningPhysics` does the orifice animation. **Not SMP.** Inert outside scenes. |
+| **CBPC** `CBPCMasterConfig_SOS.txt` | nothing | **nulled** — SOFTBODY ships a 0-byte file that wins the conflict. `CBPCollisionConfig*` still carry genital *collision spheres* (detection only, no motion) |
+| HIMBO V5 Physics Addon | scrotum only | scrotum→Lag; second owner of those two bones if both land on one actor |
+
+**PPB's own MaleGenitals.xml override** (SOFTBODY verbatim + 5 numeric edits) frees side-to-side sway,
+which the stock file nearly forbids. Measured template→constraint mapping:
+
+| template | governs | PPB change |
+|---|---|---|
+| ±1.7 free | the 5 Gen→GenitalsLag anchors | untouched |
+| **±0.7 pitch / z ±0.05, stiffness 50000** | **the chain Gen02→01..Gen06→05** | z → **±0.35**, z-stiffness → **12000** |
+| ±0.5 / z ±0.1 | the Gen06→Gen01 tip stabiliser | z → **±0.35** |
+
+⚠⚠ **FSMP XML HEADER RULES — cost two silent failures in one session.** SOFTBODY's file begins with a
+**UTF-8 BOM** then `<?xml?>` then `<system>`. A comment placed *before* the declaration makes the
+document malformed and **FSMP drops the entire system silently** — the shaft goes completely rigid,
+which looks exactly like "the tuning did nothing". Rules: comments go **inside the root element**,
+ASCII only, and the lead-in bytes must stay byte-identical to the source. (Sibling of the 2026-07-12
+empty-float-attribute entry: FSMP failure modes are silent and total.)
+
+⚠ **The SOFTBODY "PPA patch" is a DIFFERENT FILE, not a side-car.** It declares the shaft bones as
+self-closing kinematic registrations with **one** constraint — i.e. it removes the shaft from SMP
+permanently so PPA can pose it. Installing it means no ambient sway at all and nothing for PPB's push
+channel to bend. Not the file we want, and it cannot be recommended as a standalone download.
+
+## 9. ★ Schlong Physics Swapper (SPS) — the player half, solved by someone else
+
+New mod, MIT, full source. Swaps **ownership** by arousal: below threshold **SMP owns Gen01-06**
+(floppy), above it SMP is disabled and **CBPC owns them** (its own `UBEPS01-06` map, stiff), while the
+*bend angle* eases gradually via SOS/TNG events. Hysteresis prevents flapping. Supports TNG natively;
+cooperates with PPA through PPA's documented V1 listener API.
+
+**PPB forked it for VR** — three build-system changes, no source edits (the plugin has no raw
+addresses, no trampolines, no hooks). Verified in-game on VR 1.4.15: plugin loads, PPA listener
+connects, arousal reads live, every handoff confirmed, zero `SPS-0xx` failures. SKSE Menu Framework
+works on VR too. PR: `snowman12356/Schlong-Physics-Swapper#3`; fork branch
+`Telord72612/Schlong-Physics-Swapper:vr-support`; local clone `tools/_research/sps`.
+
+★ **What SPS hands PPB for free:** the soft/erect distinction, with no state logic of our own.
+
+| state | bones driven by | PPB capsules | pushable via FsmpLink |
+|---|---|---|---|
+| soft | SMP | follow | **yes** |
+| erect | CBPC | follow | no |
+
+Floppy-and-deflectable when soft, stiff when erect — physically correct, zero code.
+
+⚠ With SPS installed, set PPA's `TogglePenisSMPPhysics = false`. SPS owns SMP ownership and talks to
+PPA through its listener; two managers on one actor's SMP is the double-writer pattern.
+
+⚠ **SPS is player-only by design** (`V1 intentionally supports only the player`), though `actorFormID`
+is in the ABI throughout — the author left room for NPC support. NPC arousal-linked physics remains
+PPB's to build, or an upstream feature request.
+
+## 10. The NPC/player split, settled
+
+* **NPC genital = a TARGET.** The tail model exactly: clone the garment rig on `GenBase→Gen06`, gate on
+  exposure, and it responds to the player's hands *by default* — a part-30 rig capsule Ignores
+  statics, clutter and other actors at the terminal `return 2`, so "only the player's hand activates
+  it" needs no extra work. No arousal machinery needed (SPS is player-only anyway).
+  **Still needs the exposure gate** — not for arousal, but so a dressed male carries no capsules.
+  **Still needs the third rig kind** — Argonian and Khajiit males need a tail rig AND a genital rig,
+  and the code allows one rig per kind per actor.
+* **Player genital = a SOURCE** (third wand) for the touch API → VRTouchEvents. Harder: the player has
+  no rig lifecycle (`PPBHook.cpp:1282` returns above the whole per-actor seam), so it must be built on
+  the HandBox family. Adds a new wand value + source kind = a published-contract addition VRTE should
+  hear about before it ships.

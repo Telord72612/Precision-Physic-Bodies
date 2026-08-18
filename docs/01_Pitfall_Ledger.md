@@ -1840,3 +1840,62 @@ minutes it would have cost to ask "what is C9 FOR?" would have saved the regress
 5. **Every knob whose purpose is not obvious from its name deserves a comment at its definition.**
    `capSpine1C9` now carries one. A knob that reads as debris to a careful reader WILL eventually be
    deleted by someone.
+
+
+---
+
+## ★ FSMP XML: a comment before the declaration silently DROPS THE WHOLE SYSTEM (2026-08-17, twice in one session)
+
+Overriding SOFTBODY's `MaleGenitals.xml` to widen the schlong's side-to-side sway, I prepended a
+header comment. In VR the shaft went **completely rigid** — worse than before the edit. The five
+numeric changes were correct; the file was malformed.
+
+The source begins **BOM, then `<?xml?>`, then `<system>`**. My comment landed *before the declaration*,
+which is not legal XML, so FSMP discarded the entire physics system for that mesh. Zero physics reads
+exactly like "the tuning did nothing", which sent the diagnosis in the wrong direction — we spent a
+round comparing SOFTBODY variants when neither was loaded.
+
+I then did it a second time in the same session, because my "is there a declaration?" check missed it:
+the **BOM** meant the file did not literally start with `<?xml`, so a naive `startswith` said no.
+
+**Rules for any foreign XML PPB overrides:**
+1. **Comments go INSIDE the root element**, never above the declaration. ASCII only.
+2. **The lead-in bytes must stay byte-identical to the source** — BOM included. Compare the first
+   ~40 bytes of source and output before writing.
+3. **FSMP failure is silent and TOTAL** (sibling of the 2026-07-12 empty-float-attribute entry: one
+   bad attribute drops the whole system). So *"my tuning had no effect"* must first be tested as
+   *"is my file even being parsed?"*, not as *"are my numbers too small?"*.
+4. **Re-measure the base before re-basing an override.** The same filename shipped two structurally
+   different files hours apart (SOFTBODY with and without its PPA patch: 12 constraints vs 1). Diffing
+   the constraint count takes seconds and prevents merging numbers into a file that does not have the
+   templates they belong to.
+
+---
+
+## ★ A "control column expected never to fire" was the actual answer (2026-08-17)
+
+Building the genital exposure gate, the plan called for `skin->HasPartOf(52)`. I implemented it and
+kept `GetWornArmor(52)` beside it as a control I documented as *"expected always 0"* — the reasoning
+being that TNG's addon is part of the skin, not an equipped item.
+
+Measured on one male NPC, dressed then naked:
+
+```
+dressed  SLOT52(skin)=1  worn=1   'TNG_Skin_B07'
+naked    SLOT52(skin)=1  worn=0   'TNG_Skin_B07'
+```
+
+The intended signal was **constant in both states** — it is a *capability* test ("this actor has a
+schlong"), not an exposure test. The throwaway control was the discriminator, because TNG tags
+*covering garments* with slot 52. The real gate is `skin52 && !worn52`.
+
+**Lessons:**
+1. **Log the control column.** It cost one extra field and it carried the answer. A probe that only
+   measures the hypothesis can only ever confirm or deny it — it cannot find the thing you did not
+   think of.
+2. **A signal that never changes is not a signal.** Before building on any per-actor read, check it
+   flips across the states you care about; "it returns 1 for the right actors" is not enough.
+3. Same session, same probe: `geomNear`/`geomHidden` were dead by construction — a **skinned** mesh is
+   parented under the body node and merely weighted to the bones, never a child of them, so those
+   columns read 0 whatever is visible. **Two of four candidate signals were unfalsifiable and nobody
+   noticed until they were run.**
