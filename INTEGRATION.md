@@ -17,6 +17,21 @@ live capsule geometry, or to avoid the Papyrus VM.
 
 ---
 
+## What changed in 2.0.0 — read this if you already integrated
+
+`GetBuildNumber()` now returns **20000**; feature-detect on `>= 20000`. `PpbTouchContact` is still a
+frozen 160-byte POD and the vtable is unchanged, so an existing plugin keeps working untouched.
+
+| change | what it means for you |
+|---|---|
+| **Males are covered.** | The old "males answer `IsDriven()==false`" rule is GONE — see §5. If you route males to a fallback, gate that on the build number. |
+| **The raw stream had a real bug — fixed.** | Contacts in dense capsule clusters could be dropped **silently**: no event, no snapshot entry, no log. If you consume raw and have ever seen "nothing happened" for an obvious touch, this was why. See §6. |
+| **New source: `kSourceGenital = 7`.** | The player's own genitals now report as a touch source, with `sourceName` = `"shaft"` or `"tip"`. |
+| **New data: erection level.** | `_reserved[0]` on every contact — see §1. |
+| **Male sub-regions were wrong.** | A male anal touch used to publish `kSubVaginal*` and `orificeKind = 1` (vaginal). Now correct. If you defended against this by matching capsule NAMES, you can stop. |
+
+---
+
 ## 1. What a contact tells you
 
 Five things, which were the whole point of the design:
@@ -31,6 +46,22 @@ Five things, which were the whole point of the design:
 
 Plus a distance in game units — **negative means inside the capsule**, so it doubles as a
 penetration depth.
+
+### Erection level (2.0.0) — `_reserved[0]`
+
+Every contact whose **touched** actor carries a PPB genital rig reports the erection level PPB is
+currently asserting — the same value that drives `SOSBend`, not an arousal guess:
+
+| `_reserved[0]` | meaning |
+|---|---|
+| `0` | absent — older PPB, female, no genital rig, or dressed |
+| `1` | level 0, flaccid |
+| `N` | level N−1 |
+
+The offset-by-one exists so the reserved tail's contractual zero already means "absent". The byte is
+written on **every** contact including the zero, so a `0` arriving mid-contact means *"no longer
+known"* — not *"unchanged"*. §9 tells you not to read `_reserved`; this byte is the documented
+exception, and only this byte.
 
 ### The three levels of WHERE
 
@@ -269,13 +300,24 @@ shape and pose. If you need to know where a body part physically *is*, that is t
 
 ## 5. Coverage — read this before you ship
 
-**PPB drives female NPCs of mapped races**: the human catch-all (which covers elf, orc and most
-custom races on a typical load order), Argonian, Khajiit, Draenei, plus anything the user adds to
-`PPB_Skeletons_Added_Race.ini`.
+**PPB drives NPCs of mapped races, BOTH SEXES as of 2.0.0**: the human catch-alls (covering elf, orc
+and most custom races on a typical load order), Argonian, Khajiit, Draenei (female), plus anything
+the user adds to `PPB_Skeletons_Added_Race.ini`.
 
-**Males, children and creatures are not covered.** They answer `IsDriven() == false` and never
-appear in the contact stream. If your mod needs those, route them to your own fallback — do not
-assume silence means "nothing happened".
+**Males joined in 2.0.0** — three male skeletons ship (human, Khajiit, Argonian). Two consequences
+if you integrated earlier:
+* the old "males always answer `IsDriven() == false`" rule is **gone**. Gate any male fallback on
+  `GetBuildNumber() >= 20000` rather than on sex.
+* **part names are sex- and skeleton-routed.** The male COM carries anal cover / anus / rectum where
+  the female carries the vaginal ladder, and beast heads (Khajiit/Argonian) have their own table —
+  snout, jaw, crest, horn/ear. **Consume the name strings; never assume the female reference map.**
+
+Male coverage is a host setting (`maleGeometry`, shipped on). A user who turns it off puts males
+back to `IsDriven() == false`, so still handle that answer.
+
+**Children and creatures are not covered**, nor is anyone on an unmapped custom skeleton. They
+answer `IsDriven() == false` and never appear in the contact stream. Route them to your own
+fallback — do not assume silence means "nothing happened".
 
 **The toucher is the player.** NPC-vs-NPC touch is a planned revision-2 feature; `toucherFormId`
 is `0x14` today and you should not hardcode that assumption in a way that breaks later.
@@ -305,7 +347,7 @@ So there are two streams, and you pick:
 | events | `PPB_TouchStart` / `PPB_Touch` / `PPB_TouchEnd` | `PPB_TouchRawStart` / `PPB_TouchRaw` / `PPB_TouchRawEnd` |
 | one contact per | (actor, hand, **region**) | (actor, hand, source class) |
 | BODYPART | `Face(cheek L)` | `cheek L` |
-| dwell gate | accumulated time **in the region** | per capsule |
+| dwell gate | accumulated time **in the region** | accumulated time **in the capsule group** |
 | native | `GetContacts()` | `GetRawContacts()` |
 | callbacks | yes | no — poll |
 
@@ -319,8 +361,29 @@ Two deliberate properties of the digest:
 * **`distU` is the deepest penetration reached during the visit**, not the current frame. For a
   summary event, "how far did it get" is the useful number. Raw carries live distance.
 
-The raw stream ships **off** (`apiRawEvents 0` in `PPB_tuning.txt`) because it is chatty. Ask
-users to enable it only if your mod genuinely needs per-capsule transitions.
+The raw stream's **events** ship off (`apiRawEvents 0` in `PPB_tuning.txt`) because they are chatty
+— but `GetRawContacts()` polling works regardless of that knob. Ask users to enable the events only
+if your mod genuinely needs per-capsule transitions pushed to it.
+
+### ⚠ Raw stream bug, fixed in 2.0.0 — if you consume raw, read this
+
+Before 2.0.0 the raw stream timed its dwell on the **exact capsule** and restarted the timer every
+time the nearest capsule changed. `BODYPART` also reported whichever capsule was nearest on the
+emitting tick. That is the naive filter this section opens by warning about, and it had the failure
+this document predicted: in a dense cluster the nearest flickers between neighbours every tick, the
+timer never survived its own gate, and the contact was **dropped in total silence** — no event, no
+`GetRawContacts()` entry, and no log line, because raw had no logging at all.
+
+It hit hardest exactly where it hurt most: **the denser the region, the more certain the drop.** The
+intimate ladder is 11 capsules; the chest carries ring, breast supports, shoulder caps and rib cage.
+Two real seven-second contacts reached a consumer as nothing whatsoever.
+
+As of 2.0.0 raw behaves like the digest and like this document always described: the **capsule
+group** is the dwell identity, per-capsule time accumulates, and `BODYPART` names the capsule
+**dwelt on longest**. Neighbour flicker inside a group no longer restarts anything; cheek → mouth
+still starts a new contact. Raw Start/End also log now (`apiLog`), as `API RAW START` / `API RAW END`.
+
+If you built a workaround for missing raw contacts, you can retire it.
 
 ---
 
@@ -341,9 +404,10 @@ your own per-part delay) before reacting — a brush cannot hold a body part for
 use a long per-NPC cooldown as your filter, or a doorway brush will mute a deliberate touch that
 follows it.
 
-One subtlety at one-tick dwell: the first reported capsule is whichever the hand grazed first,
-not the one it settles on. On the raw stream this self-corrects on the next tick as the WHERE
-advances; re-resolve your body part on every event, not just Start.
+One subtlety at one-tick dwell: the first reported capsule is whichever the hand grazed first, not
+the one it settles on. **Both streams now converge on the capsule dwelt on longest** as the visit
+goes on (raw joined the digest in 2.0.0), so re-resolve your body part on every event, not just on
+Start — the same contact can legitimately rename itself mid-visit as the true winner emerges.
 
 ---
 
@@ -367,6 +431,30 @@ noise and stay muted. The index finger is the exception (2026-07-31): while VRIK
 extended, the holding hand's fingertip reports normally — so a hand carrying a knife can still
 poke, and two-hand interactions stay two streams. The *other* hand is always unaffected, and
 `GRAB` is unaffected. `apiSuppressHeldHand 2` restores the strict full mute.
+
+**The player's own genitals are a touch source (2.0.0).** `sourceKind = kSourceGenital (7)`, from a
+2-segment collider riding the player's SOS/TNG chain that is sized live from the bones, so it tracks
+erection and size. Three things differ from every other source:
+* `sourceName` names **which part of him** made contact — `"shaft"` or `"tip"` — where other kinds
+  put a weapon or object name there;
+* **`wand` is meaningless and reads 0.** It is not a hand. Switch on `sourceKind`, never on `wand`;
+* it exists only while he is actually **exposed** (TNG slot 52 occupied by his skin, no covering
+  garment). Trousers make these contacts stop entirely — that is the gate, not a bug.
+
+One asymmetry to expect: these contacts are reported against tails and hair, but the collider does
+not yet physically *push* them. The API sees it; the physics does not.
+
+**Male sub-regions were wrong before 2.0.0.** The COM sensor ladder is sex-specific — the male COM
+carries anal cover (C21/22), anus (C23/24) and rectum (C25/26) where the female carries the vaginal
+ladder — but the sub-region stamp was applied by index from the female map. A male anal touch
+therefore published `kSubVaginalOpening…Deepest` and, worse, **`orificeKind = 1` (vaginal)** on an
+actor with no vaginal chain. Only the NAME had been correct. Fixed: males now stamp
+`kSubAnalOpening` / `kSubAnalDeep` with `orificeKind = 2`, and `kSubIntimateExternal` for the cover.
+If you defended against this by matching capsule name strings, you can retire that.
+
+⚠ Related: the native `SubRegionOf(slot, child)` answers from the **female / reference** map — it is
+a static question with no actor and cannot know sex. Live contacts carry the sex-correct value in
+`PpbTouchContact::subRegion`; prefer that.
 
 **Hair is declared but never emitted.** `kSlotHair` exists in the header with a warning. Hair
 strands drape the face and head, so they would win the nearest-surface race against cheeks and
@@ -433,7 +521,12 @@ HDT-SMP v1/v2 split taught the ecosystem what a destructor-at-slot-0 mismatch do
 calls your destructor once per event.)
 
 **`PpbTouchContact` is a frozen 160-byte POD** and grows only into its reserved tail. Do not read
-`_reserved`; do not assume it stays zero.
+`_reserved` — with one documented exception: **`_reserved[0]` is the erection level** as of 2.0.0
+(§1). Everything past it stays undocumented; do not assume it stays zero.
+
+**New `SourceKind` and `PseudoSlot` values append.** 2.0.0 added `kSourceGenital = 7`. A consumer
+that has never heard of a value sees an unknown number on an otherwise ordinary contact — handle
+your `switch` default rather than asserting.
 
 **Enum values are frozen; new ones append.** Do not assume the numeric spacing between sub-region
 families is stable — switch on the names, or use `SubRegionDepth()`.
@@ -465,6 +558,18 @@ API END   1301DE4F R|WEAPON:Iron Rapier|Neck(neck / throat)|human d=-0.71u dur=2
 | `src=GEO` | PPB measured proximity — includes hover, and reaches capsules the engine never reports |
 | `wpn=` | weapon class and edge (Blade / Blunt / Pierce) |
 
+**The raw stream logs too, as of 2.0.0** — `API RAW START` / `API RAW END`, same format:
+
+```
+API RAW START 1301DE4F R|FINGER|CLITORIS|human d=0.98u dur=0.00s
+API RAW END   1301DE4F R|FINGER|CLITORIS|human d=0.82u dur=7.23s
+```
+
+Before 2.0.0 the raw path logged **nothing**, which is how a real bug there cost a field report
+instead of a glance at the log: seven-second contacts vanished with no trail at all. If you consume
+raw and something does not arrive, these two lines now split the problem cleanly — a raw line
+present means PPB emitted and the gap is on your side; no raw line means it is on PPB's.
+
 If your handler is not firing, this tells you whether PPB saw the touch at all — which separates
 "PPB missed it" from "my registration is wrong" in one line. It is verbose (several lines a second
 while touching), so it ships **off**; `contactLog = 0` or removing the line disables it.
@@ -478,6 +583,7 @@ while touching), so it ships **off**; `contactLog = 0` or removing the line disa
 | `src/PpbTouchAPI.h` | the consumer contract — copy this into your project |
 | `PPB_Touch_API_Contact_List.xlsx` | all 107 capsules: region, sub-region, depth, overrides |
 | `docs/16_Public_Touch_API.md` | the as-built design record and why each decision was made |
+| `docs/22_...Gates_And_The_Grab_Bug.md` | the exposure gate (slot 52) that decides when genital sources exist |
 | `docs/15_Capsule_Body_Part_Map.md` | the capsule naming table and how it was verified |
 | `Scripts/Source/PPB_Touch.psc` | the Papyrus declarations, with per-function notes |
 
