@@ -8,8 +8,8 @@
 //  skse64) because nothing here depends on one.
 //
 //  ── WHAT YOU GET ─────────────────────────────────────────────────────────────────────
-//  PPB rebuilds female NPC Havok bodies as 12 body slots of named collision capsules
-//  (~148 per NPC), live-fitted to each NPC's actual mesh. This interface reports CONTACT:
+//  PPB rebuilds NPC Havok bodies (female AND male since 2.0) as 12 body slots of named
+//  collision capsules (~148 per NPC), live-fitted to each NPC's actual mesh. This interface reports CONTACT:
 //  who was touched, where (named body part), by which hand, with what (finger / open palm
 //  / fist / HIGGS grab / weapon / held object), how close/deep, and for how long.
 //
@@ -37,10 +37,13 @@
 //  * PpbTouchContact is a fixed-size POD and is also append-only via the reserved tail.
 //
 //  ── COVERAGE CONTRACT (important) ────────────────────────────────────────────────────
-//  PPB drives FEMALE NPCs of mapped races: the human catch-all (covers elf/orc/etc on a
-//  typical load order), Argonian, Khajiit, Draenei, plus anything the user adds to
-//  PPB_Skeletons_Added_Race.ini. Males, children and creatures are NOT covered and
-//  answer IsDriven() = false — route those to your fallback (e.g. CBPC), never assume.
+//  PPB drives NPCs of mapped races, BOTH SEXES since 2.0: the human catch-alls (covering
+//  elf/orc/etc on a typical load order), Argonian, Khajiit, Draenei (female), plus anything
+//  the user adds to PPB_Skeletons_Added_Race.ini. Children and creatures are NOT covered —
+//  and neither is anyone at maleGeometry 0 or on an unmapped custom skeleton — all of whom
+//  answer IsDriven() = false: route those to your fallback (e.g. CBPC), never assume.
+//  Part names are sex- and skeleton-routed (male tables, beast-head tables); consume the
+//  name strings, don't assume the female reference map on every actor.
 //
 //  ── THREADING CONTRACT ───────────────────────────────────────────────────────────────
 //  * All interface methods are MAIN-THREAD ONLY, and cheap (snapshot reads).
@@ -89,6 +92,10 @@ namespace PPBAPI {
         kSourceGrab   = 4,   // HIGGS is actively grabbing THIS actor with that hand
         kSourceWeapon = 5,   // the wielded weapon's collision body (sourceName = weapon)
         kSourceObject = 6,   // a HIGGS-held object (sourceName = the object's base name)
+        // appended 2026-08-23: the player's own genitals — one more thing that can touch.
+        // `wand` is meaningless here and reads 0 (not a hand); `sourceName` is empty. Only
+        // live while he is actually exposed (TNG slot 52), so trousers stop these contacts.
+        kSourceGenital = 7,
     };
 
     // GARMENT pseudo-slots (2026-07-30): garment contacts report through the same contact
@@ -102,6 +109,8 @@ namespace PPBAPI {
     enum PseudoSlot : int {
         kSlotTail = 100,
         kSlotHair = 101,
+        kSlotGen  = 102,   // 2026-08-22: male genital chain (GEN rig, tbl 7) — 4 chords
+                           // base->tip along Gen01..Gen06. Reported like any other body part.
     };
 
     enum Phase : int {
@@ -227,7 +236,13 @@ namespace PPBAPI {
         unsigned char weaponEdge;    // WeaponEdge — blade / blunt / pierce
         unsigned char engineContact; // 1 = this came from Havok's OWN narrowphase (exact capsule
                                      // + real separating distance), 0 = the geometric fallback
-        unsigned char _reserved[18]; // future fields; zero today
+        // ── appended 2026-08-19 (ORIFICE DRIVE) ── out of the reserved tail, sizeof unchanged.
+        // How far open the orifice this contact is INSIDE actually is, right now — PPB drives
+        // the bone rings natively on any contact, outside scenes, so this is a real deformation
+        // state and not a guess. Zero unless the reported part is an orifice sensor.
+        unsigned char orificeKind;   // 0 = none, 1 = vaginal, 2 = anal, 3 = oral
+        unsigned char orificeOpen;   // 0..255 = 0..1 of that orifice's full gape (ScaleMax)
+        unsigned char _reserved[16]; // future fields; zero today
     };
     static_assert(sizeof(PpbTouchContact) == 160, "PpbTouchContact layout is frozen");
 
@@ -239,7 +254,7 @@ namespace PPBAPI {
     public:
         virtual unsigned int GetBuildNumber() = 0;                                       // 00
         // Is this actor carrying a PPB-driven body right now? false = not covered
-        // (male/creature/child/unmapped race) — use your fallback path.
+        // (creature/child/unmapped race/maleGeometry 0) — use your fallback path.
         virtual bool IsDriven(unsigned int actorFormId) = 0;                             // 01
         // Writes the skeleton id ("human"...) into out, returns its length; 0 = not driven.
         virtual int  GetSkeleton(unsigned int actorFormId, char* out, int cap) = 0;      // 02

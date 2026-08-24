@@ -8,12 +8,22 @@ that fit the actual body mesh, both refitted live at runtime.**
 ![status](https://img.shields.io/badge/status-beta-orange)
 ![platform](https://img.shields.io/badge/platform-Skyrim%20VR-blue)
 ![plugin](https://img.shields.io/badge/SKSE-VR-green)
-![version](https://img.shields.io/badge/version-1.4.0-blue)
+![version](https://img.shields.io/badge/version-2.1.0-blue)
 
-**Latest: 1.4.0 — the Touch API.** PPB now tells other mods *who* was touched, *where*, *with what*,
-*how deep* and *for how long*. Weapon contacts come from Havok's own narrowphase, so the reported
-capsule is the one the engine actually collided with. See **[INTEGRATION.md](INTEGRATION.md)** to
-consume it, and [CHANGELOG.md](CHANGELOG.md) for the full list.
+**Latest: 2.1.0.**
+
+**2.0 — males.** Three hand-dialled male skeletons (human, Khajiit, Argonian) join the four female
+ones. Male NPCs are now driven and reported like anyone else, with their own per-race head layouts
+(snout, jaw, crest, horns) and their own COM ladder. Also: a **front-neck** capsule on every
+skeleton — a real choking target — and **genital collision** with touch-driven erection.
+
+**2.1 — scenes.** Havok collision was breaking OStim scene alignment. Every PPB body, on NPCs *and*
+the player, now goes non-colliding between `ostim_start` and `ostim_end` and is restored afterwards.
+**Touch detection is unaffected** — it measures live capsule geometry rather than collision, so the
+API keeps reporting throughout a scene.
+
+See **[INTEGRATION.md](INTEGRATION.md)** to consume the API, and [CHANGELOG.md](CHANGELOG.md) for
+the full list.
 
 ---
 
@@ -120,7 +130,8 @@ sag, inflation and offset the capsules need.
 
 ## The Touch API — a tutorial for mod authors
 
-**PPB knows exactly where you are touching an NPC. Since 1.4.0 it will tell your mod.**
+**PPB knows exactly where you are touching an NPC. Since 1.4.0 it will tell your mod** — and since
+2.0, for male NPCs too.
 
 Because PPB rebuilds every driven NPC's collision as ~107 individually named capsules fitted to her
 actual body, it can answer a question nothing else in the load order can. Not "the player touched
@@ -390,9 +401,15 @@ to exclude hover.
 
 ### Coverage — read this before you ship
 
-**PPB does not drive every NPC.** It covers **female** NPCs of mapped races: the human catch-all
-(which covers elves, orcs and most custom races), Argonian, Khajiit, Draenei, plus anything the
-user adds to `PPB_Skeletons_Added_Race.ini`. Males, children and creatures are never reported.
+**PPB does not drive every NPC.** As of 2.0 it covers **both sexes** on mapped races: the human
+catch-alls (which cover elves, orcs and most custom races), Argonian, Khajiit, Draenei (female),
+plus anything the user adds to `PPB_Skeletons_Added_Race.ini`. **Children and creatures are never
+reported**, nor is anyone on an unmapped custom skeleton.
+
+⚠ Two things changed for consumers written against 1.x: the old "males always answer
+`IsDriven() == false`" rule is **gone** — gate any male fallback on `GetBuildNumber() >= 20000`
+rather than on sex — and **part names are sex- and skeleton-routed**, so read the name strings
+instead of assuming the female reference map.
 
 ```cpp
 if (!g_ppb || !g_ppb->IsDriven(formId)) {

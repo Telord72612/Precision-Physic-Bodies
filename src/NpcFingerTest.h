@@ -42,6 +42,9 @@ namespace NpcFinger {
     // (relaxed atomics only — 2 loads + compares when no rig is live).
     // Spliced at the TOP of PerfSys::FilterCB.
     int  FilterDecision(std::uint32_t infoA, std::uint32_t infoB);
+    // GRABBUG census cross-read: NpcFinger's filter runs BEFORE HandBox's in PerfSys::FilterCB,
+    // so HandBox must be able to tell "nobody asked us" from "NpcFinger answered first".
+    extern std::atomic<std::uint32_t> g_gbFingerAte;
 
     // Contact-driven finger CURL (2026-07-16): fills out[4] with the finger rig's
     // EMA-smoothed per-finger curl factors (index/middle/ring/pinky, 0..1) for the
@@ -53,7 +56,9 @@ namespace NpcFinger {
     // ── PPB TOUCH API exports (2026-07-30) ──────────────────────────────────────────────
     // PartName: the shipped body-part name for (slot, child) on the human-female reference
     // map — wraps the file-local ProposedPartName table. nullptr = unnamed/race-specific.
-    const char* PartName(int slot, int child);
+    // isMale=true applies the MALE index overrides (his COM/spine1 layouts diverged from the
+    // female when capsules were shifted down to trim the tail — see MalePartNameOverride).
+    const char* PartName(int slot, int child, bool isMale = false, bool isBeast = false);
     // WeaponPointU: world position (game units) of HIGGS's wielded-weapon collision body
     // for that hand. false = no weapon body (nothing wielded / HIGGS absent).
     bool WeaponPointU(bool left, float outU[3]);
@@ -61,6 +66,11 @@ namespace NpcFinger {
     // rig), 1 = hair/wig. Returns the chord count of that actor's live rig of that kind
     // (0 = no such rig). GarmentChordU reads one chord's world capsule (game units).
     int  GarmentChords(std::uint32_t actorId, int kind);
+    // ★ 2026-08-23 (VRTE change request §1): the erection level PPB is currently ASSERTING on
+    // this actor, 0..genBendMax. Internal until now — the only emission was the SOSBend anim
+    // event, which a consumer cannot observe. Returns -1 when he carries no GEN rig at all
+    // (female / no schlong / dressed / rig budget), which the API reports as "unknown".
+    int  GenLevelOf(std::uint32_t actorId);
     bool GarmentChordU(std::uint32_t actorId, int kind, int chord,
                        float aOutU[3], float bOutU[3], float* rOutU);
 

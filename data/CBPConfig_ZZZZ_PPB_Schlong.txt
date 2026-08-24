@@ -1,0 +1,33 @@
+# PPB erect-stiffness override (2026-08-22). ZZZZ out-ranks SPS's ZZZ (CBPC resolves
+# same-named params alphabetically-last). User: "the end moves left and right a bit too
+# much... I would like it more stiff." SPS shipped stiffness 0.022 / damping 0.040 /
+# maxoffset 4 - a soft wide wobble. These raise the spring, kill the oscillation, and
+# halve the allowed tip travel. Dial here; flaccid dangle is SMP (MaleGenitals.xml),
+# untouched by this file.
+UBEPS01.stiffness 0.15
+UBEPS02.stiffness 0.15
+UBEPS03.stiffness 0.15
+UBEPS04.stiffness 0.15
+UBEPS05.stiffness 0.15
+UBEPS06.stiffness 0.15
+
+UBEPS01.stiffness2 0.30
+UBEPS02.stiffness2 0.30
+UBEPS03.stiffness2 0.30
+UBEPS04.stiffness2 0.30
+UBEPS05.stiffness2 0.30
+UBEPS06.stiffness2 0.30
+
+UBEPS01.damping 0.20
+UBEPS02.damping 0.20
+UBEPS03.damping 0.20
+UBEPS04.damping 0.20
+UBEPS05.damping 0.20
+UBEPS06.damping 0.20
+
+UBEPS01.maxoffset 1.5
+UBEPS02.maxoffset 1.5
+UBEPS03.maxoffset 1.5
+UBEPS04.maxoffset 1.5
+UBEPS05.maxoffset 1.5
+UBEPS06.maxoffset 1.5

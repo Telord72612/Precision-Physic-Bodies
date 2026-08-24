@@ -8,6 +8,7 @@
 #include "GenitalProbe.h"   // genProbe research instrument (2026-08-02)
 #include "NpcFingerTest.h"  // NpcFinger::OnPreDrive — the NPC finger test collider (inert until npcFingerEnable/`nfing`)
 #include "DismemberGuard.h" // DF/NGD ↔ PLANCK guard: head-clone/dismembered-actor exclusion (2026-07-26)
+#include "Orifice.h"        // Orifice::OnPreDrive — native orifice drive (inert until orificeEnable)
 
 #include <array>
 #include <atomic>
@@ -1289,7 +1290,15 @@ namespace ArmIK {
         // never fights a detached ragdoll. See DismemberGuard.h.
         DismemberGuard::Tick(actor);
         GenitalProbe::Tick(actor);   // no-op unless genProbe 1
-        if (DismemberGuard::IsExcluded(actor)) return;
+        if (DismemberGuard::IsExcluded(actor)) {
+            // ORIFICE: this gate is a POINT OF NO RETURN — once excluded, Orifice::OnPreDrive
+            // (below) is never called for this actor again, so an armed bone ring would stay
+            // pushed open for the life of the 3D (kill + dismember mid-touch, an NGD head clone,
+            // an FF-spawn enrollment race). Give the module its one last frame here, while her
+            // nodes are still live. No-op for an actor it was never holding.
+            Orifice::ReleaseActor(actor);
+            return;
+        }
 
         // PIVGUARD (2026-07-29 v2): per-actor PLANCK pivot-collapse scoping + stranded-pivot
         // self-heal. Sets the flag 0 for THIS PPB-skeleton actor's drive; Hooks.cpp restores it
@@ -1326,6 +1335,12 @@ namespace ArmIK {
         // rig — creation, per-frame guards, and the velocity drive all live at this pre-drive seam
         // (fresh node transforms, live world in hand). Inert until npcFingerEnable/`nfing`.
         NpcFinger::OnPreDrive(actor, deltaTime);
+        // ORIFICE DRIVE (2026-08-19): sense the pelvic sensor ladder against the touch API's
+        // probes, ease, and write the vaginal/anal bone rings (absolute, rest + offset). Placed
+        // AFTER NpcFinger so the finger rig's own node work is already done, and after the
+        // dismember/PivGuard gates above so an excluded actor never reaches it. Inert (and
+        // self-restoring) until orificeEnable. NPC-only — the player is excluded above.
+        Orifice::OnPreDrive(actor, deltaTime);
         // PIV FIX: live joint-pivot re-seat (wrist/elbow/shoulder, R side) — same gen/poll loop.
         // The partner-side targets come from the RUNTIME BIND relations (referencePose math), computed
         // once per driver and cached: pose-independent, so the 07-04 contamination trap can't recur.

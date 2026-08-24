@@ -1,5 +1,90 @@
 # Changelog
 
+## 2.1.0
+
+### Havok collision was breaking OStim scene alignment
+
+Reported as: scenes misalign, actors sit wrong, "weird stuff" during OStim. The cause was PPB's own
+collision. Two actors in a scene are meant to occupy the same space; every PPB body between them was
+pushing back, and the CharacterBumper — a 20u x 76u capsule whose entire job is shoving characters
+apart — was doing it hardest.
+
+Between `ostim_start` and `ostim_end`, every PPB body now goes non-colliding on **NPCs and the
+player** (12 slots + 6 left twins + CharacterBumper each), and is restored on scene end. Only the
+collide bit flips: nothing is moved or removed, so pose, constraints and capsule geometry are
+untouched and the restore cannot strand a body.
+
+**Touch detection is unaffected.** The touch API measures live capsule *geometry*, not collision, so
+contacts, named body parts and everything consumers read keep working throughout a scene. Only
+engine-narrowphase verification (`src=ENG`) pauses.
+
+This is deliberately a blunt instrument — during a scene nothing can physically push anything. A
+selective version (ignore actor-vs-actor, keep player-hand-vs-NPC alive) is the next step.
+
+### The 19th body
+
+The skeleton carries nineteen collision bodies. PPB drove eighteen. `CharacterBumper` was never
+touched by any part of the sound system — and it sits on collision layer 30, outside PLANCK's
+biped-pair sound mute as well, so it fell through both silencing mechanisms at once. It is now
+stamped with the same quiet material as every other body.
+
+### Male genital chain was never scanned by the touch API
+
+`kind == 2` (the GEN chain) was unreachable at the shipped default: the loop bound read
+`ApiHairTarget() ? 3 : 1` while the comment above it said "GEN (always)". Every `shaft (...)`
+contact has been silently impossible since the GEN rig shipped. Found by the VRTouchEvents author.
+
+### The raw contact stream dropped contacts silently
+
+Raw timed its dwell on the *exact capsule* and restarted the timer whenever the nearest one changed.
+In a dense cluster the nearest flickers every tick, so the timer never survived its own gate and the
+contact was dropped with no event, no snapshot entry and no log line. The denser the region, the
+more certain the drop — it hit the intimate ladder and the chest hardest. Raw now behaves as
+INTEGRATION.md always described: the capsule GROUP is the dwell identity, per-capsule time
+accumulates, and the reported part is the one dwelt on longest. Raw Start/End now log.
+
+### Also
+
+- Player genital collider is a touch-API source (`kSourceGenital = 7`), naming which part of him
+  made contact — `"shaft"` or `"tip"`.
+- Erection level published on every contact in `_reserved[0]` (0 absent, 1 = flaccid, N = N-1).
+- Male sub-regions corrected: a male anal touch published `kSubVaginal*` and `orificeKind = 1`
+  (vaginal). Now `kSubAnalOpening` / `kSubAnalDeep` with `orificeKind = 2`.
+- Genital features are gated on actual exposure (TNG slot 52). Without a schlong, or with trousers
+  on, no genital rig and no collider exists — previously the dormant SOS bones in every skeleton
+  meant a phantom collider on load orders with no schlong mod at all.
+- `GetBuildNumber()` → **20100**. Feature-detect on `>= 20000`.
+
+## 2.0.0
+
+### Males
+
+Three hand-dialled male skeletons — human, Khajiit, Argonian — join the four female ones. Male NPCs
+are driven and reported like anyone else, with per-race head layouts (snout, jaw, crest, horns) and
+their own COM ladder. Part names are sex- and skeleton-routed: **read the name strings, do not assume
+the female reference map**.
+
+⚠ The old "males always answer `IsDriven() == false`" rule is gone. Gate male fallbacks on the build
+number, not on sex.
+
+### Front neck
+
+A dedicated front-of-throat capsule on every one of the seven skeletons — a real choking target,
+distinct from the neck proper.
+
+### Genital collision
+
+A 4-capsule chain over the schlong bones, plus **GenBend**: touching drives erection up, holds, then
+decays, negotiated with SPS's own arousal erections so whichever is higher wins. Requires TNG + SPS.
+
+⚠ **SPS is incompatible with HDT-SMP Flex** and will crash on load — see the README. Not a PPB bug,
+but PPB is what sends people to install SPS.
+
+### Quieter contacts
+
+Every PPB capsule — bodies, heads, wigs, tails, genitals, both sexes — is stamped with a quiet
+material so contacts do not play the dirt body-fall thud.
+
 ## 1.4.2
 
 ### The ghost weapon is dead (sheathed weapons no longer touch anything)

@@ -1017,6 +1017,22 @@ namespace ObjectHold {
         // never built — re-scaling their pivots off the FEMALE .nif base (48.045) is meaningless and
         // deformed them. Shared gate with CapFix so both geometry writers touch exactly the same actors.
         if (!GrabDiag::ActorCarriesBake(actor)) return;
+        // ── ★ NO SEX GATE HERE, DELIBERATELY (corrected 2026-08-18) ─────────────────────────
+        // An earlier "sculpt mode" refused males here. That was WRONG and it is exactly why a
+        // baked male's Havok joints sat off the XP32 nodes: ReScale IS the mechanism that puts
+        // them ON the nodes at the actor's real scale. NPCs are NOT scale 1 — XP32 scale comes
+        // from race/height/etc and is not in the character record, which is the entire reason
+        // ReScale exists (doc 03 Part A).
+        // ReScale is SEX-NEUTRAL by measurement, not by assumption:
+        //   * it reads the actor's OWN XP32 nodes and OWN Havok pivots (doc 03 §2d, self-contained)
+        //   * kBaseArc 48.045 is the Spn0->Head arc of the XP32 skeleton — measured 2026-08-18 as
+        //     48.0450 on the MALE nif with every link bit-identical to the female
+        //     (Spine 6.4678 / Spine1 8.7487 / Spine2 9.8641 / Neck 22.0395 / Head 7.3928)
+        //   * Option B is self-correcting (factor = nodeArc/havokArc), so it needs no per-sex table
+        // The 2026-07-15 "males got female-calibrated writes" regression was about STOCK males with
+        // no bake at all; `ActorCarriesBake` above is the correct gate for that and now admits a
+        // genuinely baked male. What stays female-specific is ReShape's UV landmarks — gated in
+        // CapFix::BodyScaleRegionRatio, NOT here.
         // (2026-07-15) SELF-CONTAINED: the arc re-scale reads the XP32 nodes + Havok pivots directly, so it
         // no longer gates on CapFix's legacy tape measure — the whole arc scaling solution (joints + the
         // published capsule scale) is decoupled from measuredScaleEnable. The settle/anchor/speed gates below

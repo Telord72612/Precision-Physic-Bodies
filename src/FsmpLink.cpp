@@ -47,6 +47,16 @@ namespace {
     TargetBuf                  g_tbuf[4];
     std::atomic<int>           g_tActive{ 0 };
     std::atomic<std::uint64_t> g_pushApplied{ 0 };   // forces applied (physics thread) - OnFrame receipt
+    // ★ 2026-08-22 ON-TARGET CENSUS: how many SMP bodies actually sit ON a published push
+    // target, split by kinematic/dynamic. PushStep SKIPS kinematic objects, so a body that is
+    // CONFIGURED but left KINEMATIC contributes nothing to g_pushApplied and is invisible in
+    // the heartbeat — indistinguishable from "no body exists". That ambiguity is exactly what
+    // stalled the GEN(schlong) diagnosis: MaleGenitals.xml DOES define dynamic Gen02-06 bodies
+    // and TNG's mesh shape name matches the defaultBBPs map, yet the applied-force counter never
+    // moved. These two counters separate "no body" from "body present but kinematic" — and the
+    // second case is the one DynamicHDT.TogglePhysics(Actor,...) can fix.
+    std::atomic<std::uint64_t> g_nearKinematic{ 0 };
+    std::atomic<std::uint64_t> g_nearDynamic{ 0 };
 
     inline std::uint64_t NowMs() {
         return (std::uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -132,10 +142,27 @@ namespace {
             const int n = objects.size();
             for (int i = 0; i < n; ++i) {
                 btCollisionObject* o = objects[i];
-                if (!o || o->isStaticOrKinematicObject()) continue;
+                if (!o) continue;
+                const btVector3& p = o->getWorldTransform().getOrigin();
+                // ON-TARGET CENSUS (physics thread: atomics only, no logging, no floats beyond
+                // the compare the loop already does). Runs BEFORE the kinematic skip so a
+                // present-but-kinematic body is counted rather than silently dropped.
+                for (int t = 0; t < buf.n; ++t) {
+                    const auto& tg = buf.t[t];
+                    const float cx = p.x() - tg.bonePosU[0];
+                    const float cy = p.y() - tg.bonePosU[1];
+                    const float cz = p.z() - tg.bonePosU[2];
+                    if (cx * cx + cy * cy + cz * cz <= kMatchU2) {
+                        if (o->isStaticOrKinematicObject())
+                            g_nearKinematic.fetch_add(1, std::memory_order_relaxed);
+                        else
+                            g_nearDynamic.fetch_add(1, std::memory_order_relaxed);
+                        break;
+                    }
+                }
+                if (o->isStaticOrKinematicObject()) continue;
                 btRigidBody* rb = btRigidBody::upcast(o);
                 if (!rb) continue;
-                const btVector3& p = o->getWorldTransform().getOrigin();
                 for (int t = 0; t < buf.n; ++t) {
                     const auto& tg = buf.t[t];
                     const float dx = p.x() - tg.bonePosU[0];
@@ -390,10 +417,13 @@ namespace FsmpLink {
         if (g_accepted.load(std::memory_order_relaxed) && ++s_tick >= 5400) {   // ~60s at 90fps
             s_tick = 0;
             const std::uint64_t st = g_steps.load(std::memory_order_relaxed);
+            const std::uint64_t nk = g_nearKinematic.exchange(0, std::memory_order_relaxed);
+            const std::uint64_t nd = g_nearDynamic.exchange(0, std::memory_order_relaxed);
             logger::info("FSMPLINK heartbeat: {} physics steps observed (+{}), {} objects in world, "
-                         "{} push forces applied total.",
+                         "{} push forces applied total. ON-TARGET this window: {} DYNAMIC (pushable), "
+                         "{} KINEMATIC (present but SKIPPED — TogglePhysics would free these).",
                          st, st - s_lastSteps, g_lastCount.load(std::memory_order_relaxed),
-                         g_pushApplied.load(std::memory_order_relaxed));
+                         g_pushApplied.load(std::memory_order_relaxed), nd, nk);
             s_lastSteps = st;
         }
     }

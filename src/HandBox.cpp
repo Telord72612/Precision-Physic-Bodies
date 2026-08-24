@@ -50,6 +50,9 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 #include "HandBox.h"
+#include "NpcFingerTest.h"  // NpcFinger::g_gbFingerAte — GRABBUG census cross-read
+#include <string>
+#include "GenitalProbe.h"   // GenitalProbe::IsExposed — the TNG slot-52 exposure gate
 #include "Tuning.h"          // ObjectHold::HandBox*/HiggsSlab* knob accessors
 #include "Interop.h"         // Interop::GetHiggs — interface + hand bodies
 #include "HiggsInterface.h"  // vfuncs 21/24/28/12/16 — PrePhysicsStep, hand body, hold state
@@ -631,11 +634,49 @@ namespace {
     };
     HandRig g_rig[2];                          // [0]=right, [1]=left
 
+    // ── PLAYER GENITAL WAND state (2026-08-18) — declared THIS early because
+    //    AnythingActive and PlayerSpaceWarp read g_wand and both precede the wand
+    //    machinery (which lives just above OnPrePhysicsStep, with the full rationale).
+    constexpr int kWandSegs = 2;
+    // full SOS chain, base→tip; we resolve whichever subset this skeleton actually has
+    constexpr const char* kWandChain[] = {
+        "NPC GenitalsBase [GenBase]",
+        "NPC Genitals01 [Gen01]", "NPC Genitals02 [Gen02]", "NPC Genitals03 [Gen03]",
+        "NPC Genitals04 [Gen04]", "NPC Genitals05 [Gen05]", "NPC Genitals06 [Gen06]",
+    };
+    constexpr int   kWandChainN = (int)std::size(kWandChain);
+    constexpr float kWandTipPadU = 0.7f;     // tip flesh extends past the last bone
+
+    struct WandSnap {
+        bool  valid = false;
+        float p[3][3]{};                     // base / mid / tip, world game units
+    };
+    WandSnap g_wandSnap;
+
+    struct WandRig {
+        bool   live = false;
+        void*  bodyMem[kWandSegs]{};
+        void*  bhkWorld = nullptr;           // compare-only
+        RE::NiPointer<RE::bhkWorld> heldWorld;   // STRONG — same orphan-vs-UAF fix as HandRig
+        std::uint32_t lastWord = 0;
+        std::chrono::steady_clock::time_point createdAt{};
+    };
+    WandRig g_wand;
+
+
+
     bool g_registered = false;
 
     // Hot-path caches for the comparison callback (physics thread — atomics only)
     std::atomic<bool>          g_boxLive{ false };
-    std::atomic<std::uint32_t> g_boxGroup{ 0 };    // the player's collision group (from HIGGS's word)
+    // g_boxGroup = the group OUR bodies actually carry (may be the private group).
+    // g_playerGroup = the player's REAL group, always straight from HIGGS's hand word. The belts
+    // need both: ours to recognize our own bodies, the player's to recognize HIGGS's hands and the
+    // player's own biped once we are no longer sharing a group with them.
+    std::atomic<std::uint32_t> g_boxGroup{ 0 };
+    std::atomic<std::uint32_t> g_playerGroup{ 0 };
+    std::atomic<std::uint32_t> g_wandPart{ 9 };
+    std::atomic<bool>          g_wandLive{ false };
     std::atomic<std::uint32_t> g_boxPart{ 4 };     // our sub-layer (handBoxSubLayer, sanitized)
     std::atomic<bool>          g_logFirstIgnore{ false };
 
@@ -672,13 +713,32 @@ namespace {
     }
 
     bool AnythingActive() {
-        if (g_rig[0].live || g_rig[1].live) return true;
+        if (g_rig[0].live || g_rig[1].live || g_wand.live) return true;
+        if (ObjectHold::PlayerWandOn()) return true;
         if (ObjectHold::HandBoxEnabled()) return true;
         if (ObjectHold::HiggsSlabHalfX() >= 0.f || ObjectHold::HiggsSlabHalfY() >= 0.f ||
             ObjectHold::HiggsSlabHalfZ() >= 0.f) return true;
         if (ObjectHold::HandBoxDump() > 0.5f) return true;
         if (ObjectHold::HandBoxDumpNow() > 0.5f) return true;
         return false;
+    }
+
+    // The effective group for PPB's own player-attached bodies. Mode 2 swaps only while HIGGS
+    // holds something — that is exactly the window where its contact rule fires, so adjacency
+    // stays native the rest of the time.
+    std::uint32_t EffectiveGroup(std::uint32_t playerGroup, bool higgsHolding)
+    {
+        const int mode = ObjectHold::HandBoxPrivGroupMode();
+        if (mode == 0) return playerGroup;
+        if (mode == 2 && !higgsHolding) return playerGroup;
+        return ObjectHold::HandBoxPrivGroupId();
+    }
+
+    bool HiggsHoldingAnything()
+    {
+        auto* h = Interop::GetHiggs();
+        if (!h) return false;
+        return h->IsHoldingObject(false) || h->IsHoldingObject(true) || h->IsTwoHanding();
     }
 
     // ── DESTROY (fresh live world in, stored pointer compare-only) ──────────
@@ -980,10 +1040,14 @@ namespace {
         // creation word: our sub-layer spliced in, bit 14 FORCED ON (review N4 —
         // HIGGS's own "initially, turn collision off" recipe; FilterRefresh clears it
         // after the enable delay). Bit 14 from base rides along too (review N5).
-        const std::uint32_t word = ((base & ~0x00001F00u) | (subLayer << 8)) | kBit14;
+        const std::uint32_t pgrpC = base >> 16;
+        const std::uint32_t egrpC = EffectiveGroup(pgrpC, HiggsHoldingAnything());
+        const std::uint32_t word = (((base & ~0x00001F00u) & 0x0000FFFFu)
+                                    | (subLayer << 8) | (egrpC << 16)) | kBit14;
 
         // filter atomics live BEFORE the first AddEntity (the Defect-4 ordering class)
-        g_boxGroup.store(base >> 16, std::memory_order_relaxed);
+        g_playerGroup.store(pgrpC, std::memory_order_relaxed);
+        g_boxGroup.store(egrpC, std::memory_order_relaxed);
         g_boxPart.store(subLayer, std::memory_order_relaxed);
         g_boxLive.store(true, std::memory_order_relaxed);
 
@@ -1010,6 +1074,9 @@ namespace {
         rig.scaleAtCreate = g_snap.scale[hand];
         rig.lastWord      = word;
         rig.createdAt     = std::chrono::steady_clock::now();
+        logger::info("HBOX privGroup mode={} id=0x{:04X} playerGrp=0x{:04X} -> ourGrp=0x{:04X}",
+                     ObjectHold::HandBoxPrivGroupMode(), ObjectHold::HandBoxPrivGroupId(),
+                     pgrpC, egrpC);
         logger::info("HBOX CREATE hand={} mode={} word=0x{:08X} (bit14 ON, {} ms enable delay) "
                      "half=[idxP {:.4f}/{:.4f}/{:.4f} idxD {:.4f}/{:.4f}/{:.4f} slab {:.4f}/{:.4f}/{:.4f} tip {:.4f}/{:.4f}/{:.4f}]m scale={:.4f}",
                      isLeft ? "L" : "R", ObjectHold::HandBoxFollowMode(), word, kEnableDelayMs,
@@ -1231,7 +1298,11 @@ namespace {
             // ours = HIGGS's word with only the sub-layer bits replaced. Bit 14 is
             // INHERITED from the live word (review N5 — HIGGS's own disable set covers
             // its creation delay + version drift), then our own conditions OR on top:
-            std::uint32_t ours = (base & ~0x00001F00u) | (g_boxPart.load(std::memory_order_relaxed) << 8);
+            const std::uint32_t pgrp = base >> 16;
+            const std::uint32_t egrp = EffectiveGroup(pgrp, HiggsHoldingAnything());
+            std::uint32_t ours = ((base & ~0x00001F00u) & 0x0000FFFFu)
+                               | (g_boxPart.load(std::memory_order_relaxed) << 8)
+                               | (egrp << 16);
             if (now - rig.createdAt < std::chrono::milliseconds(kEnableDelayMs))
                 ours |= kBit14;                            // review N4: creation enable delay
             if (h->IsHoldingObject(isLeft) || h->IsTwoHanding() || h->IsDisabled(isLeft))
@@ -1251,9 +1322,25 @@ namespace {
                                       HK_UPDATE_COLLECTION_FILTER_PROCESS_SHAPE_COLLECTIONS);
                 }
             }
-            g_boxGroup.store(base >> 16, std::memory_order_relaxed);   // horse mount re-stamps the group
-            logger::info("HBOX filter hand={}: 0x{:08X} -> 0x{:08X} (bit14={})",
-                         isLeft ? "L" : "R", rig.lastWord, ours, (ours & kBit14) != 0);
+            g_playerGroup.store(pgrp, std::memory_order_relaxed);      // horse mount re-stamps the group
+            g_boxGroup.store(egrp, std::memory_order_relaxed);         // what OUR bodies carry
+            // ★ 2026-08-17: print `base` and ATTRIBUTE bit14. The old line printed only
+            // lastWord -> ours, which makes an INHERITED bit14 (HIGGS's word, or any foreign
+            // mod that poked it) indistinguishable from PPB's own OR below. That ambiguity cost
+            // a full investigation to resolve by hand; the attribution is one line.
+            const bool b14Base  = (base & kBit14) != 0;
+            const bool b14Delay = (now - rig.createdAt) < std::chrono::milliseconds(kEnableDelayMs);
+            const bool b14Hold  = h->IsHoldingObject(isLeft) || h->IsTwoHanding();
+            const bool b14Dis   = h->IsDisabled(isLeft);
+            logger::info("HBOX filter hand={}: 0x{:08X} -> 0x{:08X} (bit14={}) | base=0x{:08X} "
+                         "why[inherited={} createDelay={} hold={} higgsDisabled={}]{}",
+                         isLeft ? "L" : "R", rig.lastWord, ours, (ours & kBit14) != 0, base,
+                         b14Base ? 1 : 0, b14Delay ? 1 : 0, b14Hold ? 1 : 0, b14Dis ? 1 : 0,
+                         (b14Base && !b14Delay && !b14Hold && !b14Dis)
+                             ? "  <-- INHERITED ONLY: something outside PPB set collision-off on "
+                               "HIGGS's hand body. HIGGS re-asserts bit14 both ways every frame "
+                               "(hand.cpp:670), so a PERSISTENT one here means a foreign writer."
+                             : "");
             rig.lastWord = ours;
         }
     }
@@ -1284,7 +1371,7 @@ namespace {
         if (!hadPrev) return;
         const float d2 = delta[0] * delta[0] + delta[1] * delta[1] + delta[2] * delta[2];
         if (d2 < 1e-6f || d2 > 50.f * 50.f) return;          // idle / teleport-class jump
-        if (!g_rig[0].live && !g_rig[1].live) return;
+        if (!g_rig[0].live && !g_rig[1].live && !g_wand.live) return;
         hkVector4 dH;
         dH.set(delta[0] * kSkyrimToHavok, delta[1] * kSkyrimToHavok, delta[2] * kSkyrimToHavok, 0.f);
         WorldWriteLock lock(authWorld);                      // ONE lock for all 8 warps
@@ -1293,6 +1380,16 @@ namespace {
             if (!rig.live) continue;
             for (int b = 0; b < 4; ++b) {
                 hkpRigidBody* hk = HkOf(rig.bodyMem[b]);
+                if (!hk) continue;
+                const hkVector4& p = hk->getPosition();
+                hkVector4 np;
+                np.set(p(0) + dH(0), p(1) + dH(1), p(2) + dH(2), 0.f);
+                fn_setPosition()(static_cast<hkpEntity*>(hk), np);
+            }
+        }
+        if (g_wand.live) {
+            for (void* mem : g_wand.bodyMem) {
+                hkpRigidBody* hk = HkOf(mem);
                 if (!hk) continue;
                 const hkVector4& p = hk->getPosition();
                 hkVector4 np;
@@ -1596,6 +1693,321 @@ namespace {
                      ObjectHold::HandBoxRelAlpha(), ObjectHold::HandBoxTrack());
     }
 
+
+    // ═════════════════════════════════════════════════════════════════════════════════════════
+    //  PLAYER GENITAL WAND (2026-08-18) — doc 20 step 7, v1 TEST INSTRUMENT
+    //  Two keyframed segment boxes riding the player's OWN SOS chain. HandBox-family on
+    //  purpose: the player is excluded from the per-actor seam (PPBHook.cpp:1282), and this
+    //  file already owns every player-attached-body mechanism (CreateBoxBody, the snapshot
+    //  cadence, PlayerSpaceWarp, applyHardKeyFrame, the strong heldWorld teardown).
+    //  What v1 proves: the wand EXISTS, tracks the SMP/CBPC-posed chain, and PUSHES what the
+    //  hand boxes push (clutter, NPC flesh) while colliding with the player's own hands.
+    //  What v1 is NOT: a touch-API source (no part naming, no VRTE events) and not
+    //  contact-reactive (keyframed follower — reaction comes later via FsmpLink push into the
+    //  SMP bodies, the same coupling fsmpPush already does for hair).
+    //  Word: composed from HIGGS's LIVE hand word like the boxes (group churn + bit15 ride
+    //  along) with TWO deliberate divergences from FilterRefresh:
+    //    · inherited bit14 is MASKED OUT — HIGGS disables its HAND while holding a sword;
+    //      that reason must not switch off the crotch. Only our own 100 ms creation delay
+    //      sets bit14 here.
+    //    · no IsHoldingObject/IsTwoHanding OR — same rationale.
+    //  Part comes from playerWandPart (default 9, sanitized in the accessor — see Tuning.h
+    //  for the full why-not-each-other-part table).
+    void WandSnapshot()
+    {
+        g_wandSnap.valid = false;
+        if (!ObjectHold::PlayerWandOn() && !g_wand.live) return;
+        auto* player = RE::PlayerCharacter::GetSingleton();
+        auto* root   = player ? player->Get3D(false) : nullptr;   // 3rd person: SMP/CBPC pose lands here
+        if (!root) return;
+        static RE::BSFixedString s_names[kWandChainN] = {};
+        static bool s_interned = false;
+        if (!s_interned) {
+            for (int i = 0; i < kWandChainN; ++i) s_names[i] = kWandChain[i];
+            s_interned = true;
+        }
+        RE::NiAVObject* nodes[kWandChainN]{};
+        int first = -1, last = -1;
+        for (int i = 0; i < kWandChainN; ++i) {
+            nodes[i] = root->GetObjectByName(s_names[i]);
+            if (nodes[i]) { if (first < 0) first = i; last = i; }
+        }
+        if (first < 0 || last <= first) {                          // no chain / single node: no segment
+            static bool s_warned = false;
+            if (!s_warned) {
+                s_warned = true;
+                logger::info("WAND: player SOS chain not found ({} of {} nodes) — is a schlong "
+                             "installed on the player? Wand stays down.",
+                             (first >= 0) ? 1 : 0, kWandChainN);
+            }
+            return;
+        }
+        int mid = -1, want = (first + last) / 2;
+        for (int i = first + 1; i < last; ++i)                     // present node nearest the middle
+            if (nodes[i] && (mid < 0 || std::abs(i - want) < std::abs(mid - want))) mid = i;
+        if (mid < 0) mid = first;                                  // 2-node chain: seg A degenerates, B carries
+        const RE::NiAVObject* pick[3] = { nodes[first], nodes[mid], nodes[last] };
+        for (int k = 0; k < 3; ++k) {
+            const RE::NiPoint3& t = pick[k]->world.translate;
+            g_wandSnap.p[k][0] = t.x; g_wandSnap.p[k][1] = t.y; g_wandSnap.p[k][2] = t.z;
+        }
+        g_wandSnap.valid = true;
+        static bool s_resolvedOnce = false;
+        if (!s_resolvedOnce) {
+            s_resolvedOnce = true;
+            logger::info("WAND: chain resolved base='{}' mid='{}' tip='{}'",
+                         kWandChain[first], kWandChain[mid], kWandChain[last]);
+        }
+    }
+
+    // segment i pose: box local +Z runs base→tip along the segment
+    void WandSegPose(int seg, float posU[3], QuatW& rot, float halfM[3])
+    {
+        const float* a = g_wandSnap.p[seg];          // seg 0: base→mid, seg 1: mid→tip
+        const float* b = g_wandSnap.p[seg + 1];
+        float d[3] = { b[0] - a[0], b[1] - a[1], b[2] - a[2] };
+        float len  = std::sqrt(d[0]*d[0] + d[1]*d[1] + d[2]*d[2]);
+        float tip[3] = { b[0], b[1], b[2] };
+        if (seg == kWandSegs - 1 && len > 1e-3f) {   // extend the last segment past the bone tip
+            const float inv = kWandTipPadU / len;
+            tip[0] += d[0] * inv; tip[1] += d[1] * inv; tip[2] += d[2] * inv;
+            d[0] = tip[0] - a[0]; d[1] = tip[1] - a[1]; d[2] = tip[2] - a[2];
+            len += kWandTipPadU;
+        }
+        posU[0] = (a[0] + tip[0]) * 0.5f; posU[1] = (a[1] + tip[1]) * 0.5f; posU[2] = (a[2] + tip[2]) * 0.5f;
+        float z[3] = { 0.f, 1.f, 0.f };              // degenerate fallback: forward
+        if (len > 1e-3f) { z[0] = d[0]/len; z[1] = d[1]/len; z[2] = d[2]/len; }
+        float up[3] = { 0.f, 0.f, 1.f };
+        if (std::fabs(z[0]*up[0] + z[1]*up[1] + z[2]*up[2]) > 0.99f) { up[0] = 1.f; up[1] = 0.f; up[2] = 0.f; }
+        float x[3] = { up[1]*z[2] - up[2]*z[1], up[2]*z[0] - up[0]*z[2], up[0]*z[1] - up[1]*z[0] };
+        float xl = std::sqrt(x[0]*x[0] + x[1]*x[1] + x[2]*x[2]);
+        if (xl < 1e-4f) { x[0] = 1.f; x[1] = 0.f; x[2] = 0.f; xl = 1.f; }
+        x[0] /= xl; x[1] /= xl; x[2] /= xl;
+        float y[3] = { z[1]*x[2] - z[2]*x[1], z[2]*x[0] - z[0]*x[2], z[0]*x[1] - z[1]*x[0] };
+        const float m[9] = { x[0], y[0], z[0],  x[1], y[1], z[1],  x[2], y[2], z[2] };  // columns = axes
+        rot = Mat3ToQuat(m);
+        const float r = ObjectHold::PlayerWandR() * kSkyrimToHavok;
+        halfM[0] = std::max(r, 0.010f);
+        halfM[1] = std::max(r, 0.010f);
+        halfM[2] = std::max(len * 0.5f * kSkyrimToHavok, 0.010f);
+    }
+
+    void DestroyWand(void* liveWorld, const char* reason)
+    {
+        if (!g_wand.live) return;
+        void* owner = g_wand.heldWorld ? static_cast<void*>(g_wand.heldWorld.get()) : liveWorld;
+        if (owner)
+            for (void* mem : g_wand.bodyMem)
+                if (mem) RemoveBody(mem, owner);
+        logger::info("WAND DESTROY reason={}", reason);
+        g_wand = WandRig{};
+        g_wandLive.store(false, std::memory_order_relaxed);
+    }
+
+    std::uint32_t WandComposeWord(bool creating)
+    {
+        auto* h = Interop::GetHiggs();
+        hkpRigidBody* handBody = h ? HkOfValidated(h->GetHandRigidBody(false)) : nullptr;
+        if (!handBody && h) handBody = HkOfValidated(h->GetHandRigidBody(true));
+        if (!handBody) return 0;
+        const std::uint32_t base = handBody->getCollidable()->getCollisionFilterInfo();
+        const std::uint32_t pgrpW = base >> 16;
+        const std::uint32_t egrpW = EffectiveGroup(pgrpW, HiggsHoldingAnything());
+        g_playerGroup.store(pgrpW, std::memory_order_relaxed);
+        // boxes and wand share ONE group by design, and the wand may be the ONLY live rig —
+        // FilterRefresh's store is early-outed when the box word is unchanged (or absent), so
+        // publish it here too or isOurs() reads a stale/zero group and matches nothing.
+        g_boxGroup.store(egrpW, std::memory_order_relaxed);
+        g_wandPart.store(ObjectHold::PlayerWandPart(), std::memory_order_relaxed);
+        std::uint32_t w = ((base & ~(0x00001F00u | kBit14)) & 0x0000FFFFu)
+                        | (ObjectHold::PlayerWandPart() << 8) | (egrpW << 16);
+        if (creating ||
+            std::chrono::steady_clock::now() - g_wand.createdAt < std::chrono::milliseconds(kEnableDelayMs))
+            w |= kBit14;
+        return w;
+    }
+
+    void WandLifecycle(void* authWorld)
+    {
+        // ── EXPOSURE GATE (2026-08-23). The chain resolving is NOT proof of a schlong: PPB ships
+        // the dormant SOS bones on every skeleton, so before this a player with no TNG/SOS at all
+        // carried an invisible ~bind-length collider at the crotch — one that pushes loose objects
+        // and, since the probe export landed, could open an NPC's orifice with nothing there.
+        // Gating the LIFECYCLE (not just creation) means putting trousers on tears the wand down
+        // within a frame, and WandProbeSegments — which keys off g_wand.live — goes quiet with it.
+        const bool exposed = GenitalProbe::IsExposed(RE::PlayerCharacter::GetSingleton());
+        // 2026-08-23: no player Havok physics during a scene either — the wand is a real collider
+        // and would keep shoving the partner while the animation tries to place them.
+        const bool sceneOff = g_sceneSuspend.load(std::memory_order_relaxed);
+        const bool want = ObjectHold::PlayerWandOn() && g_wandSnap.valid && exposed && !sceneOff;
+        if (g_wand.live) {
+            if (g_wand.bhkWorld != authWorld)      DestroyWand(authWorld, "worldChange");
+            else if (!want)                        DestroyWand(authWorld, "off");
+        }
+        if (g_wand.live || !want) return;
+        const std::uint32_t word = WandComposeWord(true);
+        if (!word) { LogSkip("noHiggsHand"); return; }
+        bool failed = false;
+        for (int i = 0; i < kWandSegs; ++i) {
+            float posU[3]; QuatW rot; float halfM[3];
+            WandSegPose(i, posU, rot, halfM);
+            g_wand.bodyMem[i] = CreateBoxBody(authWorld, posU, rot, halfM, word);
+            if (!g_wand.bodyMem[i]) { failed = true; break; }
+        }
+        if (failed) {
+            for (void*& mem : g_wand.bodyMem) { if (mem) RemoveBody(mem, authWorld); mem = nullptr; }
+            LogSkip("allocFail");
+            return;
+        }
+        g_wand.live      = true;
+        g_wandLive.store(true, std::memory_order_relaxed);
+        g_wand.bhkWorld  = authWorld;
+        g_wand.heldWorld.reset(static_cast<RE::bhkWorld*>(authWorld));
+        g_wand.lastWord  = word;
+        g_wand.createdAt = std::chrono::steady_clock::now();
+        logger::info("WAND CREATE segs={} word=0x{:08X} part={} r={:.2f}u (bit14 ON, {} ms delay)",
+                     kWandSegs, word, ObjectHold::PlayerWandPart(), ObjectHold::PlayerWandR(),
+                     kEnableDelayMs);
+    }
+
+    void WandFilterRefresh(void* authWorld)
+    {
+        if (!g_wand.live) return;
+        const std::uint32_t w = WandComposeWord(false);
+        if (!w || w == g_wand.lastWord) return;
+        void* hkpW = GetHkpWorld(authWorld);
+        if (!IsLikelyPointer(hkpW)) return;
+        {
+            WorldWriteLock lock(authWorld);
+            for (void* mem : g_wand.bodyMem) {
+                hkpRigidBody* hk = HkOf(mem);
+                if (!hk) continue;
+                hk->getCollidableRw()->setCollisionFilterInfo(w);
+                fn_UpdateFilter()(hkpW, static_cast<hkpEntity*>(hk),
+                                  HK_UPDATE_FILTER_ON_ENTITY_FULL_CHECK,
+                                  HK_UPDATE_COLLECTION_FILTER_PROCESS_SHAPE_COLLECTIONS);
+            }
+        }
+        logger::info("WAND filter: 0x{:08X} -> 0x{:08X} (bit14={})",
+                     g_wand.lastWord, w, (w & kBit14) != 0);
+        g_wand.lastWord = w;
+    }
+
+    void WandKeyframe(void* authWorld)
+    {
+        if (!g_wand.live || !g_wandSnap.valid) return;
+        const float maxVel = ObjectHold::HandBoxMaxVel();
+        WorldWriteLock lock(authWorld);
+        for (int i = 0; i < kWandSegs; ++i) {
+            hkpRigidBody* hk = HkOf(g_wand.bodyMem[i]);
+            if (!hk) continue;
+            float posU[3]; QuatW rot; float halfM[3];
+            WandSegPose(i, posU, rot, halfM);
+            // live half-extent write, same idempotent idiom as ResolveGeometryLive: the SMP sim
+            // changes segment length every frame (sway/erection), so the shape must follow
+            const hkpShape* shape = hk->getCollidable()->getShape();
+            auto* box = reinterpret_cast<PortHkpBoxShape*>(const_cast<hkpShape*>(shape));
+            if (box && box->type == HK_SHAPE_BOX) {
+                const float dx = std::fabs(box->halfExtents[0] - halfM[0]) +
+                                 std::fabs(box->halfExtents[1] - halfM[1]) +
+                                 std::fabs(box->halfExtents[2] - halfM[2]);
+                if (dx > 1e-4f) {
+                    box->halfExtents[0] = halfM[0]; box->halfExtents[1] = halfM[1];
+                    box->halfExtents[2] = halfM[2];
+                }
+            }
+            hkVector4 pos;
+            pos.set(posU[0] * kSkyrimToHavok, posU[1] * kSkyrimToHavok, posU[2] * kSkyrimToHavok, 0.f);
+            hkQuaternion q;
+            q.set(rot.x, rot.y, rot.z, rot.w);
+            fn_applyHardKeyFrame()(pos, q, g_snap.invDt, hk);
+            const hkVector4& lv = hk->getLinearVelocity();
+            if (lv(0)*lv(0) + lv(1)*lv(1) + lv(2)*lv(2) > maxVel * maxVel) {
+                fn_setPosition()(static_cast<hkpEntity*>(hk), pos);        // spike: snap, then
+                fn_applyHardKeyFrame()(pos, q, g_snap.invDt, hk);          // re-key -> ~0 residual
+            }
+        }
+    }
+
+    void WandLog()
+    {
+        if (!g_wand.live || !ObjectHold::PlayerWandLogOn()) return;
+        static std::chrono::steady_clock::time_point s_last{};
+        const auto now = std::chrono::steady_clock::now();
+        if (s_last.time_since_epoch().count() != 0 && now - s_last < std::chrono::milliseconds(1000)) return;
+        s_last = now;
+        const float* a = g_wandSnap.p[0]; const float* t = g_wandSnap.p[2];
+        const float d[3] = { t[0]-a[0], t[1]-a[1], t[2]-a[2] };
+        logger::info("WAND base=({:.1f},{:.1f},{:.1f}) len={:.2f}u word=0x{:08X} valid={}",
+                     a[0], a[1], a[2], std::sqrt(d[0]*d[0]+d[1]*d[1]+d[2]*d[2]) +
+                     kWandTipPadU, g_wand.lastWord, g_wandSnap.valid ? 1 : 0);
+    }
+
+
+    // ═════════════════════════════════════════════════════════════════════════════════════════
+    //  NULL USERDATA (2026-08-18) — the PLANCK-hit / IWP-stab fix.
+    //  ROOT CAUSE (verified in source): while HIGGS holds an NPC, our finger box touching the held
+    //  limb enters PLANCK's hit logic; because our box carries a valid hkpRigidBody userData
+    //  back-pointer (the PortBhkRigidBody wrapper), PLANCK does NOT early-return at main.cpp:2081
+    //  and instead runs Character_HitTarget -> a REAL TESHitEvent -> Immersive Weapon Penetration
+    //  VR's sink dramatises it into a stab + downed-crit ragdoll.
+    //  FIX: our boxes are SYNTHETIC SENSORS with no Skyrim ref, so a null userData is the honest
+    //  value. Nulled, PLANCK bails at :2081 BEFORE any hit; and because our bodies are plain
+    //  KEYFRAMED (not KEYFRAMED_REPORTING) the :2082 CONTACT_IS_DISABLED branch is skipped, so the
+    //  finger STILL TOUCHES — it just stops registering as a strike. HIGGS is unaffected (it already
+    //  resolves our box to "not mine"; GetRefFromCollidable simply returns null, which its listeners
+    //  already handle).
+    //  ⚠ SELF-VERIFYING: hkpWorldObject::userData is at 0x18 (CommonLib-NG: world@0x10 userData@0x18
+    //  collidable@0x20). After the game ctor the field holds OUR OWN wrapper pointer (== bodyMem),
+    //  so we only write when *field == bodyMem. A wrong offset or unexpected state can therefore
+    //  NEVER corrupt a live body — we refuse and log instead. Main thread (OnPrePhysicsStep), so
+    //  logging is legal; the write is one aligned pointer store, idempotent (skips once nulled).
+    constexpr std::size_t kUserDataOff = 0x18;
+    // AUTO mode (2) safe-boot: stays false until the first kPostLoadGame of the session, so the
+    // userData write never happens during the fragile initial cell load — only once a save is up.
+    std::atomic<bool> g_sessionReloaded{ false };
+
+    void NullUserDataOne(void* bodyMem, void* authWorld, const char* tag, int idx)
+    {
+        if (!bodyMem) return;
+        hkpRigidBody* hk = HkOf(bodyMem);
+        if (!hk) return;
+        void** ud = reinterpret_cast<void**>(reinterpret_cast<char*>(hk) + kUserDataOff);
+        void* cur = *ud;
+        if (cur == nullptr) return;                          // already nulled — idempotent skip
+        if (cur != bodyMem) {                                // NOT our wrapper: refuse, log ONCE
+            static bool s_warned = false;
+            if (!s_warned) {
+                s_warned = true;
+                logger::info("NULLUD REFUSED on {}[{}]: userData@0x18 = {} but our wrapper = {} — "
+                             "offset unverified, NOTHING written (safe).", tag, idx,
+                             fmt::ptr(cur), fmt::ptr(bodyMem));
+            }
+            return;
+        }
+        {
+            WorldWriteLock lock(authWorld);
+            *ud = nullptr;                                    // verified: it was OUR back-pointer
+        }
+        logger::info("NULLUD {}[{}]: userData verified (== our wrapper) and nulled — PLANCK will "
+                     "no longer read this box as a weapon hit.", tag, idx);
+    }
+
+    void NullUserDataTick(void* authWorld)
+    {
+        const int mode = ObjectHold::HandBoxNullUserDataMode();
+        if (mode == 0) return;                                        // off
+        if (mode == 2 && !g_sessionReloaded.load(std::memory_order_relaxed))
+            return;                                                   // auto: wait for the first load
+        for (int h = 0; h < 2; ++h)
+            if (g_rig[h].live)
+                for (int b = 0; b < 4; ++b)
+                    NullUserDataOne(g_rig[h].bodyMem[b], authWorld, h == 1 ? "L-box" : "R-box", b);
+        if (g_wand.live)
+            for (int i = 0; i < kWandSegs; ++i)
+                NullUserDataOne(g_wand.bodyMem[i], authWorld, "wand", i);
+    }
+
         void OnPrePhysicsStep(void* worldArg)
     {
         if (!AnythingActive()) return;                       // zero-knob cost: a few float reads
@@ -1617,15 +2029,21 @@ namespace {
         // 2026-07-10 LAG FIX: snapshot the bones NOW, at the step boundary —
         // fresh hand pose for this frame's keyframes (see TakeBoneSnapshot).
         TakeBoneSnapshot();
+        WandSnapshot();                   // player SOS chain pose (wand rider)
         UpdateEffFrames();                // mode 2: HIGGS-anchored effective hand frames
 
         const bool beast = IsPlayerBeast(player);
         SlabWrite(beast);                 // Phase 0 (Track A)
         RigLifecycle(authWorld, beast);   // create/destroy/recreate (N14: only here)
+        WandLifecycle(authWorld);         // player genital wand (same N14 discipline)
         ResolveGeometryLive();            // Track B: per-snapshot re-solve + live half-extents (before keyframing)
         FilterRefresh(authWorld);         // on-change word write + UpdateCollisionFilterOnEntity
+        WandFilterRefresh(authWorld);     // wand word (bit14 deliberately NOT inherited)
         PlayerSpaceWarp(authWorld, player);  // 2026-07-12: locomotion delta moved POSITIONALLY (HIGGS parity)
         KeyframeAll(authWorld);           // 8× applyHardKeyFrame + clamp (consumes the re-solved def)
+        WandKeyframe(authWorld);          // +2 wand segments, same servo
+        NullUserDataTick(authWorld);      // PLANCK-hit fix (self-verifying; boxes + wand)
+        WandLog();                        // ~1 Hz when playerWandLog
         PhaseLog();                       // HBOXPH jitter diagnostic (no-op unless handBoxPhaseLog)
         DumpIfRequested(authWorld);
         BoxDumpIfRequested();             // per-box readback (edge on handBoxDumpNow)
@@ -1636,6 +2054,7 @@ namespace {
 namespace HandBox {
 
     void SetSceneSuspended(bool on) { g_sceneSuspend.store(on, std::memory_order_relaxed); }
+    void MarkSessionReloaded()      { g_sessionReloaded.store(true, std::memory_order_relaxed); }
     bool IsSceneSuspended()         { return g_sceneSuspend.load(std::memory_order_relaxed); }
 
 
@@ -1680,6 +2099,40 @@ namespace HandBox {
         return true;
     }
 
+    // ── 2026-08-23: publish the wand for the PROBE EXPORT. See HandBox.h.
+    // Deliberately re-derives the endpoints the same way WandSegPose does — INCLUDING the
+    // kWandTipPadU extension on the last segment — rather than reading the snapshot raw, so
+    // the probe and the collider describe one object. Diverging here would be the worst kind
+    // of bug: a sensor that reports contact where nothing can actually touch.
+    // Main thread, like every other accessor here: g_wandSnap/g_wand live in the main-thread
+    // state block (:385) and WandSnapshot writes them from OnPrePhysicsStep, which is the
+    // main-thread stepDeltaTime site (:1577) — not the filter callback's physics thread. Reads
+    // floats and a bool only, never a Havok pointer, so even a mis-sequenced call can be stale,
+    // never unsafe.
+    int WandProbeSegments(float aOutU[2][3], float bOutU[2][3], float* rOutU)
+    {
+        if (!aOutU || !bOutU || !rOutU) return 0;
+        if (!g_wand.live || !g_wandSnap.valid) return 0;
+        *rOutU = ObjectHold::PlayerWandR();
+        int n = 0;
+        for (int seg = 0; seg < kWandSegs; ++seg) {
+            const float* a = g_wandSnap.p[seg];
+            const float* b = g_wandSnap.p[seg + 1];
+            float d[3] = { b[0] - a[0], b[1] - a[1], b[2] - a[2] };
+            const float len = std::sqrt(d[0]*d[0] + d[1]*d[1] + d[2]*d[2]);
+            if (!(len > 1e-3f)) continue;              // degenerate link — NaN-safe form
+            float tip[3] = { b[0], b[1], b[2] };
+            if (seg == kWandSegs - 1) {                // same tip pad the body carries
+                const float inv = kWandTipPadU / len;
+                tip[0] += d[0] * inv; tip[1] += d[1] * inv; tip[2] += d[2] * inv;
+            }
+            aOutU[n][0] = a[0];   aOutU[n][1] = a[1];   aOutU[n][2] = a[2];
+            bOutU[n][0] = tip[0]; bOutU[n][1] = tip[1]; bOutU[n][2] = tip[2];
+            ++n;
+        }
+        return n;
+    }
+
     void RegisterHiggs()
     {
         if (g_registered) return;
@@ -1695,19 +2148,51 @@ namespace HandBox {
                      "handBoxEnable+handBoxArm or a higgsSlab* dial.", h->GetBuildNumber());
     }
 
-    // ── GRAB-BUG CENSUS (2026-08-17) ────────────────────────────────────────────────────────
-    // User-reported, log-confirmed: while one hand HIGGS-grabs an NPC limb, the OTHER hand's PPB
-    // finger boxes pass THROUGH that limb's capsule (TOUCHPROBE R[FINGER] upperarm[R].C1 d=-1.71u)
-    // while HIGGS's own hand box still collides. Node-specific: only the held node leaks.
-    // HIGGS is ruled out as the cause (its comparison hook has no logic of its own, and the only
-    // filter rewrites to (playerGroup<<16)|5 are for impacted PROJECTILES) — so the decision is
-    // being made by a registered callback (ours or PLANCK's) or by the vanilla comparator.
-    // This records the raw pair words + which branch WE took, so the next grab names the culprit.
-    // PURE INTEGER, relaxed atomics, no logging (the movaps CTD rule).
-    std::atomic<std::uint32_t> g_gbA{ 0 }, g_gbB{ 0 };   // last (ourBox, other) pair seen
-    std::atomic<std::uint32_t> g_gbBranch{ 0 };          // 0 none, 1 fellThrough(0), 2 belt-Ignore
-    std::atomic<std::uint32_t> g_gbHits{ 0 };            // pairs seen since last report
-    std::atomic<bool>          g_gbArmed{ false };       // set on the main thread while a grab is live
+    // ── GRAB-BUG CENSUS v2 (2026-08-17) ─────────────────────────────────────────────────────
+    // v1 recorded only the LAST pair and, across 44,613 pairs, caught a benign one (our box x
+    // HIGGS's own hand, which the belt Ignores by design). It did prove our boxes are consulted
+    // during a grab. v2 targets the pair that actually matters: our box vs a BIPED-layer body
+    // (8/32/33) = her ragdoll. Counters are split so one grab distinguishes three worlds:
+    //   bipedSeen == 0        -> we are never asked; the pair dies upstream (broadphase/PLANCK)
+    //   bipedIgnored > 0      -> PPB is the culprit, and 'branch' names which rule
+    //   bipedContinue only    -> PPB passes it through; the Ignore is vanilla's or another mod's
+    // PURE INTEGER, relaxed atomics, no logging (the movaps rule).
+    std::atomic<std::uint32_t> g_gbA{ 0 }, g_gbB{ 0 };     // last (ourBox, biped) pair
+    std::atomic<std::uint32_t> g_gbBranch{ 0 };            // 1 = fell through, 2 = belt-Ignore
+    std::atomic<std::uint32_t> g_gbSeen{ 0 };              // biped pairs seen
+    std::atomic<std::uint32_t> g_gbIgnored{ 0 };           // ...of those, WE returned Ignore
+    std::atomic<std::uint32_t> g_gbOther{ 0 };             // non-biped pairs (context only)
+    std::atomic<bool>          g_gbArmed{ false };
+    // Layer histogram of the OTHER side, 128 bits. We must not depend on a GUESS about which
+    // layer her arm capsule lives on: CapFix reshapes capsules on bodies it did not always
+    // create, so "biped 8/32/33" is an inference, not a measurement. One grab now REPORTS the
+    // layers our boxes actually met, and the counters stay meaningful either way.
+    std::atomic<std::uint32_t> g_gbLayers[4] = {};
+    // ── v3 (2026-08-17, after the first real run) ───────────────────────────────────────────
+    // v2's single "last foreign pair" slot was SWAMPED: HIGGS fires grab-candidate casts on
+    // layer 44 continuously while holding, so the slot always ended up holding a phantom
+    // (0x0000002C) and never her arm — the one word the test exists to read. Dedicated slot,
+    // biped layers only, sampled FIRST-per-grab (not last) so a late phantom cannot evict it.
+    //
+    // THE HYPOTHESIS THIS TESTS: our HandBox sits in the PLAYER's collision group with bit15
+    // set. Skyrim's comparator treats same-group + bit15 on both sides as "same ragdoll -> do
+    // not collide". If HIGGS re-groups the grabbed limb into the player's group for the
+    // duration of the hold, her arm becomes ragdoll-adjacent to our box and VANILLA rejects the
+    // pair — which matches every symptom: that limb only, other limbs fine, and PPB Ignoring
+    // nothing. Reading her GROUP settles it: 01D9-like (== ourGroup) confirms, anything else
+    // refutes.
+    // ⚠ v3 also SKIPS our own dead hand. Reading the 2026-08-17 log against the census output
+    // showed v2 captured `ourBox=0x01D9C438` — bit14 SET — in 5 of 6 grabs. That is the HOLDING
+    // hand, which PPB itself switches off at :1239 while it holds something. Its pairs are
+    // meaningless here: of course a collision-disabled box does not collide. The bug is on the
+    // POKING hand (logged `0x…8438`, bit14 clear), so the census must ignore any of our boxes
+    // carrying bit14 or it just re-measures our own intentional disable.
+    std::atomic<std::uint32_t> g_gbBipOur{ 0 }, g_gbBipHer{ 0 };
+    std::atomic<std::uint32_t> g_gbDeadHandSkipped{ 0 };
+    std::atomic<std::uint32_t> g_gbBipBranch{ 0 };
+    std::atomic<std::uint32_t> g_gbBipCount{ 0 };
+    // NpcFinger runs BEFORE us in PerfSys::FilterCB, so anything it decides we never see.
+    // Its counter (NpcFinger::g_gbFingerAte) tells "nobody asked us" apart from "answered first".
 
     void OnFrame()
     {
@@ -1728,21 +2213,66 @@ namespace HandBox {
             g_gbArmed.store(grabbing, std::memory_order_relaxed);
             static bool s_wasGrabbing = false;
             if (s_wasGrabbing && !grabbing) {          // report once, on RELEASE
-                const std::uint32_t n = g_gbHits.exchange(0, std::memory_order_relaxed);
-                const std::uint32_t a = g_gbA.load(std::memory_order_relaxed);
-                const std::uint32_t b = g_gbB.load(std::memory_order_relaxed);
-                const std::uint32_t br = g_gbBranch.exchange(0, std::memory_order_relaxed);
-                if (n) {
-                    logger::info("GRABBUG {} pair(s) during the grab | ourBox=0x{:08X} "
-                                 "(layer {} part {} grp {:04X} bit15 {}) | other=0x{:08X} "
-                                 "(layer {} part {} grp {:04X} bit15 {}) | PPB verdict: {}",
-                                 n, a, a & 0x7Fu, (a >> 8) & 0x1Fu, a >> 16, (a & 0x8000u) ? 1 : 0,
-                                 b, b & 0x7Fu, (b >> 8) & 0x1Fu, b >> 16, (b & 0x8000u) ? 1 : 0,
-                                 br == 2 ? "WE returned Ignore (ours)"
-                                         : "fell through (vanilla or another mod decided)");
+                const std::uint32_t seen = g_gbSeen.exchange(0, std::memory_order_relaxed);
+                const std::uint32_t ign  = g_gbIgnored.exchange(0, std::memory_order_relaxed);
+                const std::uint32_t oth  = g_gbOther.exchange(0, std::memory_order_relaxed);
+                const std::uint32_t a    = g_gbA.load(std::memory_order_relaxed);
+                const std::uint32_t b    = g_gbB.load(std::memory_order_relaxed);
+                const std::uint32_t br   = g_gbBranch.exchange(0, std::memory_order_relaxed);
+                const std::uint32_t ate  = NpcFinger::g_gbFingerAte.exchange(0, std::memory_order_relaxed);
+                std::string layers;
+                for (unsigned L = 0; L < 128u; ++L) {
+                    if (g_gbLayers[L >> 5].load(std::memory_order_relaxed) & (1u << (L & 31u))) {
+                        if (!layers.empty()) layers += ',';
+                        layers += std::to_string(L);
+                    }
+                }
+                for (auto& w : g_gbLayers) w.store(0, std::memory_order_relaxed);
+                const std::uint32_t bc  = g_gbBipCount.exchange(0, std::memory_order_relaxed);
+                const std::uint32_t bo  = g_gbBipOur.exchange(0, std::memory_order_relaxed);
+                const std::uint32_t bh  = g_gbBipHer.exchange(0, std::memory_order_relaxed);
+                const std::uint32_t bbr  = g_gbBipBranch.exchange(0, std::memory_order_relaxed);
+                const std::uint32_t dead = g_gbDeadHandSkipped.exchange(0, std::memory_order_relaxed);
+                if (bc) {
+                    logger::info("GRABBUG v3 BIPED: {} pairs vs her ragdoll (LIVE hand; {} dead-hand pairs "
+                                 "skipped) | ourBox=0x{:08X} "
+                                 "(grp {:04X} part {} bit15 {}) | herLimb=0x{:08X} (layer {} "
+                                 "part {} grp {:04X} bit15 {}) | PPB {} | GROUPS {} -> {}",
+                                 bc, dead, bo, bo >> 16, (bo >> 8) & 0x1Fu, (bo & 0x8000u) ? 1 : 0,
+                                 bh, bh & 0x7Fu, (bh >> 8) & 0x1Fu, bh >> 16,
+                                 (bh & 0x8000u) ? 1 : 0,
+                                 bbr == 2 ? "IGNORED it" : "passed it through",
+                                 (bo >> 16) == (bh >> 16) ? "MATCH" : "differ",
+                                 ((bo >> 16) == (bh >> 16) && (bo & 0x8000u) && (bh & 0x8000u))
+                                     ? "CONFIRMED: same group + bit15 both sides = vanilla treats "
+                                       "them as ONE ragdoll and rejects the pair. Not our bug; fix "
+                                       "by clearing bit15 on the HandBox or re-grouping it."
+                                     : "REFUTED: the group/bit15 theory does not explain it — look "
+                                       "at PLANCK's callback and the vanilla 56-vs-biped row.");
                 } else {
-                    logger::info("GRABBUG grab ended: our boxes were NEVER asked about her bodies "
-                                 "— the pair was rejected upstream (broadphase or an earlier callback)");
+                    logger::info("GRABBUG v3 BIPED: the LIVE hand's boxes met NO biped-layer body at "
+                                 "all during this grab ({} dead-hand pairs skipped) -> her limb "
+                                 "is not on 8/32/33, or the pair never reached any filter.", dead);
+                }
+                if (!seen) {
+                    logger::info("GRABBUG v2: {} HIGGS-own pairs, but our boxes were NEVER asked "
+                                 "about any FOREIGN body during the grab | layers seen: [{}] | "
+                                 "NpcFinger decided {} pairs before us -> {}",
+                                 oth, layers.empty() ? "none" : layers.c_str(), ate,
+                                 ate ? "IT swallowed them; look at NpcFinger::FilterDecision"
+                                     : "rejected UPSTREAM of PPB (broadphase, or an earlier callback)");
+                } else {
+                    logger::info("GRABBUG v2: foreign pairs={} of which WE Ignored={} (HIGGS-own={}) "
+                                 "| layers seen: [{}] | NpcFinger ate {} "
+                                 "| ourBox=0x{:08X} (layer {} part {} grp {:04X} bit15 {}) "
+                                 "| herBody=0x{:08X} (layer {} part {} grp {:04X} bit15 {}) "
+                                 "| last verdict: {}{}",
+                                 seen, ign, oth, layers.empty() ? "none" : layers.c_str(), ate,
+                                 a, a & 0x7Fu, (a >> 8) & 0x1Fu, a >> 16, (a & 0x8000u) ? 1 : 0,
+                                 b, b & 0x7Fu, (b >> 8) & 0x1Fu, b >> 16, (b & 0x8000u) ? 1 : 0,
+                                 br == 2 ? "PPB returned Ignore -- OURS" : "PPB passed it through",
+                                 (br == 1 && ign == 0)
+                                     ? " -> the Ignore is NOT ours (vanilla or another mod)" : "");
                 }
             }
             s_wasGrabbing = grabbing;
@@ -1757,18 +2287,50 @@ namespace HandBox {
 
     int FilterDecision(std::uint32_t infoA, std::uint32_t infoB)
     {
-        // gated on one relaxed atomic — idle cost is 1 load + compare
-        if (!g_boxLive.load(std::memory_order_relaxed)) return 0;
-        const std::uint32_t grp  = g_boxGroup.load(std::memory_order_relaxed);
+        // gated on relaxed atomics — idle cost is a couple of loads + compares
+        const bool boxLive  = g_boxLive.load(std::memory_order_relaxed);
+        const bool wandLive = g_wandLive.load(std::memory_order_relaxed);
+        if (!boxLive && !wandLive) return 0;
+        const std::uint32_t grp  = g_boxGroup.load(std::memory_order_relaxed);     // OUR group
+        const std::uint32_t pgrp = g_playerGroup.load(std::memory_order_relaxed);  // player's real group
         const unsigned      part = g_boxPart.load(std::memory_order_relaxed);
+        const unsigned      wpart = g_wandPart.load(std::memory_order_relaxed);
 
-        const auto isBox = [grp, part](std::uint32_t f) {
-            return (f & 0x7Fu) == kHiggsLayer && (f & kBit15) &&
-                   ((f >> 8) & 0x1Fu) == part && (f >> 16) == grp;
+        // "ours" = layer 56 + bit15 + OUR group. Under a private group this no longer overlaps
+        // HIGGS's hands, which is exactly the point.
+        const auto isOurs = [grp](std::uint32_t f) {
+            return (f & 0x7Fu) == kHiggsLayer && (f & kBit15) != 0 && (f >> 16) == grp;
         };
-        const bool bA = isBox(infoA), bB = isBox(infoB);
-        if (!bA && !bB) return 0;                        // existing PerfSys rules run unchanged
-        if (bA && bB) return 2;                          // box x box: same-part adjacency would COLLIDE — never useful
+        const auto isBox  = [&](std::uint32_t f) { return isOurs(f) && ((f >> 8) & 0x1Fu) == part; };
+        const auto isWand = [&](std::uint32_t f) { return isOurs(f) && ((f >> 8) & 0x1Fu) == wpart; };
+
+        const bool bA = isBox(infoA),  bB = isBox(infoB);
+        const bool wA = isWand(infoA), wB = isWand(infoB);
+        if (!bA && !bB && !wA && !wB) return 0;           // existing PerfSys rules run unchanged
+        if (bA && bB) return 2;                           // box x box: never useful
+        if (wA && wB) return 2;                           // wand seg x wand seg: adjacent segments
+
+        // ── BELT 1 (wand): the player's OWN ragdoll. Adjacency used to do this for free
+        // (|wandPart 9 - Lthigh 8| == 1 -> skip). Under a private group the pair becomes a plain
+        // layer-56-vs-biped matrix COLLIDE, which would have the wand fighting the leg it hangs
+        // beside. Key on the PLAYER's group so NPC bipeds are untouched (they must still collide).
+        if (wA != wB) {
+            const std::uint32_t ow = wA ? infoB : infoA;
+            const unsigned      ol = ow & 0x7Fu;
+            if ((ol == 8u || ol == 32u || ol == 33u) && (ow >> 16) == pgrp)
+                return 2;                                 // our own body — never
+            // wand vs HIGGS's own hand/weapon stays COLLIDE by design: that is the player
+            // touching himself with his own hand, which is the whole point of the wand.
+        }
+
+        // ── BELT 2 (boxes): the player's OWN ragdoll, same reasoning as BELT 1.
+        if (bA != bB) {
+            const std::uint32_t ob = bA ? infoB : infoA;
+            const unsigned      ol = ob & 0x7Fu;
+            if ((ol == 8u || ol == 32u || ol == 33u) && (ob >> 16) == pgrp)
+                return 2;
+        }
+        if (!bA && !bB) return 0;                         // wand-only pair: nothing below applies
 
         // Belt vs HIGGS's own bodies (hand 3/5, weapon clone 3/5, declared-but-dead
         // 2/6): the |4-3|=|4-5|=1 adjacency rule already skips them in the vanilla
@@ -1776,24 +2338,59 @@ namespace HandBox {
         // Risk 3) — Ignore here closes the misread case for free.
         const std::uint32_t o  = bA ? infoB : infoA;
         const unsigned      op = (o >> 8) & 0x1Fu;
-        if ((o & 0x7Fu) == kHiggsLayer && (o & kBit15) && (o >> 16) == grp &&
+        // ⚠ keyed on the PLAYER's group, not ours: once we take a private group we no longer
+        // share one with HIGGS's hands, and the same-group adjacency that used to skip them
+        // (|4-3| = |4-5| = 1) is gone — 56-vs-56 would COLLIDE through the matrix instead.
+        if ((o & 0x7Fu) == kHiggsLayer && (o & kBit15) && (o >> 16) == pgrp &&
             (op == 2u || op == 3u || op == 5u || op == 6u)) {
             // ⚠ never log here — collision-thread callback, fmt SIMD = CTD (see NpcFingerTest)
             g_logFirstIgnore.store(true, std::memory_order_relaxed);
             if (g_gbArmed.load(std::memory_order_relaxed)) {
-                g_gbA.store(bA ? infoA : infoB, std::memory_order_relaxed);
-                g_gbB.store(o, std::memory_order_relaxed);
-                g_gbBranch.store(2, std::memory_order_relaxed);       // WE Ignored it
-                g_gbHits.fetch_add(1, std::memory_order_relaxed);
+                const unsigned ol = o & 0x7Fu;
+                g_gbLayers[ol >> 5].fetch_or(1u << (ol & 31u), std::memory_order_relaxed);
+                if ((ol == 8u || ol == 32u || ol == 33u) &&
+                    !((bA ? infoA : infoB) & kBit14)) {              // LIVE hand only
+                    g_gbBipCount.fetch_add(1, std::memory_order_relaxed);
+                    std::uint32_t expect = 0;
+                    if (g_gbBipHer.compare_exchange_strong(expect, o, std::memory_order_relaxed)) {
+                        g_gbBipOur.store(bA ? infoA : infoB, std::memory_order_relaxed);
+                        g_gbBipBranch.store(2, std::memory_order_relaxed);
+                    }
+                }
+                if (ol != kHiggsLayer) {                               // not HIGGS's own kit
+                    g_gbA.store(bA ? infoA : infoB, std::memory_order_relaxed);
+                    g_gbB.store(o, std::memory_order_relaxed);
+                    g_gbBranch.store(2, std::memory_order_relaxed);    // WE Ignored it
+                    g_gbSeen.fetch_add(1, std::memory_order_relaxed);
+                    g_gbIgnored.fetch_add(1, std::memory_order_relaxed);
+                } else {
+                    g_gbOther.fetch_add(1, std::memory_order_relaxed);
+                }
+                if ((bA ? infoA : infoB) & kBit14)
+                    g_gbDeadHandSkipped.fetch_add(1, std::memory_order_relaxed);
             }
             return 2;
         }
         if (g_gbArmed.load(std::memory_order_relaxed)) {
-            // fell through to the vanilla table / the next mod's callback — record who
-            g_gbA.store(bA ? infoA : infoB, std::memory_order_relaxed);
-            g_gbB.store(o, std::memory_order_relaxed);
-            g_gbBranch.store(1, std::memory_order_relaxed);
-            g_gbHits.fetch_add(1, std::memory_order_relaxed);
+            const unsigned ol = o & 0x7Fu;
+            g_gbLayers[ol >> 5].fetch_or(1u << (ol & 31u), std::memory_order_relaxed);
+                if ((ol == 8u || ol == 32u || ol == 33u) &&
+                !((bA ? infoA : infoB) & kBit14)) {                  // LIVE hand only
+                g_gbBipCount.fetch_add(1, std::memory_order_relaxed);
+                std::uint32_t expect = 0;
+                if (g_gbBipHer.compare_exchange_strong(expect, o, std::memory_order_relaxed)) {
+                    g_gbBipOur.store(bA ? infoA : infoB, std::memory_order_relaxed);
+                    g_gbBipBranch.store(1, std::memory_order_relaxed);
+                }
+            }
+            if (ol != kHiggsLayer) {                                   // not HIGGS's own kit
+                g_gbA.store(bA ? infoA : infoB, std::memory_order_relaxed);
+                g_gbB.store(o, std::memory_order_relaxed);
+                g_gbBranch.store(1, std::memory_order_relaxed);        // we passed it through
+                g_gbSeen.fetch_add(1, std::memory_order_relaxed);
+            } else {
+                g_gbOther.fetch_add(1, std::memory_order_relaxed);
+            }
         }
         // Everything else falls through to the vanilla table — layer 56's row gives
         // Biped(8)/BipedNoCC(33)/DeadBip(32) the payoff Collide and excludes
@@ -1811,6 +2408,8 @@ namespace HandBox {
         void* fresh  = cell ? static_cast<void*>(cell->GetbhkWorld()) : nullptr;
         DestroyHand(0, fresh, "load");
         DestroyHand(1, fresh, "load");
+        DestroyWand(fresh, "load");
+        g_wandSnap = WandSnap{};
         g_slabBase[0] = SlabBase{};    // HIGGS rebuilds its bodies across a load —
         g_slabBase[1] = SlabBase{};    // baselines recaptured on first sight of the new ones
         g_snap = Snapshot{};

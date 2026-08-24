@@ -52,6 +52,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 #include "NpcFingerTest.h"
+#include "GenitalProbe.h"   // GenitalProbe::IsExposed — the TNG slot-52 exposure gate
 #include "Tuning.h"          // ObjectHold::NpcFinger* knob accessors
 #include "Interop.h"         // Interop::HasHiggs / GetHiggs — creation gates
 #include "HiggsInterface.h"  // GetHandRigidBody (the Defect-6 proximity gate)
@@ -230,14 +231,23 @@ namespace {
     constexpr std::uint32_t kClothMaterialId = 0xE4D39CA3u;  // MaterialCloth 012F37
     constexpr std::uint32_t kSnowMaterialId  = 0x17C77AAFu;  // MaterialSnow  012F45
     constexpr std::uint32_t kGrassMaterialId = 0x6E2F68EEu;  // MaterialGrass 012F46
+    // 2026-08-23: modes 5/6 = TRUE SILENCE (see StampBodyMaterial in CapFix.cpp for the full
+    // reasoning). 5 stamps a hash no impact set contains; 6 severs the shape->wrapper pointer so
+    // the engine cannot reach a material at all. GarmentMaterialId returns the mode-5 hash; mode 6
+    // is applied at the creation site, because it is a pointer edit rather than a value.
+    constexpr std::uint32_t kPpbSilentMat = 0x50504231u;   // "PPB1" — matches no BGSMaterialType
     inline std::uint32_t GarmentMaterialId() {
         switch (static_cast<int>(ObjectHold::NpcGarmentMat() + 0.5f)) {
         case 0:  return kSkinMaterialId;
         case 1:  return kClothMaterialId;
         case 2:  return kSnowMaterialId;
         case 4:  return 0u;              // no material — probe: does the pair lookup go silent or heavy?
+        case 5:  return kPpbSilentMat;   // unknown hash — neither direction resolves
         default: return kGrassMaterialId;
         }
+    }
+    inline bool GarmentSilentUserData() {   // mode 6
+        return static_cast<int>(ObjectHold::NpcGarmentMat() + 0.5f) == 6;
     }
     constexpr float kSkyrimToHavok   = 0.0142875f;
     constexpr float kHavokToSkyrim   = 1.0f / 0.0142875f;
@@ -494,6 +504,22 @@ namespace {
         { "Mal_Tail 4",  "Mal_Tail 6",  "tailD.04-06" },
         { "Mal_Tail 5",  "Mal_Tail 7",  "tailD.05-07" },
     };
+    // ── TABLE 7: MALE GENITAL CHAIN (2026-08-22, user directive "build the male collision
+    // capsule for the genitals"). Havok chord capsules TRACKING the Gen01..06 bones — the
+    // exact tail pattern: the bones are driven by CBPC (SPS's ZZZ master config maps
+    // NPC Genitals01..06 -> UBEPS on EVERY male; file-verified 2026-08-22) and possibly
+    // ALSO by SMP (MaleGenitals.xml binds the schlong MESH shapes) — our capsules ride the
+    // visual nodes either way, giving touch-API/orifice visibility + a Havok surface.
+    // Staggered span-2 chords, double interior coverage (the tail law). Bone names are the
+    // SPS-config-verified forms; the suffix matcher absorbs FSMP renames. Push: foxtail-
+    // class gentle gain — lands on FSMP rigids when SMP owns the mesh, finds nothing under
+    // pure CBPC (the tbl-5 precedent: harmless). MALES ONLY, knob npcGenCap.
+    constexpr FingerPair kGenPairs[4] = {
+        { "NPC Genitals01 [Gen01]", "NPC Genitals03 [Gen03]", "gen.01-03" },
+        { "NPC Genitals02 [Gen02]", "NPC Genitals04 [Gen04]", "gen.02-04" },
+        { "NPC Genitals03 [Gen03]", "NPC Genitals05 [Gen05]", "gen.03-05" },
+        { "NPC Genitals04 [Gen04]", "NPC Genitals06 [Gen06]", "gen.04-06" },
+    };
     // WIG mode (2026-07-12): Carmella's dint999 "Amber Lights" wig — 193 strand bones
     // in 4 families (R x67 / L x66 / B x49 / F x11, "DKS_AmberL_R06 3" naming), carried
     // by the SKIN's wig ARMA -> renamed with the Armor prefix at merge (suffix match
@@ -613,6 +639,11 @@ namespace {
         case 3:  return { 0.3f,  3000.f, 16000.f, true,  4, 0.4f };  // wig: the 4 long side strands lead (untouched
                                                                      // incl. massRef 0.4 = today's live behavior)
         // case 4 (dress panels) RETIRED 2026-07-13 — see kDressPairs note.
+        case 7:  return { 1.1f,     0.f,     0.f, false, 0, 0.1f };  // TRACK+TOUCH ONLY (2026-08-22 in-VR: the 2800 push TORE the mesh - four chords shoved neighbouring 0.1 kg Gen bodies in different directions ~33x/s, mesh split at bone seams; user-confirmed by the fsmpPushMult 0 A/B). Flesh still reacts to hands via CBPC. A future push needs: contact-impulse gate, ONE coherent chain direction, massRef-0.1 gain.  // GEN chain: shaft-scale radius; foxtail-class
+                                                               // LOW gain (Gen bones are light — the tbl-2
+                                                               // "flies away" lesson caps this class at 2800);
+                                                               // all 4 chords sense. Under pure CBPC the push
+                                                               // finds no FSMP rigid and is inert (tbl-5 law).
         case 5:  return { 2.0f,     0.f,     0.f, true,  0, 0.4f };  // vanilla-chain tail (M'rissi): touch/grip ONLY —
                                                                // FSMP has NO rigids on plain TailBone0X (census
                                                                // 2026-07-12), motion response stays CBPC. Long
@@ -698,9 +729,16 @@ namespace {
         return s_names;
     }
     struct ChordTable { const FingerPair* pairs; int n; };
+    // ★ 2026-08-22: the HDTS tail's LAST chord runs 90 degrees off on MALE khajiit — the male
+    // tail mesh (maletailkhajiit.nif) is shorter than the female's, so chord 7 overshoots the
+    // tuft and swings wide. Exactly the failure that retired the 8th chord in July. Females
+    // (M'rissi and every other HDTS tail) keep all 7 — the trim is male-only, applied at the
+    // table level so both the create loop and every consumer see the same count.
+    ChordTable PairTableSexed(int tbl, bool isMale);
     ChordTable PairTable(int tbl) {
         switch (tbl) {
         case 1: return { kTailPairs,  kTailChordCount };  // fluffy tail (HDTS) — 7 chords (4 base + 3 tip), ALL sensors
+                                                         // ⚠ MALES take 6 — see PairTableFor().
         case 2: return { kTailPairsB, 14 };            // M'rissi HDT foxtail: 4 sensors + 10 grips
         case 3: return { kWigPairs,   15 };            // Amber Lights wig, permanent 50% coverage
         // case 4 (kDressPairs, DX Necromancer) RETIRED 2026-07-13 — never probed (auto-probe caps at 3).
@@ -708,6 +746,7 @@ namespace {
                                                        // (M'rissi post-skeleton-swap) — auto-probed via the
                                                        // cand==2 precedence + TailChainSkinned gate
         case 6: return { kTailPairsD, 4 };             // Mal_Tail SMP tails (Yvanni/Malignis convention; mesh ends at bone 7)
+        case 7: return { kGenPairs,   4 };             // male genital chain (2026-08-22; males only, knob npcGenCap)
         default:
             if (tbl >= kHairBase && tbl - kHairBase < kHairCount) {   // any SMP wig (signature-bound)
                 const HairTable& h = kHairTables[tbl - kHairBase];
@@ -715,6 +754,11 @@ namespace {
             }
             return { kFingerPairs, kFingerCount };
         }
+    }
+    ChordTable PairTableSexed(int tbl, bool isMale) {
+        ChordTable t = PairTable(tbl);
+        if (tbl == 1 && isMale && t.n > 6) t.n = 6;   // drop the overshooting tip chord
+        return t;
     }
 
     // Resolve the chord nodes by name (re-resolved EVERY use; no NiAVObject* is ever
@@ -945,6 +989,8 @@ namespace {
     struct FingerRig {
         bool          live    = false;
         bool          tailMode = false;      // any follower mode (vs finger test) — tbl > 0
+        bool          isMale  = false;       // 2026-08-22: latched at create; drives PairTableSexed
+                                             // (male HDTS tails run 6 chords, not 7)
         float         curlT[4]{};            // contact-curl integrator (target), per finger 0..cMax (tbl 0 only)
         float         curlA[4]{};            // EMA-smoothed applied curl (read by PPBHook's rotation writer)
         int           mode     = 0;          // npcTailTest value this rig serves (0 = auto-probe/finger;
@@ -977,6 +1023,13 @@ namespace {
                                              // static would let the first-driven rig starve the rest)
         std::chrono::steady_clock::time_point lastSkinCheck{};   // tbl-5 zombie guard: ~2 s skin-bind re-check
         int           skinMiss = 0;          // consecutive failed re-checks (3 = tail gone -> destroy)
+        // GEN BEND state (tbl 7 only; 2026-08-22)
+        bool          genTouchFrame = false;   // set during DriveRig's chord loop, consumed by GenBendTick
+        int           genLevel = 0;            // current SOSBend level we own (0 = flaccid)
+        float         genUpMs = 0.f;           // accumulated contact ms toward the next +1
+        std::uint64_t genLastContactMs = 0;
+        std::uint64_t genLastDecayMs = 0;
+        std::uint64_t genLastTickMs = 0;
         FingerBody    bodies[kMaxChords];    // per-rig capsule bodies (multi-rig 2026-07-13)
     };
     // 2026-07-13 MULTI-RIG (Report 15): a rig = (actor, table). Up to kMaxRigs live at
@@ -1197,6 +1250,10 @@ namespace {
         portShape->shape      = reinterpret_cast<hkpShape*>(cap);
         portShape->materialId = materialId;   // skin for fingers; quiet garment material for hair/tail (thud fix)
         cap->userData         = portShape;
+        // mode 6 (2026-08-23): sever the chain the engine walks to find a material. The wrapper is
+        // still allocated and still owns the shape — only the SHAPE's back-pointer is cleared, so
+        // nothing that reaches the body through the rigid body is affected.
+        if (materialId != kSkinMaterialId && GarmentSilentUserData()) cap->userData = nullptr;
 
         // 3) cinfo/body/AddEntity — MarkerCreateCapsule flow + the DYNAMIC deltas (spec §2):
         PortBhkRigidBodyCinfo cInfo;
@@ -1316,6 +1373,11 @@ namespace {
         // Preconditions (spec §2 + review Defects 5/6). Layer 56 and the filter
         // callback only exist when HIGGS installed them.
         if (!Interop::HasHiggs() || !PerfSys::HiggsRegistered()) { LogSkip("noHiggs"); return; }
+        // 2026-08-22: latched once here and stored on the rig — the male HDTS tail runs 6 chords.
+        const bool isMaleActor = [&] {
+            auto* b = actor ? actor->GetActorBase() : nullptr;
+            return b && !b->IsFemale();
+        }();
         FingerRig& rig = g_rigs[slot];
         if (rig.live) return;   // caller bug belt — never re-dress a live slot
         auto* cell = actor->GetParentCell();
@@ -1360,7 +1422,7 @@ namespace {
                 if (!hb || !IsLikelyPointer(hb)) continue;
                 const hkVector4& hp = hb->getPosition();
                 const float hx = hp(0) * kHavokToSkyrim, hy = hp(1) * kHavokToSkyrim, hz = hp(2) * kHavokToSkyrim;
-                for (int i = 0; i < PairTable(tbl).n; ++i) {
+                for (int i = 0; i < PairTableSexed(tbl, isMaleActor).n; ++i) {
                     const RE::NiPoint3& t = nodes.a[i]->world.translate;
                     const float dx = t.x - hx, dy = t.y - hy, dz = t.z - hz;
                     if (dx * dx + dy * dy + dz * dz < kHandNearU * kHandNearU) { LogSkip("handNear"); return; }
@@ -1374,7 +1436,8 @@ namespace {
         // Per-table feel (2026-07-13): garment radii come from the locked TuneOf dial
         // numbers, not the npcTailR knob; the finger test keeps its own knob.
         const TableTune tune = TuneOf(tbl);
-        const float rU      = tailMode ? tune.r : ObjectHold::NpcFingerR();
+        const float rU      = (tbl == 7) ? ObjectHold::NpcGenR()
+                            : tailMode    ? tune.r : ObjectHold::NpcFingerR();
         const float tipU    = tailMode ? 0.f : ObjectHold::NpcFingerTipU();
         // 2026-07-14 GARMENT MASS FIX: the finger rig wants a heavy body (npcFingerMassKg,
         // ~4kg) for a solid own-body push; but a GARMENT rig has 11-15 capsules, and at 4kg
@@ -1384,7 +1447,8 @@ namespace {
         // 2026-07-15 PER-GARMENT MASS: a fluffy/foxtail TAIL (tbl 1/2) needs a MEATY mass — at 0.05 kg
         // (hair weight) it can't hold a push and gets flung ("flies away", "can't move the tail"). Hair
         // (tbl 3) stays light so it doesn't drag the SMP strands. Fingers use their own knob.
-        const float massKg  = (tbl == 1 || tbl == 2 || tbl == 5 || tbl == 6) ? ObjectHold::NpcTailMassKg()
+        const float massKg  = (tbl == 7)                                     ? ObjectHold::NpcGenMassKg()
+                            : (tbl == 1 || tbl == 2 || tbl == 5 || tbl == 6) ? ObjectHold::NpcTailMassKg()
                             : tailMode               ? ObjectHold::NpcGarmentMassKg()
                                                      : ObjectHold::NpcFingerMassKg();
         const float gravity = ObjectHold::NpcFingerGravity();
@@ -1398,7 +1462,7 @@ namespace {
         // via the engine ctor is the one 80%-confidence step — verify ONE capsule
         // (index) in VR first, then raise the knob to 4. Applied at creation only;
         // a knob change while a rig is live takes effect on the next recreate.
-        const int nCreate = tailMode ? PairTable(tbl).n
+        const int nCreate = tailMode ? PairTableSexed(tbl, isMaleActor).n
                                      : std::min((int)ObjectHold::NpcFingerCount(), kFingerCount);
 
         float chords[kMaxChords]{};
@@ -1443,6 +1507,7 @@ namespace {
 
         rig.live     = true;
         rig.tailMode = tailMode;
+        rig.isMale   = isMaleActor;
         rig.mode     = 0;           // LEGACY OVERRIDE caller stamps its mode after the call
         rig.tbl      = tbl;
         rig.actorId  = actor->GetFormID();
@@ -1470,10 +1535,195 @@ namespace {
                        : tbl == 3 ? "WIG(AmberLights)"
                        : tbl == 5 ? "TAIL(vanilla/CBPC)"
                        : tbl == 6 ? "TAIL(Mal_Tail)"
+                       : tbl == 7 ? "GEN(schlong)"
                        : tbl >= kHairBase ? "HAIR" : "finger",
                      group, nCreate, cds, rU, world);
     }
 
+    // -- GEN BEND (2026-08-22, user spec): touch-driven SOSBend. See Tuning.h banner. --
+    RE::TESFaction* ArousalFaction() {
+        static RE::TESFaction* s_f = nullptr;
+        static bool s_tried = false;
+        if (!s_tried) {
+            s_tried = true;
+            s_f = RE::TESForm::LookupByEditorID<RE::TESFaction>("sla_Arousal");
+            logger::info("GENBEND arousal faction 'sla_Arousal': {}", s_f ? "FOUND" : "absent - decay always allowed");
+        }
+        return s_f;
+    }
+    float ArousalOf(RE::Actor* a) {
+        auto* f = ArousalFaction();
+        if (!a || !f) return 0.f;
+        const auto r = a->GetFactionRank(f, a->IsPlayerRef());
+        return (float)(r < 0 ? 0 : (r > 100 ? 100 : r));
+    }
+    void SendBend(RE::Actor* a, int level) {
+        if (!a) return;
+        char ev[16];
+        if (level <= 0) std::snprintf(ev, sizeof ev, "SOSFlaccid");
+        else            std::snprintf(ev, sizeof ev, "SOSBend%d", level > 9 ? 9 : level);
+        a->NotifyAnimationGraph(ev);
+        logger::info("GENBEND {:08X} -> {}", a->GetFormID(), ev);
+    }
+    std::uint64_t GenNowMs() {
+        return (std::uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+    }
+    void GenBendTick(FingerRig& rig, RE::Actor* actor) {
+        const bool touch = rig.genTouchFrame;
+        rig.genTouchFrame = false;                        // consumed
+        if (!ObjectHold::GenBendEnabled()) return;
+        const std::uint64_t now = GenNowMs();
+        const std::uint64_t dt  = rig.genLastTickMs ? (now - rig.genLastTickMs) : 0;
+        rig.genLastTickMs = now;
+        if (dt > 1000) return;                            // first tick / long stall - no credit
+        if (touch) {
+            rig.genLastContactMs = now;
+            rig.genUpMs += (float)dt;
+            if (rig.genUpMs >= ObjectHold::GenBendUpMs()) {
+                rig.genUpMs = 0.f;
+                const int mx = ObjectHold::GenBendMax();
+                if (rig.genLevel < mx) { ++rig.genLevel; SendBend(actor, rig.genLevel); }
+            }
+            return;
+        }
+        if (rig.genLevel <= 0) return;
+        // hold window, then arousal-gated decay
+        if (now - rig.genLastContactMs < (std::uint64_t)(ObjectHold::GenBendHoldSec() * 1000.f)) return;
+        if (ArousalOf(actor) >= ObjectHold::GenBendArousal()) return;   // stays erect
+        if (now - rig.genLastDecayMs < (std::uint64_t)(ObjectHold::GenBendDecaySec() * 1000.f)) return;
+        rig.genLastDecayMs = now;
+        rig.genUpMs = 0.f;
+        --rig.genLevel;
+        SendBend(actor, rig.genLevel);                    // level 0 sends SOSFlaccid
+    }
+    // Player: same machine off static state. SPS stays the owner - we send ONLY while our level
+    // exceeds the arousal-implied estimate (round(arousal*0.07)), re-asserted every 2 s so a lower
+    // SPS write mid-hold loses; at/below the estimate we go silent and SPS's own tick restores
+    // its state. Self-throttled to 100 ms (the call site runs once per driven actor).
+    // NPC-hand touch latch (2026-08-22, the Carmella gap): the player tick only knew the
+    // player's own HIGGS hands, so an NPC stroking the player counted as NO contact and the
+    // hold expired mid-scene. Per-driven-actor checks stamp this latch; the tick reads it.
+    std::atomic<std::uint64_t> g_pgbNpcTouchMs{ 0 };
+    RE::NiAVObject*            g_pgbGenNode = nullptr;    // player Gen04, cached by the tick
+    void PlayerGenBendNpcHands(RE::Actor* npc) {
+        if (!npc || !g_pgbGenNode) return;
+        if (!ObjectHold::GenBendPlayerEnabled() || !ObjectHold::GenBendEnabled()) return;
+        RE::NiAVObject* root = npc->Get3D();
+        if (!root) return;
+        const float tr = ObjectHold::GenBendTouchU(); const float tr2 = tr * tr;
+        const RE::NiPoint3& gp = g_pgbGenNode->world.translate;
+        static const RE::BSFixedString kR("NPC R Hand [RHnd]"), kL("NPC L Hand [LHnd]");
+        for (const auto& hn : { kR, kL }) {
+            RE::NiAVObject* hand = root->GetObjectByName(hn);   // engine hash lookup - cheap
+            if (!hand) continue;
+            const RE::NiPoint3& hp = hand->world.translate;
+            const float dx = hp.x - gp.x, dy = hp.y - gp.y, dz = hp.z - gp.z;
+            if (dx * dx + dy * dy + dz * dz < tr2) {
+                g_pgbNpcTouchMs.store(GenNowMs(), std::memory_order_relaxed);
+                return;
+            }
+        }
+    }
+    void PlayerGenBendTick() {
+        if (!ObjectHold::GenBendPlayerEnabled() || !ObjectHold::GenBendEnabled()) return;
+        static std::uint64_t s_lastMs = 0, s_contactMs = 0, s_decayMs = 0, s_assertMs = 0;
+        static float s_upMs = 0.f; static int s_level = 0;
+        static RE::NiAVObject* s_node = nullptr; static const void* s_root = nullptr;
+        const std::uint64_t now = GenNowMs();
+        if (now - s_lastMs < 100) return;
+        const std::uint64_t dt = s_lastMs ? (now - s_lastMs) : 0;
+        s_lastMs = now;
+        if (dt > 1000) return;
+        auto* pc = RE::PlayerCharacter::GetSingleton();
+        RE::NiAVObject* root = pc ? pc->Get3D() : nullptr;
+        if (!root) { s_node = nullptr; s_root = nullptr; return; }
+        // ★ 2026-08-22 (the Carmella blackout): the node was CACHED and re-found only on a root-
+        // pointer change. An NPC touching the player fires arousal/undress events and TNG rebuilds
+        // the player 3D / swaps the schlong model - the cache went null-or-stale and the tick's
+        // early return made the whole machine SILENT for two minutes (log 21:46:43-21:48:44: no
+        // asserts, no decay, own-hand touches invisible). Look the node up FRESH every tick via
+        // the engine's name-hash (same cheap call the NPC-hand check uses); a rebuild can cost one
+        // tick, never a session. LOST/FOUND receipts make the next blackout readable in the log.
+        s_root = root;
+        {
+            static const RE::BSFixedString kGen04("NPC Genitals04 [Gen04]");
+            RE::NiAVObject* found = root->GetObjectByName(kGen04);
+            static bool s_had = false;
+            if (found && !s_had)  { s_had = true;  logger::info("GENBEND player Gen04 FOUND"); }
+            if (!found && s_had)  { s_had = false; logger::info("GENBEND player Gen04 LOST (3D rebuild/model swap) - machine paused, level {} kept", s_level); }
+            s_node = found;
+        }
+        g_pgbGenNode = s_node;                        // publish for the per-NPC hand checks
+        if (!s_node) return;                                            // no schlong - silently off
+        const bool npcTouch = (now - g_pgbNpcTouchMs.load(std::memory_order_relaxed)) < 250;
+        bool touch = npcTouch;                                    // NPC hand
+        bool higgsTouch = false;                                  // the PLAYER'S OWN hand
+        if (auto* h = Interop::GetHiggs()) {
+            const float tr = ObjectHold::GenBendTouchU(); const float tr2 = tr * tr;
+            const RE::NiPoint3& gp = s_node->world.translate;
+            for (bool isLeft : { false, true }) {
+                hkpRigidBody* hb = HkOf(h->GetHandRigidBody(isLeft));
+                if (!hb || !IsLikelyPointer(hb)) continue;
+                const hkVector4& hp = hb->getPosition();
+                const float dx = hp(0) * kHavokToSkyrim - gp.x;
+                const float dy = hp(1) * kHavokToSkyrim - gp.y;
+                const float dz = hp(2) * kHavokToSkyrim - gp.z;
+                if (dx * dx + dy * dy + dz * dz < tr2) { touch = true; higgsTouch = true; break; }
+            }
+        }
+        const int est = (int)std::lround(ArousalOf(pc) * 0.07f);        // SPS's arousal-implied proxy
+        // ── ★ MASTURBATION EVENT (2026-08-23, for the VRTE DD-ZaZ add-on) ────────────────────
+        // "The player finished touching his own schlong AND got there." Both halves matter, so
+        // both are tracked here rather than inferred by a consumer from the SOSBend anim events
+        // (which carry no toucher identity and no release edge).
+        //   * OWN HAND ONLY — `touch` above is true for a HIGGS hand OR an NPC hand (the
+        //     g_pgbNpcTouchMs latch). An NPC stroking him is not masturbation, so the flag below
+        //     is armed only by the HIGGS-hand branch.
+        //   * FULL ERECTION — level must have REACHED genBendMax during that session.
+        //   * FINISHED — fires on the RELEASE edge (touch true -> false), not on reaching max,
+        //     so a consumer gets one event at the end of the act instead of a stream.
+        static bool s_ownTouchPrev = false;
+        static bool s_ownHitMax    = false;
+        const bool ownTouch = higgsTouch;                  // excludes the NPC-hand latch
+        if (ownTouch && s_level >= ObjectHold::GenBendMax()) s_ownHitMax = true;
+        if (s_ownTouchPrev && !ownTouch) {                 // release edge
+            if (s_ownHitMax) {
+                logger::info("GENBEND MASTURBATION: player released at lvl={} (max {}) — "
+                             "sending PPB_PlayerMasturbation", s_level, ObjectHold::GenBendMax());
+                SKSE::ModCallbackEvent ev{ "PPB_PlayerMasturbation", "MAX",
+                                           (float)s_level, pc };
+                SKSE::GetModCallbackEventSource()->SendEvent(&ev);
+            }
+            s_ownHitMax = false;                           // one event per session of touching
+        }
+        s_ownTouchPrev = ownTouch;
+        if (touch) {
+            s_contactMs = now;
+            s_upMs += (float)dt;
+            if (s_upMs >= ObjectHold::GenBendUpMs()) {
+                s_upMs = 0.f;
+                const int mx = ObjectHold::GenBendMax();
+                if (s_level < mx) ++s_level;
+            }
+        } else if (s_level > 0 &&
+                   now - s_contactMs >= (std::uint64_t)(ObjectHold::GenBendHoldSec() * 1000.f) &&
+                   ArousalOf(pc) < ObjectHold::GenBendArousal() &&
+                   now - s_decayMs >= (std::uint64_t)(ObjectHold::GenBendDecaySec() * 1000.f)) {
+            s_decayMs = now; s_upMs = 0.f; --s_level;
+            if (s_level <= est) return;                    // dropped into SPS's territory - go silent
+        }
+        // While TOUCH is live, active contact owns the microphone: assert at >= est (a spiked
+        // arousal can push est to the cap, and ">" would mute the machine mid-stroke - the second
+        // Carmella lesson). Idle keeps the strict ">" so SPS rules the resting state.
+        const bool speak = touch ? (s_level >= est && s_level > 0) : (s_level > est);
+        if (speak && now - s_assertMs >= 2000) {
+            s_assertMs = now;
+            logger::info("GENBEND player assert lvl={} est={} arousal={:.0f} touch={}",
+                         s_level, est, ArousalOf(pc), touch ? 1 : 0);
+            SendBend(pc, s_level);
+        }
+    }
     // ── DRIVE (per finger, per frame — spec §3) ──────────────────────────────
     void DriveRig(int slot, RE::Actor* actor, void* freshWorld, float deltaTime)
     {
@@ -1502,7 +1752,7 @@ namespace {
             rig.lastD2 = dx * dx + dy * dy + dz * dz;
             rig.d2Valid = true;
         }
-        const ChordTable tb = PairTable(rig.tbl);
+        const ChordTable tb = PairTableSexed(rig.tbl, rig.isMale);
         const FingerPair* pairs = tb.pairs;
         const TableTune tune = TuneOf(rig.tbl);      // per-table push gain/clamp for the sensors
 
@@ -1599,7 +1849,8 @@ namespace {
         }
 
         const float invDt  = 1.f / std::max(deltaTime, 1e-4f);
-        const float alpha  = ObjectHold::NpcFingerAlpha();
+        const float alpha  = (rig.tbl == 7) ? ObjectHold::NpcGenAlpha()
+                                            : ObjectHold::NpcFingerAlpha();
         const float snapU  = ObjectHold::NpcFingerSnapU();
         const float maxVel = ObjectHold::NpcFingerMaxVel();
         const bool  logOn  = ObjectHold::NpcFingerLogEnabled();
@@ -1614,6 +1865,20 @@ namespace {
             rig.lastSkinCheck = now;
             if (!TailChainSkinned(actor->Get3D(), nodes.a[0])) {
                 if (++rig.skinMiss >= 3) { DestroyRig(slot, "skinLost"); return; }
+            } else {
+                rig.skinMiss = 0;
+            }
+        }
+
+        // ── tbl-7 DRESS GUARD (2026-08-23), the exact twin of the tbl-5 zombie guard above:
+        // the Gen chain is SKELETON-carried, so nodesMissing can never fire when a male puts
+        // trousers on — the bones outlive the exposure. Without this the create-time exposure
+        // gate would only ever be half a gate: naked at spawn = capsules for the life of the 3D.
+        // Re-check on the same ~2 s cadence; IsExposed is itself cached, so this is nearly free.
+        if (rig.tbl == 7 && now - rig.lastSkinCheck >= std::chrono::milliseconds(2000)) {
+            rig.lastSkinCheck = now;
+            if (!GenitalProbe::IsExposed(actor)) {
+                if (++rig.skinMiss >= 3) { DestroyRig(slot, "covered"); return; }
             } else {
                 rig.skinMiss = 0;
             }
@@ -1788,6 +2053,16 @@ namespace {
                     if (hx * hx + hy * hy + hz * hz < gateR2[g]) { chordGated = true; break; }
                 }
             }
+            // GEN BEND touch (2026-08-22): a HAND (never the 70u weapon entry) within the tight
+            // touch radius of a schlong chord counts as contact for the erection machine.
+            if (rig.tbl == 7 && !rig.genTouchFrame && nGate > 0) {
+                const float tr = ObjectHold::GenBendTouchU(); const float tr2 = tr * tr;
+                for (int g = 0; g < nGate; ++g) {
+                    if (gateR2[g] > 900.f) continue;   // hands carry 20u gates; weapon 70u - skip it
+                    const float hx = tA.x - gateP[g][0], hy = tA.y - gateP[g][1], hz = tA.z - gateP[g][2];
+                    if (hx * hx + hy * hy + hz * hz < tr2) { rig.genTouchFrame = true; break; }
+                }
+            }
 
             // 5-precheck) implied drive speed (m/s) — above the cap, take the far branch
             // instead (the mandatory ApplyHardKeyframeVelocityClamped lesson, Risk 5)
@@ -1805,6 +2080,8 @@ namespace {
                 logger::info("NFING REACT {:08X} {}: residual={:.2f}u (external impulse — expected: player hand contact)",
                              rig.actorId, pairs[i].label, residualU);
             }
+            if (rig.tbl == 7 && fb.hadSmallGap && gapSmallNow && !far && residualU > kReactResidualU)
+                rig.genTouchFrame = true;   // GEN BEND: any real impulse = contact (hand, weapon, capsule)
 
             hkVector4 targetPos;
             targetPos.set(tA.x * kSkyrimToHavok, tA.y * kSkyrimToHavok, tA.z * kSkyrimToHavok, 0.f);
@@ -1925,6 +2202,7 @@ namespace {
                              rig.actorId, pairs[i].label, sum / n, p95g, mx, fb.teleports, p95v);
             }
         }
+        if (rig.tbl == 7) GenBendTick(rig, actor);
     }
 
 }  // namespace
@@ -2004,7 +2282,8 @@ namespace NpcFinger {
                   "sternum / cleavage","BREAST R","BREAST L","shoulder cap R","shoulder cap L",
                   nullptr,nullptr,"BACK (upper)",nullptr};
                   return child < 19 ? n[child] : nullptr; }
-        case 7: return child == 0 ? "neck / throat" : nullptr;
+        case 7: { static const char* n[] = {"neck / throat", "front neck"};   // C1 = 2026-08-22
+                  return child < 2 ? n[child] : nullptr; }                     // choking target
         case 8: { static const char* n[] = {"thigh rod","upper thigh / groin","hip-glute fold","upper thigh",
                   "mid thigh","lower thigh","knee"};
                   return child < 7 ? n[child] : nullptr; }
@@ -2572,6 +2851,8 @@ namespace NpcFinger {
             }
             DriveRig(slot, actor, freshWorld, deltaTime);
         }
+        PlayerGenBendNpcHands(actor);   // stamp the NPC-hand latch for THIS driven actor
+        PlayerGenBendTick();            // self-throttled (100 ms) - safe to call per driven actor
         // Fast garment re-probe (2026-07-13 review LOW): a 3dReload/worldChange destroyed
         // this actor's auto-probed garment rig(s); without resetting her probe cursor the
         // recreate waits out the rest of the ~200-frame probe cycle (dead tail/hair/dress
@@ -2644,12 +2925,20 @@ namespace NpcFinger {
                     // when the walk left tbl==0 — but an unrigged actor matches a candidate every tick,
                     // and the end-of-cycle reset rewinds the cursor before a tbl==0 tick can ever occur,
                     // so the hair path was DEAD CODE (receipt: zero tbl=HAIR in the session log).
-                    bool have[7] = {};
+                    bool have[8] = {};
                     for (int k = 0; k < kMaxRigs; ++k)
-                        if (g_rigs[k].live && g_rigs[k].actorId == id && g_rigs[k].tbl >= 1 && g_rigs[k].tbl <= 6)
+                        if (g_rigs[k].live && g_rigs[k].actorId == id && g_rigs[k].tbl >= 1 && g_rigs[k].tbl <= 7)
                             have[g_rigs[k].tbl] = true;
-                    static constexpr int kProbeOrder[6] = { 0, 1, 2, 3, 6, -1 };  // [step] 1..5; -1 = HAIR
-                    constexpr int kProbeSteps = 5;
+                    // ★ 2026-08-22: table 5 (vanilla TailBone01-05 chain) RE-ADMITTED to the probe.
+                    // It was retired 2026-07-20 because a bone-ANIMATED tail cannot be PUSHED — true,
+                    // and TuneOf(5) still carries force 0. But the retirement also removed the only
+                    // TOUCH coverage for vanilla-chain tails, which is what the argonian (and every
+                    // beast whose tail rides the animated chain) has: PPB deletes XP32's static tail
+                    // bodies on ALL beast skeletons, so with tbl 5 unprobed those tails had NO
+                    // collision at all. Touch/grip is exactly what the API now needs. Probed AFTER
+                    // the SMP tables so an SMP tail always wins.
+                    static constexpr int kProbeOrder[8] = { 0, 1, 2, 3, 6, 5, 7, -1 };  // [step] 1..7; -1 = HAIR
+                    constexpr int kProbeSteps = 7;
                     int tbl = 0;
                     while (ps.cursor <= kProbeSteps) {
                         const int step = ps.cursor++;
@@ -2712,6 +3001,31 @@ namespace NpcFinger {
                             continue;                 // dressed already / no match — cursor moves past the step
                         }
                         if (have[cand]) continue;
+                        // GEN (tbl 7): males only + master knob + THE EXPOSURE GATE.
+                        // ⚠ 2026-08-23 CORRECTION: this comment used to read "bone existence is
+                        // the real gate (only TNG males carry Gen01..06)". That is FALSE for
+                        // anyone running PPB — we ship the dormant SOS chain on every skeleton
+                        // (GenitalProbe.h: "on every PPB female skeleton, on _1stperson, and on
+                        // a bear"), so with no TNG installed the resolve succeeded and every male
+                        // NPC grew a phantom GEN rig on a chain nothing skins. The tbl-5 gate
+                        // right below is the same lesson, already learned once.
+                        if (cand == 7) {
+                            auto* gb = actor->GetActorBase();
+                            if (!gb || gb->IsFemale() || !ObjectHold::NpcGenCapEnabled()) continue;
+                            if (!GenitalProbe::IsExposed(actor)) continue;   // no schlong / dressed
+                        }
+                        // tbl 5 GATE (the Carmella + Yvanni lessons, both mandatory): XP32 ships the
+                        // dormant TailBone01..05 on EVERY humanoid, so bone existence proves nothing —
+                        // require the actor's own mesh to SKIN the chain. And skinning the ROOT is not
+                        // enough either: Yvanni's "Tail Ring" jewelry weights TailBone01/02 only and
+                        // spawned a straight-out phantom rig. Gate on the TIP as well.
+                        if (cand == 5) {
+                            if (have[1] || have[2] || have[6]) continue;   // a real SMP tail owns it
+                            FingerNodes vn = ResolveNodes(root3d, 5);
+                            if (!vn.all) continue;
+                            if (!TailChainSkinned(root3d, vn.a[0])) continue;   // root skinned?
+                            if (!TailChainSkinned(root3d, vn.c[3])) continue;   // TIP skinned?
+                        }
                         if (cand == 2 && (have[1] || have[5])) continue;   // HDTS or dressed vanilla chain
                                                                            // owns the tail: table 2 would
                                                                            // dress its GHOST
@@ -2929,7 +3243,76 @@ namespace NpcFinger {
     // for the finger rig's EMA-smoothed curl factors. Main-thread only (both the integrator
     // in DriveRig and this reader run inside the same 0xB266AB pre-drive hook body). Returns
     // false for every actor that isn't carrying the live tbl-0 finger rig — the cheap path.
-    const char* PartName(int slot, int child) { return ProposedPartName(slot, child); }
+    // ── MALE PART NAMES (2026-08-18) ─────────────────────────────────────────────────────
+    // The male COM/spine1 layouts DIVERGED from the female during the male dial session: capsules
+    // were copied DOWN the index range so the tail could be trimmed, which moves what each index
+    // MEANS. Without this override the API would report a male's anal cover as "CLITORIS" and his
+    // lower back as unnamed — the shared table is keyed on (slot, child) alone and cannot know.
+    //
+    //   COM (slot 11)   female                       male (after the trim)
+    //     21            CLITORIS                     anal cover R      (was C32)
+    //     22            vaginal opening R            anal cover L      (was C33)
+    //     23            vaginal opening L            anus R            (was C28)
+    //     24            cervix R                     anus L            (was C29)
+    //     25            cervix L                     rectum R          (was C30)
+    //     26            uterus R                     rectum L          (was C31)
+    //     27..33        uterus L / anus / rectum     DELETED from the male nif
+    //   SPINE1 (slot 5) female                       male
+    //     7             (buried seed, unnamed)       BACK (lower)      (was C9)
+    //     9             BACK (lower)                 DELETED from the male nif
+    //
+    // Returns true when the male layout OVERRIDES this (slot,child); `out` may be nullptr, which
+    // deliberately means "unnamed on the male" (the API then falls back to "<slot>.C<n>").
+    static bool MalePartNameOverride(int slot, int child, const char*& out)
+    {
+        if (slot == 11) {                                  // COM
+            static const char* com[] = { "anal cover R", "anal cover L",
+                                         "anus R", "anus L", "rectum R", "rectum L" };
+            if (child >= 21 && child <= 26) { out = com[child - 21]; return true; }
+            if (child >= 27)                { out = nullptr;        return true; }  // deleted
+        } else if (slot == 5) {                            // SPINE1
+            if (child == 7) { out = "BACK (lower)"; return true; }
+            if (child >= 8) { out = nullptr;        return true; }  // deleted
+        } else if (slot == 4) {                            // SPINE0
+            if (child >= 7) { out = nullptr;        return true; }  // deleted
+        } else if (slot == 3) {                            // HEAD (male dial 2026-08-22)
+            // C15/C16 = the dialled jawline pair (swapped down from the C23/C24 dial slots so
+            // the 8 horn/antler seeds sit contiguous at C17..C24, mirroring the female C15..C22).
+            if (child == 15) { out = "jawline R"; return true; }
+            if (child == 16) { out = "jawline L"; return true; }
+            if (child >= 17 && child <= 24) { out = nullptr; return true; }  // seeds
+        }
+        return false;                                      // everything else: shared table
+    }
+
+    // ── BEAST HEAD NAMES (2026-08-22, first pass) ────────────────────────────────────────
+    // The human head table applied by index called the argonian's top-of-head "palate"
+    // (user-caught). Beast heads are a different 17+8-child layout, so they get their own
+    // table. Named entries are the ones the 2026-08-22 argonian dial session can defend
+    // (C9 "top of head" is user-stated); everything unnamed falls through to the honest
+    // "head.C<n>". C15/C16 are horns on argonian, ears on khajiit — one shared label.
+    static const char* BeastHeadName(int child)
+    {
+        static const char* n[] = {
+            /*0*/  "skull",        /*1*/  "snout (lip)",  /*2*/  "jaw R",       /*3*/  "jaw L",
+            /*4*/  "cheek R",      /*5*/  "cheek L",      /*6*/  nullptr,       /*7*/  nullptr,
+            /*8*/  "snout (nose)", /*9*/  "top of head R",/*10*/ "top of head L",
+            /*11*/ nullptr,        /*12*/ nullptr,        /*13*/ nullptr,       /*14*/ nullptr,
+            /*15*/ "horn/ear R",   /*16*/ "horn/ear L",
+            /*17*/ "jaw side R",   /*18*/ "jaw side L",   /*19*/ "head side R", /*20*/ "head side L",
+            /*21*/ "crest R",      /*22*/ "crest L",      /*23*/ "lip R",       /*24*/ "lip L",
+        };
+        return (child >= 0 && child < 25) ? n[child] : nullptr;
+    }
+    const char* PartName(int slot, int child, bool isMale, bool isBeast)
+    {
+        if (isBeast && slot == 3) return BeastHeadName(child);
+        if (isMale) {
+            const char* o = nullptr;
+            if (MalePartNameOverride(slot, child, o)) return o;
+        }
+        return ProposedPartName(slot, child);
+    }
 
     // ── TOUCH-API GARMENT READS (2026-07-30) ────────────────────────────────────────────
     // The API's rev-1 targets were only the 12 body slots; tails and hair are follower
@@ -2956,10 +3339,20 @@ namespace NpcFinger {
         for (int k = 0; k < kMaxRigs; ++k) {
             FingerRig& r = g_rigs[k];
             if (!r.live || r.actorId != actorId || r.tbl == 0) continue;
+            // kind 2 = GEN (tbl 7). It is neither tail nor hair and must never be reported as
+            // one, but it DOES belong in the API — a schlong touch is a body-part touch.
+            if (kind == 2) { if (r.tbl == 7) return &r; continue; }
+            if (r.tbl == 7) continue;
             const bool isTail = IsTailTable(r.tbl);
             if ((kind == 0) == isTail) return &r;
         }
         return nullptr;
+    }
+
+    int GenLevelOf(std::uint32_t actorId)
+    {
+        FingerRig* r = FindGarmentRig(actorId, 2);      // kind 2 = GEN (tbl 7)
+        return r ? r->genLevel : -1;
     }
 
     int GarmentChords(std::uint32_t actorId, int kind)
@@ -3031,7 +3424,13 @@ namespace NpcFinger {
         }
     }
 
-    int FilterDecision(std::uint32_t infoA, std::uint32_t infoB)
+    // GRABBUG accounting (2026-08-17): PerfSys::FilterCB calls THIS before HandBox, so any
+    // non-Continue here means HandBox never sees the pair. Without this counter a swallowed
+    // pair would read as "PPB was never asked" in the census — the exact misattribution that
+    // would send us hunting the broadphase for our own bug. Pure integer, no logging.
+    std::atomic<std::uint32_t> g_gbFingerAte{ 0 };
+
+    static int FilterDecisionImpl(std::uint32_t infoA, std::uint32_t infoB)
     {        // Sheathed ghost weapon vs ANY of our layer-56 bodies -> Ignore. First non-Continue
         // wins in HIGGS's dispatch, so this must sit ahead of everything.
         if (g_wpnSheathed.load(std::memory_order_relaxed)) {
@@ -3180,6 +3579,13 @@ namespace NpcFinger {
             g_logCharCtrl.store(true, std::memory_order_relaxed);
         }
         return 2;
+    }
+
+    int FilterDecision(std::uint32_t infoA, std::uint32_t infoB)
+    {
+        const int d = FilterDecisionImpl(infoA, infoB);
+        if (d) g_gbFingerAte.fetch_add(1, std::memory_order_relaxed);
+        return d;
     }
 
     int StripActorBodiesExcept(RE::Actor* a, const char* keepNodeName)

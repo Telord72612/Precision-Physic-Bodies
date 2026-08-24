@@ -65,6 +65,12 @@ namespace ObjectHold {
                     PK8(capSpine0), PK8(capSpine1), PK8(capSpine2), PK8(capNeck),
                     PK8(capThigh), PK8(capCalf), PK8(capFoot), PK8(capCom),
                     PK8(capUpperC1), PK8(capUpperC2), PK8(capUpperC3), PK8(capForeC1),
+                    // 2026-08-22 male-sculpt limb headroom + the two landmark CHORD probes. Registered
+                    // with PK8 (SNAPPED) like every sibling capsule knob: an edit must arm a CapFix gen.
+                    PK8(capUpperC4), PK8(capUpperC5), PK8(capForeC2), PK8(capForeC3),
+                    PK8(capHandC6), PK8(capHandC7),
+                    PK8(capThighC7), PK8(capThighC8), PK8(capThighC9),
+                    PK8(capCalfC5), PK8(capCalfC6), PK8(capFootC4), PK8(capFootC5),
                     PK8(capThighC1), PK8(capThighC2), PK8(capThighC3), PK8(capThighC4), PK8(capThighC5), PK8(capThighC6),
                     PK8(capCalfC1), PK8(capCalfC2), PK8(capCalfC3), PK8(capCalfC4),
                     PK8(capFootC1), PK8(capFootC2), PK8(capFootC3),
@@ -85,6 +91,9 @@ namespace ObjectHold {
                     PK_NOSNAP(perfPreset), PK_NOSNAP(filterSelfThigh), PK_NOSNAP(filterCrossPelvis),
                     PK_NOSNAP(lodEnable), PK_NOSNAP(lodNearDist), PK_NOSNAP(lodFarDist),
                     PK_NOSNAP(lodHystPct), PK_NOSNAP(lodSettleFrames), PK_NOSNAP(lodStageBits),
+                    // 2026-08-22 RAYCAST TELEMETRY (RayTel.cpp) — a diagnostic arm flag, never a
+                    // capsule dial: NOSNAP so flipping it mid-scene cannot re-dress the slots.
+                    PK_NOSNAP(rayTel),
                     // 2026-07-10 CONTACT DECIMATION (Diag.cpp contact listener) — hot-swappable live.
                     PK_NOSNAP(perfContactKeep),
                     // 2026-07-09 PIVOT DESCALE (PivFix.cpp) — SUPERSEDED by pivReScale (default off, inert).
@@ -110,11 +119,15 @@ namespace ObjectHold {
                     // 2026-07-13 MULTI-RIG (NpcFingerTest.cpp): global push multiplier +
                     // the always-on garment-rig master switch — read live per frame.
                     PK_NOSNAP(fsmpPushMult), PK_NOSNAP(npcFollower), PK_NOSNAP(fsmpFlexCompat),
+                    PK_NOSNAP(npcGenCap), PK(npcGenMassKg), PK(npcGenR), PK(npcGenAlpha),
+                    PK_NOSNAP(genBend), PK_NOSNAP(genBendPlayer), PK_NOSNAP(genBendMax),
+                    PK_NOSNAP(genBendUpMs), PK_NOSNAP(genBendHoldSec), PK_NOSNAP(genBendDecaySec),
+                    PK_NOSNAP(genBendArousal), PK_NOSNAP(genBendTouchU),
                     PK_NOSNAP(npcRigRangeU), PK_NOSNAP(npcRigRangeHystU), PK_NOSNAP(npcRigMaxActors),
                     PK_NOSNAP(apiTouch), PK_NOSNAP(apiHz), PK_NOSNAP(apiTouchU), PK_NOSNAP(apiExitPadU),
                     PK_NOSNAP(apiMaxActors), PK_NOSNAP(apiRangeU), PK_NOSNAP(apiFistTipPalmU),
                     PK_NOSNAP(apiEvents), PK_NOSNAP(apiLog), PK_NOSNAP(apiHairTarget),
-                    PK_NOSNAP(apiRawEvents), PK_NOSNAP(apiWeaponRMaxU),
+                    PK_NOSNAP(apiRawEvents), PK_NOSNAP(apiWeaponRMaxU), PK_NOSNAP(apiObjectRMaxU),
                     PK_NOSNAP(apiSubRegionInEvent),
                     PK_NOSNAP(apiSuppressHeldHand),
                     PK_NOSNAP(apiDwellS), PK_NOSNAP(apiDwellHeadS), PK_NOSNAP(apiDwellComS),
@@ -169,10 +182,18 @@ namespace ObjectHold {
                     PK_NOSNAP(lmNeutButtX),  PK_NOSNAP(lmNeutButtY),  PK_NOSNAP(lmNeutButtZ),
                     // UV ReShape — master switch, ring gains, breast model
                     PK(lmReShape),
+                    PK(lmGainMChest), PK(lmGainMBelly), PK(lmGainMWaist),
+                    PK(lmGainMButt), PK(lmGainMThigh), PK(lmGainMArm),
                     PK_NOSNAP(lmGainChest), PK_NOSNAP(lmGainBelly), PK_NOSNAP(lmGainWaist),
                     PK_NOSNAP(lmGainButt),  PK_NOSNAP(lmClampLo),   PK_NOSNAP(lmClampHi),
                     PK_NOSNAP(lmGainThigh), PK_NOSNAP(lmGainArm),
                     PK_NOSNAP(lmNeutLegChord), PK_NOSNAP(lmNeutArmChord),
+                    // MALE NEUTRAL SHAPE (2026-08-21) — 14 floats, live like the female set
+                    PK_NOSNAP(lmNeutMChestX), PK_NOSNAP(lmNeutMChestY), PK_NOSNAP(lmNeutMChestZ),
+                    PK_NOSNAP(lmNeutMBellyX), PK_NOSNAP(lmNeutMBellyY), PK_NOSNAP(lmNeutMBellyZ),
+                    PK_NOSNAP(lmNeutMWaistX), PK_NOSNAP(lmNeutMWaistY), PK_NOSNAP(lmNeutMWaistZ),
+                    PK_NOSNAP(lmNeutMButtX),  PK_NOSNAP(lmNeutMButtY),  PK_NOSNAP(lmNeutMButtZ),
+                    PK_NOSNAP(lmNeutMLegChord), PK_NOSNAP(lmNeutMArmChord),
                     PK_NOSNAP(lmNeutNoseChin), PK_NOSNAP(lmGainHead),
                     // ReTouch ghost zones + mouth touch
                     PK_NOSNAP(ghostZones), PK_NOSNAP(ghostViz), PK_NOSNAP(ghostRangeU),
@@ -190,13 +211,23 @@ namespace ObjectHold {
                     PK_NOSNAP(mouthArgC1), PK_NOSNAP(mouthArgC2), PK_NOSNAP(mouthBeastEnterU),
                     PK_NOSNAP(mouthRampIn), PK_NOSNAP(mouthRampOut), PK_NOSNAP(mouthFingerBox),
                     PK_NOSNAP(touchProbe), PK_NOSNAP(touchProbeRangeU),
+                    // 2026-08-19 ORIFICE DRIVE (Orifice.cpp) — read live per frame, and a gape
+                    // dial must never re-dress capsules, so the whole block is NOSNAP.
+                    PK_NOSNAP(orificeEnable), PK_NOSNAP(orificeVaginal), PK_NOSNAP(orificeAnal),
+                    PK_NOSNAP(orificeOral), PK_NOSNAP(orificeGateTol), PK_NOSNAP(orificeEaseHz),
+                    PK_NOSNAP(orificeRadiusGain), PK_NOSNAP(orificeRefRadU),
+                    PK_NOSNAP(orificeFingerRadU),
+                    PK_NOSNAP(orificeVagMinU), PK_NOSNAP(orificeVagMaxU),
+                    PK_NOSNAP(orificeAnalMinU), PK_NOSNAP(orificeAnalMaxU),
+                    PK_NOSNAP(orificeRangeU), PK_NOSNAP(orificeForeignHoldS),
+                    PK_NOSNAP(orificeLog),
                     // 2026-07-26 DISMEMBER GUARD (DF/NGD ↔ PLANCK) — NOSNAP (never re-dress capsules)
                     PK_NOSNAP(dgEnable), PK_NOSNAP(dgGraceDeadS), PK_NOSNAP(dgLog),
                     PK_NOSNAP(dgDeathIgnore), PK_NOSNAP(dgCloneStrip), PK_NOSNAP(dgStripDelayS),
                     PK_NOSNAP(dgDeferDf), PK_NOSNAP(dgHeadTrack),
                     PK_NOSNAP(dgDeathCut), PK_NOSNAP(dgDeathCutDelayS), PK_NOSNAP(dgDeathNodeTries),
                     PK_NOSNAP(dgHitLocated), PK_NOSNAP(dgHitMaxDistU),
-                    PK_NOSNAP(dgHeadSkel), PK_NOSNAP(dgHeadSkelHoldS), PK_NOSNAP(dgHeadPark), PK_NOSNAP(dgHeadStripHair), PK_NOSNAP(dgHeadGrabFix), PK_NOSNAP(dgHeadPlanck), PK_NOSNAP(dgVictimPlanck), PK_NOSNAP(genProbe), PK(maleGeometry), PK_NOSNAP(handBoxRelAlpha), PK_NOSNAP(handBoxPhaseLog), PK_NOSNAP(handBoxStepDt), PK_NOSNAP(handBoxTrack), PK_NOSNAP(handBoxWarp), PK_NOSNAP(sceneSuspendHands), PK_NOSNAP(sceneFirstDistU), PK_NOSNAP(apiWeaponDrawnOnly), PK_NOSNAP(weaponSheathedColOff), PK_NOSNAP(pivGuardCombatLoose), PK_NOSNAP(planckLoosenOurs), PK_NOSNAP(planckLoosenGlobal), PK_NOSNAP(touchProbeHud), PK_NOSNAP(touchProbeHudU),
+                    PK_NOSNAP(dgHeadSkel), PK_NOSNAP(dgHeadSkelHoldS), PK_NOSNAP(dgHeadPark), PK_NOSNAP(dgHeadStripHair), PK_NOSNAP(dgHeadGrabFix), PK_NOSNAP(dgHeadPlanck), PK_NOSNAP(dgVictimPlanck), PK_NOSNAP(genProbe), PK(maleGeometry), PK_NOSNAP(handBoxRelAlpha), PK_NOSNAP(handBoxPhaseLog), PK_NOSNAP(handBoxStepDt), PK_NOSNAP(handBoxTrack), PK_NOSNAP(handBoxWarp), PK_NOSNAP(playerWand), PK_NOSNAP(playerWandR), PK_NOSNAP(playerWandPart), PK_NOSNAP(playerWandLog), PK_NOSNAP(handBoxPrivGroup), PK_NOSNAP(handBoxPrivGroupId), PK_NOSNAP(handBoxNullUserData), PK_NOSNAP(sceneSuspendHands), PK_NOSNAP(sceneFirstDistU), PK_NOSNAP(apiWeaponDrawnOnly), PK_NOSNAP(weaponSheathedColOff), PK_NOSNAP(pivGuardCombatLoose), PK_NOSNAP(bumperSceneOff), PK_NOSNAP(bumperSceneExcite), PK_NOSNAP(planckLoosenOurs), PK_NOSNAP(planckLoosenGlobal), PK_NOSNAP(touchProbeHud), PK_NOSNAP(touchProbeHudU),
                     PK_NOSNAP(lmBrAYc), PK_NOSNAP(lmBrAYm), PK_NOSNAP(lmBrBYc), PK_NOSNAP(lmBrBYm),
                     PK_NOSNAP(lmBrAZc), PK_NOSNAP(lmBrAZm), PK_NOSNAP(lmBrBZc), PK_NOSNAP(lmBrBZm),
                     PK_NOSNAP(lmBrRc),  PK_NOSNAP(lmBrRm),  PK_NOSNAP(lmBrAX),
@@ -244,12 +275,18 @@ namespace ObjectHold {
                 // keeping the registration at 10 keeps the parked spare tuning lines (spine0 C8-C10 /
                 // spine1 C7-C10) parseable as inert no-ops (the apply loop never reaches them). spine2C
                 // is 12 (2 breast children added); capHeadC (10) is NEW — head is now a bhkListShape.
+                // 2026-08-22: raised in lock-step with Tuning.h array sizes, CapFixChildKnobs and
+                // CapFixChildSlot ChildPtr bounds for the male SCULPT headroom (5 coupled edits).
+                // ⚠ The TOP index of four of these rows is a LANDMARK PROBE — reference geometry,
+                // never shipped. Authoritative strip list (knobs AND nif children):
+                // Report/Precision Physic Bodies Module/23_Male_Body_Build_And_Sculpt.md §"LANDMARK PROBES".
                 const ChildArray kArrays[] = {
-                    { "capSpine0C", g_tune.spine0C, 10 },
-                    { "capSpine1C", g_tune.spine1C, 12 },
-                    { "capSpine2C", g_tune.spine2C, 20 },   // 2026-07-16: 14 -> 16 (+Argonian ridge)
-                    { "capHeadC",   g_tune.headC,   24 },   // 2026-07-19: 16 -> 22 (+C17..C22 = the 8 head-joint horn/antler seeds; C15/C16 doubled as Khajiit ears on beast heads)
-                    { "capComC",    g_tune.comC,    34 },
+                    { "capSpine0C", g_tune.spine0C, 12 },   // 2026-08-22: 10 -> 12; C12 = WAISTLINE probe — STRIP BEFORE SHIP
+                    { "capSpine1C", g_tune.spine1C, 13 },   // 2026-08-22: 12 -> 13; C13 = BELLY probe — STRIP BEFORE SHIP
+                    { "capSpine2C", g_tune.spine2C, 24 },   // 2026-07-16: 14 -> 16 (+Argonian ridge); 2026-08-22: 20 -> 24; C24 = CHEST probe — STRIP BEFORE SHIP
+                    { "capHeadC",   g_tune.headC,   34 },   // 2026-07-19: 16 -> 22 (horn/antler seeds; C15/C16 = Khajiit ears on beast heads); 2026-08-22: 24 -> 34 (spares only, no probe)
+                    { "capNeckC",   g_tune.neckC,    1 },   // 2026-08-22 C1 = "front neck" (choking target)
+                    { "capComC",    g_tune.comC,    37 },   // 2026-08-22: 34 -> 37; C37 = BUTTCHEEK-R probe — STRIP BEFORE SHIP
                 };
                 static const char* kSuf[8] = { "Enable", "AX", "AY", "AZ", "BX", "BY", "BZ", "R" };
                 char buf[40];
@@ -511,12 +548,16 @@ namespace ObjectHold {
             case 2: f = &g_tune.capHandC3Enable; break;
             case 3: f = &g_tune.capHandC4Enable; break;   // 2026-07-12 palm fill
             case 4: f = &g_tune.capHandC5Enable; break;
+            case 5: f = &g_tune.capHandC6Enable; break;   // 2026-08-22 male-sculpt spare (OFFSET: child 5 -> C6)
+            case 6: f = &g_tune.capHandC7Enable; break;   // 2026-08-22 male-sculpt spare (OFFSET: child 6 -> C7)
             }
             break;
         case 1:   // forearm: main + wrist-ward taper
             switch (child) {
             case 0: f = &g_tune.capForeEnable;   break;
             case 1: f = &g_tune.capForeC1Enable; break;
+            case 2: f = &g_tune.capForeC2Enable; break;   // 2026-08-22 male-sculpt spare
+            case 3: f = &g_tune.capForeC3Enable; break;   // 2026-08-22 male-sculpt spare
             }
             break;
         case 2:   // upper arm: main + elbow-ward taper + 2 shoulder-lock children (2026-07-09)
@@ -525,6 +566,8 @@ namespace ObjectHold {
             case 1: f = &g_tune.capUpperC1Enable; break;
             case 2: f = &g_tune.capUpperC2Enable; break;
             case 3: f = &g_tune.capUpperC3Enable; break;
+            case 4: f = &g_tune.capUpperC4Enable; break;   // 2026-08-22 male-sculpt spare
+            case 5: f = &g_tune.capUpperC5Enable; break;   // 2026-08-22 ARM LANDMARK CHORD probe (STRIP BEFORE SHIP)
             }
             break;
         case 8:   // thigh: main + 5 superposed rings
@@ -536,6 +579,9 @@ namespace ObjectHold {
             case 4: f = &g_tune.capThighC4Enable; break;
             case 5: f = &g_tune.capThighC5Enable; break;
             case 6: f = &g_tune.capThighC6Enable; break;   // 2026-07-09 knee hook
+            case 7: f = &g_tune.capThighC7Enable; break;   // 2026-08-22 male-sculpt spare
+            case 8: f = &g_tune.capThighC8Enable; break;   // 2026-08-22 male-sculpt spare
+            case 9: f = &g_tune.capThighC9Enable; break;   // 2026-08-22 LEG LANDMARK CHORD probe (STRIP BEFORE SHIP)
             }
             break;
         case 9:   // calf: main + 3 superposed rings
@@ -545,6 +591,8 @@ namespace ObjectHold {
             case 2: f = &g_tune.capCalfC2Enable; break;
             case 3: f = &g_tune.capCalfC3Enable; break;
             case 4: f = &g_tune.capCalfC4Enable; break;   // 2026-07-09 knee hook
+            case 5: f = &g_tune.capCalfC5Enable; break;   // 2026-08-22 male-sculpt spare
+            case 6: f = &g_tune.capCalfC6Enable; break;   // 2026-08-22 male-sculpt spare
             }
             break;
         case 10:  // foot: main + 3 parallel sole rods (2026-07-09: +1 ankle lock)
@@ -553,15 +601,20 @@ namespace ObjectHold {
             case 1: f = &g_tune.capFootC1Enable; break;
             case 2: f = &g_tune.capFootC2Enable; break;
             case 3: f = &g_tune.capFootC3Enable; break;
+            case 4: f = &g_tune.capFootC4Enable; break;   // 2026-08-22 male-sculpt spare
+            case 5: f = &g_tune.capFootC5Enable; break;   // 2026-08-22 male-sculpt spare
             }
             break;
         // ── TORSO (wave-2b bake): main + 10/7/6/12/20 buried seed children ──
         // (head=10, spine0=7 & spine1=6 in the NIF but the arrays keep MAX capacity 10; spine2=12; com=20)
-        case 3:  f = ChildPtr(g_tune.headC,   24, child, &g_tune.capHeadEnable);   break;   // 2026-07-19: 16 -> 22 (horn/antler seeds)
-        case 4:  f = ChildPtr(g_tune.spine0C, 10, child, &g_tune.capSpine0Enable); break;
-        case 5:  f = ChildPtr(g_tune.spine1C, 12, child, &g_tune.capSpine1Enable); break;   // 2026-07-29: 10 -> 12
-        case 6:  f = ChildPtr(g_tune.spine2C, 20, child, &g_tune.capSpine2Enable); break;   // 2026-07-29: 16 -> 20
-        case 11: f = ChildPtr(g_tune.comC,    34, child, &g_tune.capComEnable);    break;   // 2026-07-29: 20 -> 32
+        case 3:  f = ChildPtr(g_tune.headC,   34, child, &g_tune.capHeadEnable);   break;   // 2026-07-19: 16 -> 22 (horn/antler); 2026-08-22: 24 -> 34
+        case 4:  f = ChildPtr(g_tune.spine0C, 12, child, &g_tune.capSpine0Enable); break;   // 2026-08-22: 10 -> 12
+        case 5:  f = ChildPtr(g_tune.spine1C, 13, child, &g_tune.capSpine1Enable); break;   // 2026-07-29: 10 -> 12; 2026-08-22: -> 13
+        case 6:  f = ChildPtr(g_tune.spine2C, 24, child, &g_tune.capSpine2Enable); break;   // 2026-07-29: 16 -> 20; 2026-08-22: -> 24
+        // NECK (2026-08-22): 1-element array, so ChildPtr routes child 0 -> the main capNeck
+        // block and child 1 -> capNeckC1, exactly like every torso slot.
+        case 7:  f = ChildPtr(g_tune.neckC,     1, child, &g_tune.capNeckEnable);  break;
+        case 11: f = ChildPtr(g_tune.comC,    37, child, &g_tune.capComEnable);    break;   // 2026-07-29: 20 -> 32; 2026-08-22: 34 -> 37
         default: break;
         }
         if (!f) return false;
@@ -574,17 +627,22 @@ namespace ObjectHold {
     // Knob-addressable list-child count per slot (0 = the slot has no list-shape support).
     int CapFixChildKnobs(int slot) {
         switch (slot) {
-        case 0:  return 5;   // hand: 5 palm rods (2026-07-12 palm fill: +C4/C5 between center and pinky)
-        case 1:  return 2;   // forearm: main + taper
-        case 2:  return 4;   // upper arm: main + taper + 2 shoulder-lock (2026-07-09)
-        case 3:  return 25;  // head: main + 22 seeds     (2026-07-19: +C17..C22 = horn/antler seeds; 07-16: C15/C16 ears)
-        case 4:  return 10;  // spine0: main + 9 seeds    (2026-07-16: +C8/C9 = Argonian ridge)
-        case 5:  return 11;  // spine1: main + 10        (2026-07-29: +C9/C10 = BACK L/R)
-        case 6:  return 19;  // spine2: main + 18        (2026-07-29: +C17/C18 = SHOULDER BLADE L/R)
-        case 8:  return 7;   // thigh: main + 5 rings + knee hook (2026-07-09)
-        case 9:  return 5;   // calf:  main + 3 rings + knee hook (2026-07-09)
-        case 10: return 4;   // foot: main + 3 sole rods (2026-07-09: +1 ankle lock)
-        case 11: return 34;  // com: main + 31           (2026-07-29: +C21..C31 pelvis sensors)
+        // 2026-08-22 male-sculpt headroom. Each bound here is the APPLY-LOOP bound and must move in
+        // lock-step with CapFixChildSlot VALUE-FETCHER bound (ChildPtr for torso, switch cases for limbs).
+        case 0:  return 7;   // hand: 5 palm rods + 2 spares (2026-08-22; OFFSET: child N -> capHandC(N+1))
+        case 1:  return 4;   // forearm: main + taper + 2 spares (2026-08-22)
+        case 2:  return 6;   // upper arm: main + taper + 2 shoulder-lock + 1 spare + ARM CHORD probe (2026-08-22)
+        case 3:  return 35;  // head: main + 34          (2026-07-19 horn/antler seeds; 2026-08-22 +C25..C34 spares)
+        case 4:  return 13;  // spine0: main + 12        (2026-08-22: +C11 spare, C12 = WAISTLINE probe — STRIP BEFORE SHIP)
+        case 5:  return 14;  // spine1: main + 13        (2026-07-29 BACK L/R; 2026-08-22 C13 = BELLY probe — STRIP BEFORE SHIP)
+        case 6:  return 25;  // spine2: main + 24        (2026-07-29 SHOULDER BLADE; 2026-08-22 C24 = CHEST probe — STRIP BEFORE SHIP)
+        case 7:  return 2;   // neck: main + C1 "front neck"  (2026-08-22; beast vehicle only —
+                             // a skeleton whose neck is still a bare capsule simply has 1 child
+                             // live and the C1 knob is skipped, per-race-geometry-by-existence)
+        case 8:  return 10;  // thigh: main + 9          (2026-08-22: +C7/C8 spares, C9 = LEG CHORD probe)
+        case 9:  return 7;   // calf:  main + 6          (2026-08-22: +C5/C6 spares)
+        case 10: return 6;   // foot: main + 5           (2026-08-22: +C4/C5 spares)
+        case 11: return 38;  // com: main + 37           (2026-07-29 pelvis sensors; 2026-08-22 C37 = BUTTCHEEK-R probe — STRIP BEFORE SHIP)
         default: return 0;
         }
     }
@@ -705,6 +763,9 @@ namespace ObjectHold {
     float PerfLodHystPct()       { return g_tune.lodHystPct; }
     float PerfLodSettleFrames()  { return g_tune.lodSettleFrames; }
     float PerfLodStageBits()     { return g_tune.lodStageBits; }
+    // rayTel (2026-08-22, RayTel.cpp): 0 off (shipping default) / 1 counters / 2 + __rdtsc timing.
+    // Read every frame on the main thread — the arm/disarm is edge-detected there, never in a callback.
+    int   RayTelMode()           { const int m = (int)(g_tune.rayTel + 0.5f); return m < 0 ? 0 : (m > 2 ? 2 : m); }
 
     // ── NPC FINGER TEST v2 (2026-07-09, NpcFingerTest.cpp) — read live per frame; the clamps
     // keep a mistyped tuning line from creating a degenerate/super-critical dynamic body. ──
@@ -722,6 +783,18 @@ namespace ObjectHold {
     float FsmpPushMinDispU()    { return g_tune.fsmpPushMinDispU < 0.f ? 0.f : g_tune.fsmpPushMinDispU; }
     float FsmpPushMult()        { return g_tune.fsmpPushMult < 0.f ? 0.f : (g_tune.fsmpPushMult > 10.f ? 10.f : g_tune.fsmpPushMult); }
     bool  NpcFollowerEnabled()  { return g_tune.npcFollower > 0.5f; }
+    bool  NpcGenCapEnabled()    { return g_tune.npcGenCap > 0.5f; }
+    float NpcGenMassKg()        { return g_tune.npcGenMassKg < 0.01f ? 0.01f : g_tune.npcGenMassKg; }
+    float NpcGenR()             { return g_tune.npcGenR < 0.1f ? 0.1f : g_tune.npcGenR; }
+    float NpcGenAlpha()         { float a = g_tune.npcGenAlpha; return a < 0.05f ? 0.05f : (a > 1.f ? 1.f : a); }
+    bool  GenBendEnabled()        { return g_tune.genBend > 0.5f; }
+    bool  GenBendPlayerEnabled()  { return g_tune.genBendPlayer > 0.5f; }
+    int   GenBendMax()            { int m = (int)g_tune.genBendMax; return m < 0 ? 0 : (m > 9 ? 9 : m); }
+    float GenBendUpMs()           { return g_tune.genBendUpMs < 100.f ? 100.f : g_tune.genBendUpMs; }
+    float GenBendHoldSec()        { return g_tune.genBendHoldSec < 0.f ? 0.f : g_tune.genBendHoldSec; }
+    float GenBendDecaySec()       { return g_tune.genBendDecaySec < 0.5f ? 0.5f : g_tune.genBendDecaySec; }
+    float GenBendArousal()        { return g_tune.genBendArousal; }
+    float GenBendTouchU()         { return g_tune.genBendTouchU < 1.f ? 1.f : g_tune.genBendTouchU; }
     // Garment-rig budget (2026-07-30). 0 disables each limit; negatives are clamped away so a
     // typo can never mean "range zero = no rigs at all".
     float HiggsPokeFix()        { return g_tune.higgsPokeFix; }
@@ -745,6 +818,7 @@ namespace ObjectHold {
     float ApiDwellTailS()       { return g_tune.apiDwellTailS   < 0.f ? 0.f : g_tune.apiDwellTailS; }
     bool  ApiRawEventsEnabled() { return g_tune.apiRawEvents > 0.5f; }
     float ApiWeaponRMaxU() { return g_tune.apiWeaponRMaxU; }
+    float ApiObjectRMaxU() { return g_tune.apiObjectRMaxU; }
     bool  ApiSubRegionInEvent() { return g_tune.apiSubRegionInEvent > 0.5f; }
     bool  ApiSuppressHeldHand() { return g_tune.apiSuppressHeldHand > 0.5f; }
     bool  ApiSuppressHeldHandStrict() { return g_tune.apiSuppressHeldHand > 1.5f; }
@@ -814,6 +888,17 @@ namespace ObjectHold {
         default: return 0.f;    // 0 = this region has no UV channel yet (thighs/arms/head)
         }
     }
+    float LmRegionGainM(int r) {
+        switch (r) {
+        case 0: return g_tune.lmGainMChest;
+        case 2: return g_tune.lmGainMBelly;
+        case 3: return g_tune.lmGainMWaist;
+        case 4: return g_tune.lmGainMButt;
+        case 5: return g_tune.lmGainMThigh;
+        case 6: return g_tune.lmGainMArm;
+        default: return 0.f;    // males: no breast (1) / head (7) channel
+        }
+    }
     float LmNeutNoseChin()      { return g_tune.lmNeutNoseChin; }
     bool  GhostZonesEnabled()   { return g_tune.ghostZones > 0.5f; }
     bool  DgEnabled()           { return g_tune.dgEnable > 0.5f; }
@@ -837,17 +922,48 @@ namespace ObjectHold {
     bool  DgVictimPlanckOn()    { return g_tune.dgVictimPlanck > 0.5f; }
     bool  GenProbeOn()          { return g_tune.genProbe > 0.5f; }
     bool  GenProbeFast()        { return g_tune.genProbe > 1.5f; }
+    // >0 means "the geometry writers may touch males AT ALL". Mode 2 still returns true here —
+    // the ReScale/ReShape suppression is applied at those two sites, not by this gate.
     bool  MaleGeometryOn()      { return g_tune.maleGeometry > 0.5f; }
+    int   MaleGeometryMode()    {
+        int v = (int)(g_tune.maleGeometry + 0.5f);
+        return (v < 0 || v > 2) ? 0 : v;
+    }
     float HandBoxRelAlpha()     { return std::clamp(g_tune.handBoxRelAlpha, 0.f, 1.f); }
     bool  HandBoxPhaseLogOn()   { return g_tune.handBoxPhaseLog > 0.5f; }
     bool  HandBoxStepDtOn()     { return g_tune.handBoxStepDt > 0.5f; }
     float HandBoxTrack()        { return std::clamp(g_tune.handBoxTrack, 0.05f, 1.f); }
     bool  HandBoxWarpOn()       { return g_tune.handBoxWarp > 0.5f; }
+    bool  PlayerWandOn()        { return g_tune.playerWand > 0.5f; }
+    float PlayerWandR()         { return (std::max)(0.3f, g_tune.playerWandR); }
+    unsigned PlayerWandPart()   {
+        int v = (int)(g_tune.playerWandPart + 0.5f);
+        // forbidden: 0 (non-part), 2 (PerfSys cross-pelvis), 3/5 (HIGGS hands), 4 (our boxes),
+        // 6 (HIGGS declared), 8/14 (PerfSys self-thigh pair), 29 (markers), 30 (rig signature)
+        if (v < 1 || v > 28 || v == 2 || v == 3 || v == 4 || v == 5 || v == 6 || v == 8 || v == 14)
+            v = 9;
+        return (unsigned)v;
+    }
+    bool  PlayerWandLogOn()     { return g_tune.playerWandLog > 0.5f; }
+    int   HandBoxPrivGroupMode() {
+        int v = (int)(g_tune.handBoxPrivGroup + 0.5f);
+        return (v < 0 || v > 2) ? 0 : v;
+    }
+    unsigned HandBoxPrivGroupId() {
+        unsigned v = (unsigned)(int)(g_tune.handBoxPrivGroupId + 0.5f) & 0xFFFFu;
+        return v ? v : 0xFFF0u;                       // 0 would alias "ungrouped" -> never allow
+    }
+    int   HandBoxNullUserDataMode() {
+        int v = (int)(g_tune.handBoxNullUserData + 0.5f);
+        return (v < 0 || v > 2) ? 0 : v;   // 0 off / 1 always-on / 2 auto (on after first load)
+    }
     int   SceneSuspendHandsMode()  { return (int)(g_tune.sceneSuspendHands + 0.5f); }
     float SceneFirstDistU()        { return g_tune.sceneFirstDistU; }
     bool  ApiWeaponDrawnOnly()     { return g_tune.apiWeaponDrawnOnly > 0.5f; }
     bool  WeaponSheathedColOff()   { return g_tune.weaponSheathedColOff > 0.5f; }
     bool  PivGuardCombatLooseOn()  { return g_tune.pivGuardCombatLoose > 0.5f; }
+    bool  BumperSceneOff()      { return g_tune.bumperSceneOff > 0.5f; }
+    float BumperSceneExcite()   { return g_tune.bumperSceneExcite; }
     bool  PlanckLoosenOursOn()  { return g_tune.planckLoosenOurs > 0.5f; }
     float PlanckLoosenGlobal() { return g_tune.planckLoosenGlobal; }
     bool  TouchProbeHudOn()     { return g_tune.touchProbeHud > 0.5f; }
@@ -891,9 +1007,44 @@ namespace ObjectHold {
     float MouthFingerBox()      { return g_tune.mouthFingerBox; }
     bool  TouchProbeEnabled()   { return g_tune.touchProbe > 0.5f; }
     float TouchProbeRangeU()    { return g_tune.touchProbeRangeU; }
+
+    // ── ORIFICE DRIVE (2026-08-19) ──────────────────────────────────────────────────────────
+    // Every accessor clamps. The written value lands on a BONE, and a NaN there is a body bent
+    // to infinity that no restore can undo (rest + NaN*dir = NaN, and NaN != rest forever), so
+    // the `!(v > lo)` form is used deliberately — it catches NaN as well as under-range.
+    static inline float OrifCl(float v, float lo, float hi) {
+        if (!(v > lo)) return lo;            // NaN-safe: NaN fails every comparison
+        return v > hi ? hi : v;
+    }
+    bool  OrificeEnabled()      { return g_tune.orificeEnable  > 0.5f; }
+    bool  OrificeVaginal()      { return g_tune.orificeVaginal > 0.5f; }
+    bool  OrificeAnal()         { return g_tune.orificeAnal    > 0.5f; }
+    bool  OrificeOral()         { return g_tune.orificeOral    > 0.5f; }
+    float OrificeGateTol()      { return OrifCl(g_tune.orificeGateTol,     0.f,  2.f); }
+    float OrificeEaseHz()       { return OrifCl(g_tune.orificeEaseHz,      0.1f, 60.f); }
+    float OrificeRadiusGain()   { return OrifCl(g_tune.orificeRadiusGain,  0.f,  1.f); }
+    float OrificeRefRadU()      { return OrifCl(g_tune.orificeRefRadU,     0.1f, 20.f); }
+    float OrificeFingerRadU()   { return OrifCl(g_tune.orificeFingerRadU,  0.f,  10.f); }
+    float OrificeOpenMinU(int kind) {
+        return OrifCl(kind == 1 ? g_tune.orificeAnalMinU : g_tune.orificeVagMinU, 0.f, 20.f);
+    }
+    float OrificeOpenMaxU(int kind) {
+        // Max is floored at Min so an inverted pair can never produce a NEGATIVE gape (which
+        // would pull the ring inward and read as a foreign write on the next frame).
+        const float lo = OrificeOpenMinU(kind);
+        return OrifCl(kind == 1 ? g_tune.orificeAnalMaxU : g_tune.orificeVagMaxU, lo, 20.f);
+    }
+    float OrificeRangeU()       { return OrifCl(g_tune.orificeRangeU,        1.f,  400.f); }
+    float OrificeForeignHoldS() { return OrifCl(g_tune.orificeForeignHoldS,  0.1f, 30.f); }
+    bool  OrificeLogEnabled()   { return g_tune.orificeLog > 0.5f; }
     float LmNeutLimbChord(int r) {
         if (r == 5) return g_tune.lmNeutLegChord;   // thighs
         if (r == 6) return g_tune.lmNeutArmChord;   // upperArms
+        return 0.f;
+    }
+    float LmNeutLimbChordM(int r) {                 // MALE mirror (2026-08-21)
+        if (r == 5) return g_tune.lmNeutMLegChord;  // thighs
+        if (r == 6) return g_tune.lmNeutMArmChord;  // upperArms
         return 0.f;
     }
     void  LmBreastModel(float o[14]) {
@@ -921,6 +1072,19 @@ namespace ObjectHold {
         if (i < 0 || i > 6) { o[0] = o[1] = o[2] = 0.f; return; }
         t = v[i];
         o[0] = t[0]; o[1] = t[1]; o[2] = t[2];
+    }
+    void  LmNeutralPosM(int i, float o[3]) {
+        // MALE mirror (2026-08-21). Same index order as kUvLandmarks; indices 0..2 (the
+        // breast landmarks) return 0 BY DESIGN — the male table has no breast channel, and a
+        // zero neutral is the established "channel absent/self-disabled" value everywhere.
+        o[0] = o[1] = o[2] = 0.f;
+        switch (i) {
+        case 3: o[0]=g_tune.lmNeutMChestX; o[1]=g_tune.lmNeutMChestY; o[2]=g_tune.lmNeutMChestZ; break;
+        case 4: o[0]=g_tune.lmNeutMBellyX; o[1]=g_tune.lmNeutMBellyY; o[2]=g_tune.lmNeutMBellyZ; break;
+        case 5: o[0]=g_tune.lmNeutMWaistX; o[1]=g_tune.lmNeutMWaistY; o[2]=g_tune.lmNeutMWaistZ; break;
+        case 6: o[0]=g_tune.lmNeutMButtX;  o[1]=g_tune.lmNeutMButtY;  o[2]=g_tune.lmNeutMButtZ;  break;
+        default: break;
+        }
     }
     float TipProbe(int a)       { return a == 0 ? g_tune.tipProbeX : (a == 1 ? g_tune.tipProbeY : g_tune.tipProbeZ); }
     float NipUV(int a)          { return a == 0 ? g_tune.nipUVu : g_tune.nipUVv; }

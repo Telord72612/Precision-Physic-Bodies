@@ -75,7 +75,7 @@
 		</centerOfMassTransform>
 		<linearDamping>0.9</linearDamping>
 		<angularDamping>0.9</angularDamping>
-		<gravity-factor>0</gravity-factor>
+		<gravity-factor>1</gravity-factor>
 		<friction>0.3</friction>
 		<rollingFriction>0.3</rollingFriction>
 		<restitution>0.2</restitution>
@@ -172,7 +172,7 @@
 		<angularLowerLimit x="-0.7" y="0" z="-0.35" />
     	<angularUpperLimit x="0.7" y="0" z="0.35" />
     	<linearStiffness x="0" y="0" z="0" />
-    	<angularStiffness x="50000" y="50000" z="12000"/>
+    	<angularStiffness x="12000" y="50000" z="12000"/>
     	<linearDamping x="0" y="0" z="0" />
     	<angularDamping x="150" y="150" z="150" />
 		<linearEquilibrium x="0" y="0" z="0" />

@@ -36,6 +36,7 @@ namespace HandBox {
     // rigs are destroyed for the duration via the SAME path handBoxEnable 0 uses, so no new code
     // path is introduced. Restored automatically on scene end.
     void SetSceneSuspended(bool on);
+    void MarkSessionReloaded();   // AUTO userData-null: flips on after the first save/game load
     bool IsSceneSuspended();
 
 
@@ -74,4 +75,16 @@ namespace HandBox {
     // World CENTER of any box — the per-box identity that makes FINGER/PALM/FIST source
     // classification possible (each box is our own object; we always know which is which).
     bool BoxCenterWorldU(int hand, int box, float outU[3]);
+
+    // ── PLAYER GENITAL WAND geometry (2026-08-23) ───────────────────────────────────────
+    // The wand is 2 keyframed Havok segments riding GenBase→Gen03→Gen06, half-extents
+    // re-measured every frame (erection / TNG size / actor scale). It has ALWAYS been a real
+    // body — it pushes loose objects through the ordinary simulation narrowphase — but it was
+    // file-local, so the ORIFICE drive could not see it: that drive reads the assembled PROBE
+    // SET (PpbApi::CopyProbes), not Havok contacts, and the wand was in no probe list. This
+    // publishes the SAME geometry the bodies occupy, tip pad included, so the two views agree.
+    // Writes up to 2 segments (a[i]→b[i], world game units) + the shared radius; returns the
+    // count written, 0 when no wand exists right now. Gated on the BODY being live, not merely
+    // on the snapshot resolving — a probe must never claim reach the collider does not have.
+    int  WandProbeSegments(float aOutU[2][3], float bOutU[2][3], float* rOutU);
 }

@@ -38,10 +38,12 @@ add_library(PPB SHARED
     src/PpbApi.cpp      # public touch API: contact engine + messaging interface + PPB_Touch natives
     src/DismemberGuard.cpp # 2026-07-26 DF/NGD ↔ PLANCK guard: death-grace ignore + head-clone exclusion
     src/GenitalProbe.cpp   # 2026-08-02 research instrument: which signal tracks schlong exposure (genProbe)
+    src/Orifice.cpp        # 2026-08-19 native orifice drive: penetration gate -> eased bone-ring write
 
     src/Probe.cpp       # `probe` console command: read-only actor physics/animation state dump
     src/Diag.cpp        # 2026-07-08 wave-2 gate: read-only contact counter + step timer + census + capdis spike
     src/PerfSys.cpp     # 2026-07-09 perf system: HIGGS filter callback (thigh-x-thigh) + child-LOD 50/80/90 presets
+    src/RayTel.cpp      # 2026-08-22 raycast/query telemetry: 5 bhkCollisionFilter vtable slots -> measured per-child walks
     src/NpcFingerTest.cpp
     src/FsmpLink.cpp  # 2026-07-09 NPC finger test: 4 runtime DYNAMIC capsules, `nfing` (Havok SDK, scoped below)
     src/HandBox.cpp     # 2026-07-09 player-hand 4-box collider + HIGGS slab dial (Havok SDK, scoped below)

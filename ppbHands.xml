@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<system xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="FSMP-Validator"
+xsi:schemaLocation="FSMP-Validator ./hdtSMP64.xsd">
+
+	<!-- PPB hand collider (2026-07-11) — Precision Physic Bodies.
+	     Kinematic per-triangle collider on the hands mesh, VRIK-driven for the player.
+	     Tag handshake (see Report/PPB Module/14): tag "ppbhand" is unknown to every
+	     blacklist in the install (the fluffy tail blocks "hands"/"hand", not us), and
+	     our whitelist admits ONLY "Tail" — so this shape collides with SMP tails and
+	     NOTHING else. Zero cost on every other pair. -->
+
+	<bone name="NPC L Hand [LHnd]"/>
+	<bone name="NPC R Hand [RHnd]"/>
+	<bone name="NPC L Forearm [LLar]"/>
+	<bone name="NPC R Forearm [RLar]"/>
+	<bone name="NPC L ForearmTwist1 [LLt1]"/>
+	<bone name="NPC R ForearmTwist1 [RLt1]"/>
+	<bone name="NPC L ForearmTwist2 [LLt2]"/>
+	<bone name="NPC R ForearmTwist2 [RLt2]"/>
+	<!-- finger bones auto-resolve via the skin instance (generateMeshBody default path);
+	     the majors are declared explicitly for clarity -->
+	<bone name="NPC L Finger12 [LF12]"/>
+	<bone name="NPC R Finger12 [RF12]"/>
+	<bone name="NPC L Finger22 [LF22]"/>
+	<bone name="NPC R Finger22 [RF22]"/>
+
+	<!-- male hands (HIMBO / Bodyslide Output) -->
+	<per-triangle-shape name="HIMBO - Hands">
+		<margin>0.1</margin>
+		<prenetration>0.01</prenetration>
+		<shared>public</shared>
+		<tag>ppbhand</tag>
+		<can-collide-with-tag>Tail</can-collide-with-tag>
+		<can-collide-with-tag>Genitals</can-collide-with-tag>
+	</per-triangle-shape>
+
+	<!-- female hands (CBBE / Bodyslide Output) — NPC hands push tails too, by design -->
+	<per-triangle-shape name="Hands">
+		<margin>0.1</margin>
+		<prenetration>0.01</prenetration>
+		<shared>public</shared>
+		<tag>ppbhand</tag>
+		<can-collide-with-tag>Tail</can-collide-with-tag>
+		<can-collide-with-tag>Genitals</can-collide-with-tag>
+	</per-triangle-shape>
+
+
+</system>

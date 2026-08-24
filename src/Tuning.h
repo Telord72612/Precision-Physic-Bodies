@@ -74,6 +74,14 @@ namespace ObjectHold {
         float capHandC5AX = 0.9f,   capHandC5AY = -1.0f, capHandC5AZ = -2.1f;
         float capHandC5BX = 0.337f, capHandC5BY = -1.967f, capHandC5BZ = 3.8f;
         float capHandC5R  = 1.0f;
+        float capHandC6Enable = 0.f;                              // buried spare — HAND IS OFFSET: this is list child 5
+        float capHandC6AX = 0.0f, capHandC6AY = 0.0f, capHandC6AZ = 0.0f;
+        float capHandC6BX = 0.0f, capHandC6BY = 0.0f, capHandC6BZ = 2.0f;
+        float capHandC6R  = 0.5f;
+        float capHandC7Enable = 0.f;                              // buried spare — list child 6 (capHandC(N+1) mapping)
+        float capHandC7AX = 0.0f, capHandC7AY = 0.0f, capHandC7AZ = 0.0f;
+        float capHandC7BX = 0.0f, capHandC7BY = 0.0f, capHandC7BZ = 2.0f;
+        float capHandC7R  = 0.5f;
         // Full-body capsule slots (2026-07-05): spine chain + neck + R leg + pelvis core.
         float capSpine0Enable = 0.f;
         float capSpine0AX = 0.f, capSpine0AY = 0.f, capSpine0AZ = 0.f, capSpine0BX = 0.f, capSpine0BY = 0.f, capSpine0BZ = 0.f, capSpine0R = 5.f;
@@ -119,6 +127,29 @@ namespace ObjectHold {
         float capForeC1AX = 0.8f, capForeC1AY = 1.3f, capForeC1AZ = 4.3f;       // near = dialed capForeB
         float capForeC1BX = 0.8f, capForeC1BY = 1.3f, capForeC1BZ = 10.3f;      // far = recorded wrist end
         float capForeC1R  = 1.5f;
+        // ══ 2026-08-22 MALE SCULPT LIMB HEADROOM ═══════════════════════════════════════════
+        // +2 buried spares on every limb node (L and R alike — the twins mirror), plus the two
+        // LANDMARK CHORD probes (capUpperC5 = arm, capThighC9 = leg). Spares ship Enable 0 with
+        // the canonical limb burial seed (0,0,0)->(0,0,2u) r 0.5 — bone-frame origin is deep
+        // inside the limb, so an accidental Enable can never produce a touchable collider.
+        // ⚠ Limb slots are EXPLICIT switch cases in CapFixChildSlot — a new field here needs a
+        // matching `case` line AND a PK8() registration in Tuning.cpp or it silently does nothing.
+        float capUpperC4Enable = 0.f;                              // buried spare (child 4)
+        float capUpperC4AX = 0.0f, capUpperC4AY = 0.0f, capUpperC4AZ = 0.0f;
+        float capUpperC4BX = 0.0f, capUpperC4BY = 0.0f, capUpperC4BZ = 2.0f;
+        float capUpperC4R  = 0.5f;
+        float capUpperC5Enable = 0.f;                              // ARM LANDMARK CHORD probe (child 5) — STRIP BEFORE SHIP
+        float capUpperC5AX = 0.0f, capUpperC5AY = 0.0f, capUpperC5AZ = 0.0f;
+        float capUpperC5BX = 0.0f, capUpperC5BY = 0.0f, capUpperC5BZ = 2.0f;
+        float capUpperC5R  = 0.5f;
+        float capForeC2Enable = 0.f;                              // buried spare (child 2)
+        float capForeC2AX = 0.0f, capForeC2AY = 0.0f, capForeC2AZ = 0.0f;
+        float capForeC2BX = 0.0f, capForeC2BY = 0.0f, capForeC2BZ = 2.0f;
+        float capForeC2R  = 0.5f;
+        float capForeC3Enable = 0.f;                              // buried spare (child 3)
+        float capForeC3AX = 0.0f, capForeC3AY = 0.0f, capForeC3AZ = 0.0f;
+        float capForeC3BX = 0.0f, capForeC3BY = 0.0f, capForeC3BZ = 2.0f;
+        float capForeC3R  = 0.5f;
         float capThighC1Enable = 0.f;                              // superposed rings along hip->knee
         float capThighC1AX = -1.9f, capThighC1AY = -2.9f, capThighC1AZ = -4.3f;
         float capThighC1BX = -1.9f, capThighC1BY = -2.9f, capThighC1BZ = -1.3f;
@@ -144,6 +175,18 @@ namespace ObjectHold {
         float capThighC6AX = 0.5f, capThighC6AY = -0.5f, capThighC6AZ = 21.0f;
         float capThighC6BX = 0.7f, capThighC6BY = -0.3f, capThighC6BZ = 29.0f;
         float capThighC6R  = 2.5f;
+        float capThighC7Enable = 0.f;                              // buried spare (child 7)
+        float capThighC7AX = 0.0f, capThighC7AY = 0.0f, capThighC7AZ = 0.0f;
+        float capThighC7BX = 0.0f, capThighC7BY = 0.0f, capThighC7BZ = 2.0f;
+        float capThighC7R  = 0.5f;
+        float capThighC8Enable = 0.f;                              // buried spare (child 8)
+        float capThighC8AX = 0.0f, capThighC8AY = 0.0f, capThighC8AZ = 0.0f;
+        float capThighC8BX = 0.0f, capThighC8BY = 0.0f, capThighC8BZ = 2.0f;
+        float capThighC8R  = 0.5f;
+        float capThighC9Enable = 0.f;                              // LEG LANDMARK CHORD probe (child 9) — STRIP BEFORE SHIP
+        float capThighC9AX = 0.0f, capThighC9AY = 0.0f, capThighC9AZ = 0.0f;
+        float capThighC9BX = 0.0f, capThighC9BY = 0.0f, capThighC9BZ = 2.0f;
+        float capThighC9R  = 0.5f;
         float capCalfC1Enable = 0.f;                               // superposed rings along knee->ankle
         float capCalfC1AX = 0.6f, capCalfC1AY = -1.1f, capCalfC1AZ = -1.7f;
         float capCalfC1BX = 0.6f, capCalfC1BY = -1.1f, capCalfC1BZ = 1.3f;
@@ -161,6 +204,14 @@ namespace ObjectHold {
         float capCalfC4AX = 0.6f, capCalfC4AY = -1.1f, capCalfC4AZ = -9.0f;
         float capCalfC4BX = 0.8f, capCalfC4BY = -1.0f, capCalfC4BZ = -1.0f;
         float capCalfC4R  = 2.3f;
+        float capCalfC5Enable = 0.f;                              // buried spare (child 5)
+        float capCalfC5AX = 0.0f, capCalfC5AY = 0.0f, capCalfC5AZ = 0.0f;
+        float capCalfC5BX = 0.0f, capCalfC5BY = 0.0f, capCalfC5BZ = 2.0f;
+        float capCalfC5R  = 0.5f;
+        float capCalfC6Enable = 0.f;                              // buried spare (child 6)
+        float capCalfC6AX = 0.0f, capCalfC6AY = 0.0f, capCalfC6AZ = 0.0f;
+        float capCalfC6BX = 0.0f, capCalfC6BY = 0.0f, capCalfC6BZ = 2.0f;
+        float capCalfC6R  = 0.5f;
         float capFootC1Enable = 0.f;                               // parallel sole rods (foot: +X inward, +Y up, +Z toe)
         float capFootC1AX = 2.2f, capFootC1AY = 3.0f, capFootC1AZ = 5.3f;
         float capFootC1BX = 2.2f, capFootC1BY = 4.0f, capFootC1BZ = -1.2f;
@@ -174,6 +225,14 @@ namespace ObjectHold {
         float capFootC3AX = 1.0f, capFootC3AY = 3.0f, capFootC3AZ = 5.3f;
         float capFootC3BX = 1.0f, capFootC3BY = 4.0f, capFootC3BZ = -1.2f;
         float capFootC3R  = 1.2f;
+        float capFootC4Enable = 0.f;                              // buried spare (child 4)
+        float capFootC4AX = 0.0f, capFootC4AY = 0.0f, capFootC4AZ = 0.0f;
+        float capFootC4BX = 0.0f, capFootC4BY = 0.0f, capFootC4BZ = 2.0f;
+        float capFootC4R  = 0.5f;
+        float capFootC5Enable = 0.f;                              // buried spare (child 5)
+        float capFootC5AX = 0.0f, capFootC5AY = 0.0f, capFootC5AZ = 0.0f;
+        float capFootC5BX = 0.0f, capFootC5BY = 0.0f, capFootC5BZ = 2.0f;
+        float capFootC5R  = 0.5f;
         // ── LIVE LEFT-MIRROR (2026-07-07): every capsule slot/child write mirrors to the LEFT twin body
         // as {-AX,AY,AZ}/{-BX,BY,BZ}/same r — verified two ways (bake script + NIF dump: every L/R pair
         // is an exact X-negation in body-local space). Center slots (head/spine/neck/com) have no twin.
@@ -304,6 +363,15 @@ namespace ObjectHold {
         float lodHystPct       = 0.10f;  // band hysteresis
         float lodSettleFrames  = 45.f;   // stable frames required before any tier DOWNGRADE
         float lodStageBits     = 6.f;    // max child-ENABLES per body per frame (staged upgrades)
+        // ── RAYCAST / QUERY TELEMETRY (2026-08-22, RayTel.cpp) — the instrument that turns doc 08
+        // §3.5's MODELLED ray cost into a MEASURED one. 0 = OFF (shipping default; the five
+        // bhkCollisionFilter sub-object vtable slots hold the untouched engine pointers, so the
+        // disabled state is byte-identical to vanilla and costs literally nothing). 1 = arm the
+        // counters (per-child ray walks, per-child narrowphase walks, per-body ray tests, broadphase
+        // pairs) and log one line per second. 2 = also accumulate __rdtsc deltas around each filter
+        // call for a measured filter-CPU millisecond figure (integer intrinsic, hard-rule-1 safe;
+        // costs ~2 rdtsc per call, so it perturbs what it measures — read it as a floor).
+        float rayTel           = 0.f;
         // ── CONTACT DECIMATION (2026-07-10, Diag.cpp contact listener): keep only 1 NEW contact
         // point in N on NPC-involved dynamic pairs (bit-15 body present, NO fixed body — ground
         // contacts stay full so ragdolled NPCs never sink). The user's "1 collision out of 10"
@@ -463,6 +531,10 @@ namespace ObjectHold {
         float apiDwellSensorS  = 0.25f;   // interior sensors — insertion is already deliberate
         float apiDwellTailS    = 0.25f;   // tail chords
         float apiWeaponRMaxU   = 6.f;    // cap on the blade-segment radius (game u). The form
+        // Cap on the held-object segment radius (game u). Same reasoning as the blade cap:
+        // a wide flat item's second extent is its BREADTH, and an uncapped barrel reads
+        // "deep" from well off-axis. 4u matches the VRTE addon's own probe. 0 = uncapped.
+        float apiObjectRMaxU   = 4.f;
                                          // bound's second extent is the blade PLANE breadth on
                                          // broad weapons (axe = 23u -> a 46u barrel that read
                                          // "cervix -17u" from a hand merely holding her leg).
@@ -487,6 +559,9 @@ namespace ObjectHold {
         float npcRigRangeU     = 700.f;  // ~10 m (game unit ≈ 1.43 cm)
         float npcRigRangeHystU = 100.f;  // extra slack before a range destroy (anti-thrash)
         float npcRigMaxActors  = 2.f;    // the "two closest" budget
+        float npcGenCap        = 1.f;    // 2026-08-22 MALE GENITAL rig (tbl 7): Havok chord capsules
+                                         // TRACKING the CBPC/SMP-driven Gen01..06 chain (the tail
+                                         // pattern). Males only; rides the same probe as garments.
         float npcFollower      = 1.f;    // master switch for the always-on garment rigs: auto-probe
                                          // every driven NPC for tables 1-3 (tail/foxtail/wig; dress
                                          // RETIRED 2026-07-13); 0 destroys all auto-probed garment rigs
@@ -508,6 +583,37 @@ namespace ObjectHold {
                                          // proven tunneling floor — start in the 1.0-1.25u band, shrink after TRACK passes
         float npcFingerTipU    = 1.3f;   // chord extension past Finger12 toward the missing tip node, game units
         float npcFingerMassKg  = 0.15f;  // dynamic mass; inertia derived (solid capsule, COM moved to the capsule center)
+        // ★ GEN (tbl 7) DIAL KIT (2026-08-22, user: "pretty flimsy ... don't slip from the hand,
+        // make more tangible. It's not a fluffy thing"). All three levers were previously either
+        // hardcoded in TuneOf or GLOBAL (shared with hair/tails) — dialling them globally would
+        // have regressed every wig, the Carmella lesson a second time. Per-table now.
+        float npcGenMassKg     = 2.0f;   // was NpcGarmentMassKg 0.05 (HAIR weight) — the documented
+                                         // "can't hold a push and gets flung" signature.
+        float npcGenR          = 1.6f;   // capsule radius (was hardcoded 1.1) — fatter = harder to slip
+        float npcGenAlpha      = 0.85f;  // tracking stiffness for GEN only (global npcFingerAlpha 0.6);
+                                         // higher = the capsule holds its place on the bone against a
+                                         // hand instead of being shoved off it. Keep < 1 (Z65 lesson).
+        // ★ GEN BEND (2026-08-22, user spec): touch-driven erection. +1 SOSBend per genBendUpMs of
+        // hand contact on the GEN chords, cap genBendMax; HOLD genBendHoldSec after the last touch;
+        // then decay 1 level per genBendDecaySec — ONLY while sla_Arousal < genBendArousal (a high-
+        // arousal actor stays erect). Player: same machine off the HIGGS hands vs his own Gen04
+        // node, but SPS stays the owner — we only send while OUR level EXCEEDS the arousal-implied
+        // estimate (round(arousal*0.07)), re-asserted every 2 s; below it we go silent and SPS's
+        // next tick restores its state ("whichever got the highest SOSBend is in control").
+        float genBend          = 1.f;    // master switch (NPC side)
+        float genBendPlayer    = 1.f;    // player self-touch side
+        float genBendMax       = 7.f;    // user: "7 seems to be the right bend"
+        float genBendUpMs      = 1000.f; // contact ms per +1 level
+        float genBendHoldSec   = 60.f;
+        float genBendDecaySec  = 5.f;
+        float genBendArousal   = 60.f;   // sla_Arousal floor that blocks decay
+        float genBendTouchU    = 8.f;    // hand-to-chord distance that counts as touching
+        // ★ FRONT NECK (2026-08-22): the neck was a bare bhkCapsuleShape on every skeleton —
+        // no list, so slot 7 had no child support at all. The argonian vehicle's neck is now a
+        // 2-child list: child 0 = the neck proper (capNeck*), child 1 = "front neck", the
+        // front-of-throat capsule that becomes the CHOKING target. Females get it after the
+        // argonian dial is settled, so this ships with the beast vehicle only for now.
+        CapChild neckC[1] = { { 1.f, 0.f, 4.20f, 3.00f, 0.f, 4.20f, 6.20f, 1.60f } };
         float npcTailMassKg    = 2.0f;   // 2026-07-15: MEATY mass for TAIL capsules (tbl 1/2 fluffy/foxtail).
                                          // 0.05 (hair) is too light for a tail — it flies + can't hold a
                                          // push. Dial for feel/drag; recreate the rig (reload/reequip) to apply.
@@ -637,6 +743,29 @@ namespace ObjectHold {
         // distance across the limb at a fixed band is the entire measurement. Lydia zero-slider.
         float lmNeutLegChord = 11.382f;
         float lmNeutArmChord =  6.437f;
+        // ★ MALE NEUTRAL SHAPE (2026-08-21) — the lmNeutM* family. Same conventions as the
+        // female lmNeut* block above (bone-local, scale-free base-mesh units, live so a male
+        // re-capture never needs a rebuild), derived offline from the load order's WINNING
+        // HIMBO male body against the shipped PPB male skeleton (sculpt.nif):
+        // tools/ppb-scratch/derive_male_landmarks.py + derive_male_landmarks_results.md.
+        // The code defaults ARE the shipping defaults (knob rule) and stay INERT until
+        // maleGeometry 1 — the user eye-verifies before trusting them. 0 on a neutral =
+        // uncaptured -> that channel self-disables (doc 04 §10b). No breast fields ON
+        // PURPOSE: the male landmark table has no breast channel to neutralise.
+        // ★ 2026-08-22 PASS 2 — re-derived on the TRUE winning male mesh (Bodyslide Output,
+        // 11007 verts) at the pass-2 UVs, with the runtime's own math: ring driver =
+        // sqrt(localX^2+localY^2); limb driver = the 3-D chord. Bind frames re-checked against
+        // sculpt.nif this pass and IDENTICAL to the compiled constants (the sculpt moved
+        // capsules, not joints). ⚠ The previous values measured the `ashe - fire and blood`
+        // FOLLOWER body — legChord 11.924 / armChord 9.963 reproduce it to 3 d.p. On the real
+        // base body those neutrals gave a ratio of 0.86/0.88 instead of 1.00, i.e. every male
+        // thigh ~14% and arm ~12% too THIN, on the reference body itself.
+        float lmNeutMChestX =  0.000f, lmNeutMChestY = 12.832f, lmNeutMChestZ = 8.096f;   // dial: capsule -1%
+        float lmNeutMBellyX =  0.000f, lmNeutMBellyY = 12.450f, lmNeutMBellyZ = 5.149f;   // pass-3 belly
+        float lmNeutMWaistX =  0.000f, lmNeutMWaistY = 11.645f, lmNeutMWaistZ = 4.179f;
+        float lmNeutMButtX  =  2.931f, lmNeutMButtY  = -8.389f, lmNeutMButtZ  = 5.531f;
+        float lmNeutMLegChord = 12.100f;
+        float lmNeutMArmChord =  7.491f;
         // HEAD neutral (2026-07-24): Lydia's nose->chin distance from the disk-facegen pipeline.
         // The Faralda proof: her sculpt measures 0.914 of this while her race scale is 1.08 —
         // the sculpt visually CANCELS the race scale, so only the mesh ratio knows her true
@@ -667,6 +796,16 @@ namespace ObjectHold {
         float touchProbeHud    = 0.f;   // mapping session HUD: show slot.child + proposed name
                                         // in-view on touch (needs touchProbe on)
         float touchProbeHudU   = 1.0f;  // how close counts as a TOUCH for the HUD (units)
+        // ── SCENE BUMPER GATE (2026-08-23): during an OStim scene the layer-30 CharacterBumper
+        // (20u x 76u, the capsule whose JOB is shoving characters apart) grinds against the other
+        // actor for the whole scene — the NPC-vs-NPC noise report, and a constant shove fighting
+        // the animation. 1 = drop its collision while the actor carries OStim excitement, the
+        // reversible twin of what the engine does for FURNITURE (RemoveNonRagdollRigidBodies-
+        // FromWorld). Inert with no OStim installed (faction absent -> gate never arms).
+        float bumperSceneOff    = 1.f;
+        float bumperSceneExcite = 1.f;   // excitement rank at/above which collision drops. The
+                                         // faction rank DECAYS after a scene, so 1 covers the
+                                         // scene plus its settle; raise it to gate later/tighter.
         float planckLoosenOurs = 1.f;   // PivGuard v2: PLANCK pivot collapse 0 during PPB-skeleton
         float planckLoosenGlobal = -1.f; // LIVE A/B on PLANCK's GLOBAL loosenRagdollConstraintPivots.
                                          // -1 = leave PLANCK alone (default, PLANCK's own value).
@@ -778,6 +917,45 @@ namespace ObjectHold {
         // and independent of the slab / clock / relation filter, which is why none of those
         // fixed it. 0 = off (the keyframe closes the full world-space error anyway), 1 = legacy.
         float handBoxWarp      = 1.f;
+        // ── PLAYER GENITAL WAND (2026-08-18, doc 20 step 7 v1) ─────────────────────────────
+        // Two keyframed segment boxes riding the player's OWN SOS chain (GenBase→mid→tip),
+        // HandBox-family: the player is excluded from the per-actor seam (PPBHook.cpp:1282),
+        // so the wand lives beside the hand boxes, driven from the same snapshot cadence.
+        // TEST INSTRUMENT first: proves existence + push vs clutter / NPC flesh / own hands.
+        // playerWandPart 9 by DESIGN: not 2 (PerfSys cross-pelvis Ignore), not 8/14 (its
+        // self-thigh Ignore), not 2/3/5/6 (HandBox belt + HIGGS hand parts — and |9-h|>1 so
+        // the OWN HANDS still collide), not 29/30 (marker/rig signatures), adjacent to 8
+        // (player L thigh) so it never fights the leg it hangs beside.
+        float playerWand       = 0.f;    // master enable (hot)
+        float playerWandR      = 1.3f;   // lateral half-extent, GAME UNITS (~1.9 cm)
+        float playerWandPart   = 9.f;    // filter part bits (sanitized in the accessor)
+        float playerWandLog    = 0.f;    // ~1 Hz WAND line (pose, word, node resolution)
+        // ── PRIVATE COLLISION GROUP (2026-08-18) — the grab-through fix ─────────────────────
+        // ROOT CAUSE (verified in HIGGS source, physics.cpp:677-683): while HIGGS holds a body it
+        // sets CONTACT_IS_DISABLED on every contact between that held body and any body that is
+        // (not a HIGGS body) AND (in the PLAYER's collision group). Our boxes inherit the player
+        // group from HIGGS's hand word and fail HIGGS's pointer-identity test, so our contacts
+        // with a grabbed limb are killed AFTER the filter already voted Collide. HIGGS's own palm
+        // is spared only because it IS handBody by pointer — and there is NO public API to be
+        // recognized (all 41 IHiggsInterface001 methods checked), so we break the OTHER conjunct:
+        // move our bodies out of the player group.
+        //   0 = off (legacy: inherit the player group — the bug is present)
+        //   1 = always private
+        //   2 = private ONLY while HIGGS is holding  ← DEFAULT, confines any mistake to the
+        //       window the bug already lives in, and keeps native adjacency the rest of the time
+        // ⚠ The player group is not free real estate: it buys the same-group ragdoll ADJACENCY
+        // rule (part±1 -> skip), which is how HandBox part 4 skips HIGGS's hands (3/5) and the
+        // wand part 9 skips the player L-thigh (8). Under a private group those become plain
+        // layer-56 matrix COLLIDES, so FilterDecision carries explicit belts that reproduce every
+        // exclusion adjacency was doing for free. Do not raise this knob without those belts.
+        float handBoxPrivGroup   = 2.f;
+        // The private group id. High and fixed: the engine allocates groups upward from 10 and
+        // observed live values are ~0x0009-0x024B, so a clash needs ~65k allocations in one
+        // session. Knob-exposed anyway so a clash is fixable without a build (PPB.log prints it).
+        float handBoxPrivGroupId = 65520.f;   // 0xFFF0
+        // PLANCK-hit fix. 0 = off; 1 = always-on; 2 = AUTO (off at game start, on after the
+        // first save/game load) — the user's safe-boot design. Default 2.
+        float handBoxNullUserData = 2.f;
 
         // sceneSuspendHands (2026-08-03) — destroy the player's hand colliders while an
         // OStim/SexLab scene is running. During a scene OStimVR keeps your hands CONTROLLER-
@@ -886,6 +1064,21 @@ namespace ObjectHold {
         // distance-from-its-node against Lydia's. Radius and radial position scale together;
         // Z is never touched (height belongs to ReScale). Gain 1.0 = capsule follows the flesh
         // exactly; these exist only so a channel can be trimmed by eye without a rebuild.
+        // ★ MALE region gains (2026-08-22, the Carmella near-miss): lmGain* is GLOBAL and
+        // dialling the male through it regresses every female. The male response gets its
+        // own family, sex-routed in UvRegionRatio. Waist/belly defaults come from the first
+        // male OBody dial (Imperial FF00172C, big preset): user "spine0 20% less, spine1 10%
+        // less" at measured flesh ratios 1.352/1.218 -> gain 0.23/0.44.
+        // ★ 2026-08-22 FINAL MALE DIAL (Imperial FF0028D8, scale 1.0000, two-preset session):
+        // waist/belly/thigh converged at ~0.78 dialled independently — one systematic projection
+        // factor (front-point growth overstates ring growth ~25%). Butt/arm never eye-called;
+        // shrink direction unverified (male presets are scarce) — doc 23 has the open list.
+        float lmGainMChest = 1.f;
+        float lmGainMBelly = 0.80f;
+        float lmGainMWaist = 0.76f;
+        float lmGainMButt  = 1.f;
+        float lmGainMThigh = 0.79f;
+        float lmGainMArm   = 1.f;
         float lmGainChest = 1.f;
         float lmGainBelly = 1.f;
         float lmGainWaist = 1.f;
@@ -972,6 +1165,18 @@ namespace ObjectHold {
                                          // direction-proof near-silent choice — kills the body-fall thud
                                          // on feet-drag / NPC-vs-NPC / hand-touch now that ragdolls are
                                          // always on. NOTE death-fall thuds go quiet too (same bodies).
+                                         // ★ 2026-08-23 TRUE-SILENCE MODES — 1-4 only pick a QUIETER
+                                         // ENTRY in another material's impact set (grass = a rustle),
+                                         // and only when the other side is skin; two PPB capsules
+                                         // (NPC-vs-NPC) is both-null and untested. 5 and 6 remove the
+                                         // sound instead of softening it:
+                                         //   5 = unknown material hash — in no impact set, so neither
+                                         //       direction resolves. No null pointers; safer.
+                                         //   6 = null the shape->wrapper pointer — the engine cannot
+                                         //       reach a material at all. Absolute, but assumes the
+                                         //       engine null-checks that read; a CTD on first contact
+                                         //       IS the verdict, fall back to 5.
+                                         // A/B these in VR; the winner becomes the shipped default.
         // ── 2026-07-18 MORPH-DRIVEN TRANSLATION (Report 21): displacement capsules MOVE with the
         // region morph instead of inflating. u per morph unit, zero-scale bone-local (es-scaled).
         float bodyShiftBreastsUpU  = 1.25f;  // breasts: +2u UP at +1.62 morph (user-dialed 07-17)
@@ -982,8 +1187,10 @@ namespace ObjectHold {
         float npcGarmentMat    = 3.f;    // 2026-07-16 garment (hair/tail/dress) capsule touch-sound material:
                                          // 0 skin (the old body-fall THUD), 1 cloth (soft swish IF the engine
                                          // keys our set), 2 snow (direction-proof whump), 3 grass (direction-
-                                         // proof rustle, DEFAULT), 4 none. Applied at rig CREATE — change the
-                                         // knob then flip npcFollower 0 -> 1 to rebuild rigs with the new sound.
+                                         // proof rustle, DEFAULT), 4 none, 5 unknown-hash / 6 null-userData
+                                         // (the 2026-08-23 true-silence pair — see npcBodyMat above).
+                                         // Applied at rig CREATE — change the knob then flip
+                                         // npcFollower 0 -> 1 to rebuild rigs with the new sound.
         float npcSilentVelMS   = 0.f;    // 2026-07-15 silent-contact drive-velocity cap (m/s) while a hand/
                                          // weapon is near a garment chord. DEFAULT OFF (0) — the 0.15 trial
                                          // fed servo lag into the FSMP push gate and dragged/whipped the SMP
@@ -1080,6 +1287,54 @@ namespace ObjectHold {
         float handBoxIdxTiltAxis = 2.f;  // 0=X 1=Y 2=Z (down-the-bone, default)
         float handBoxDumpNow   = 0.f;    // edge-triggered (0 -> non-0): one line per box per hand (off/halfU/tilt/rider,
                                          // GAME UNITS) to PPB.log — the readback for baking the dialed values into defaults
+        // ══ ORIFICE DRIVE (2026-08-19, Orifice.cpp) ═══════════════════════════════════════════
+        // Native orifice opening on ANY contact (finger / held object / weapon / wand), outside
+        // scenes. All read LIVE per frame -> PK_NOSNAP (a dial must never re-dress capsules).
+        // The MASTER ships 0: nothing in this block can move a bone until the user opts in.
+        float orificeEnable    = 0.f;   // ★ master. 0 = every ring restored + the module inert
+        float orificeVaginal   = 1.f;   // per-ring, under the master (female skeletons only —
+        float orificeAnal      = 1.f;   //   the male sculpt has the Anus2 bones and no vaginal
+        float orificeOral      = 1.f;   //   ones, so that is handled by EXISTENCE, not a gate)
+        // The ellipse test's slack. A probe is INSIDE when distL + distR <= sep * (1 + tol),
+        // i.e. inside an ellipsoid whose foci are the two sensor AXES (clamped segments, so the
+        // sum grows off the ENDS exactly as it grows off-axis — the slack is isotropic).
+        // SOLVE IT, do not guess it. Measured level-0 pair capComC22/C23: X = +/-2.0 -> sep 4.0,
+        // segments span Y +1.0 -> -2.0, radius 0.3. A point offset d from the midline sums
+        // 2*sqrt((sep/2)^2 + d^2), so it passes while d <= (sep/2)*sqrt((1+tol)^2 - 1):
+        //     tol 0.35 -> d <= 1.81u   ← what shipped first, and it is WRONG: 1.8u of slack in
+        //                               EVERY direction lets a fingertip resting on the labia,
+        //                               well outside her, drive the ring open. That is precisely
+        //                               the outside graze the gate exists to reject.
+        //     tol 0.10 -> d <= 0.92u   ← shipped. Under a unit of slack around a 4.0 x 3.0u
+        //                               cavity: shallow entries still pass, an outside graze
+        //                               does not.
+        // Raise it if shallow entries are missed; lower it if an outside graze ever reads as
+        // penetration. Note it is scale-free — sep is measured live, so ReScale/ReShape/body
+        // morphs move the numbers together.
+        float orificeGateTol   = 0.10f;
+        // Per-frame easing rate of the gape, 1/s. The SENSE only refreshes at apiHz (~4 Hz by
+        // design); this is what stops that reading as steps. ~6 = a 1/6 s time constant.
+        float orificeEaseHz    = 6.f;
+        // How much the INTRUDER RADIUS contributes against pure depth. 0 = depth only (exactly
+        // what PPA does — it has no radius); 1 = radius only; 0.5 = even blend, which is the
+        // point of the feature: a fingertip and a 3u plug at the same depth must differ.
+        float orificeRadiusGain = 0.5f;
+        float orificeRefRadU   = 3.0f;  // the radius that counts as "fully stretched" (game units)
+        float orificeFingerRadU = 0.8f; // hand boxes carry no pad — this is the fingertip radius
+        // Gape range per ring, game units, from PPA's own toml (Scale -> ScaleMax) so both mods
+        // deform to the same amounts. openness = min + (max-min) * f(depth, radius).
+        float orificeVagMinU   = 1.5f,  orificeVagMaxU  = 3.0f;
+        float orificeAnalMinU  = 2.0f,  orificeAnalMaxU = 4.5f;
+        // Probe cull before the 10 live capsule reads, measured from her PELVIS (the COM body),
+        // NOT from actor->GetPosition() — the ref origin is at the FEET, ~67-69u below the sensor
+        // ladder, so an origin-anchored radius under her HEIGHT rejects a probe that is literally
+        // inside her (that is exactly how the first build shipped, and it could never open).
+        float orificeRangeU    = 60.f;
+        // Foreign-write arbitration: how long the ring must sit COMPLETELY STILL before we take
+        // it back from another writer (PPA during a scene). Short enough to feel immediate after
+        // a scene, long enough that a mid-ramp pause cannot be mistaken for release.
+        float orificeForeignHoldS = 1.5f;
+        float orificeLog       = 0.f;   // level-change edges + a 1 Hz open line
         // ── TORSO LIST CHILDREN (2026-07-08 wave-2 bake). Child 0 = MAIN = the capSpine0*/capSpine1*/
         // capSpine2*/capCom* slot knobs above; children 1..N = capSpine0C1..C10 / capSpine1C1..C10 /
         // capSpine2C1..C10 / capComC1..C20. Baked seeds are TINY (r 0.2, 1u) rods buried on the main's
@@ -1109,7 +1364,24 @@ namespace ObjectHold {
         // 2026-07-29: spine1 10->12 (C9/C10 back), spine2 16->20 (C17/C18 shoulder blade),
         // comC 20->32 (C21..C31 = the 11 pelvis sensors). All four skeletons carry the same
         // counts so one knob index means one anatomy everywhere.
-        CapChild spine0C[10]{}, spine1C[12]{}, spine2C[20]{}, headC[24]{}, comC[34]{};
+        // 2026-08-22 MALE SCULPT headroom (sculpt.nif only — per-race-by-existence keeps every
+        // female skeleton at its current child count, so these extra indices are unreachable there):
+        //   spine0 12 (7 -> 13 children: 5 buried spares + the WaistLine landmark probe at C12)
+        //   spine1 13 (8 -> 14 children: 5 buried spares + the Belly probe at C13)
+        //   spine2 24 (19 -> 25 children: 5 buried spares + the Chest probe at C24)
+        //   headC  34 (25 -> 35 children: 10 buried spares, no probe)
+        //   comC   37 (27 -> 38 children: 10 spares + the ButtCheekR probe at C37)
+        // ⚠⚠ THE FOUR TORSO PROBES ABOVE (spine0 C12, spine1 C13, spine2 C24, com C37) ARE
+        //    REFERENCE RULERS — **STRIP BEFORE SHIP**, knobs AND the sculpt.nif tail children.
+        //    They are array-backed so they carry no per-index field to mark; the authoritative
+        //    strip list (all 6 knobs + all 8 nif children) lives in
+        //    Report/Precision Physic Bodies Module/23_Male_Body_Build_And_Sculpt.md
+        //    §"LANDMARK PROBES". Enable 0 does NOT neutralise them — the geometry is baked in
+        //    sculpt.nif, so a knob-only strip still ships live capsules proud of the skin.
+        // ⚠ FIVE coupled edits per slot (04_Pitfall_Ledger): this size, kArrays' count in
+        // Tuning.cpp, CapFixChildKnobs(slot), CapFixChildSlot's ChildPtr bound, and
+        // CapFix.cpp's kMaxListChildren.
+        CapChild spine0C[12]{}, spine1C[13]{}, spine2C[24]{}, headC[34]{}, comC[37]{};
     };
     extern GrabTune g_tune;           // the live tune instance — overwritten by the hot-reload
 
@@ -1165,6 +1437,7 @@ namespace ObjectHold {
     float    PerfLodHystPct();
     float    PerfLodSettleFrames();
     float    PerfLodStageBits();
+    int      RayTelMode();              // rayTel knob: 0 off / 1 counters / 2 counters + __rdtsc timing
     // ── NPC FINGER TEST v2 accessors (NpcFingerTest.cpp; all read live per frame) ──
     bool     NpcFingerEnabled();
     int      NpcFingerCount();          // 1..4 (default 1 = the mandatory single-capsule Risk-1 spike)
@@ -1185,7 +1458,8 @@ namespace ObjectHold {
     // hook (installed at kDataLoaded) has ever polled the file — e.g. FsmpLink's SMP
     // handshake at kPostPostLoad. Mutates no state; does not disturb the poller's mtime.
     float    EarlyReadKnob(const char* key, float fallback);
-    bool     NpcFollowerEnabled();      // master switch for the always-on garment rigs (> 0.5)
+    bool     NpcFollowerEnabled();
+    bool     NpcGenCapEnabled();   // tbl-7 male genital rig master switch      // master switch for the always-on garment rigs (> 0.5)
     float    HiggsPokeFix();            // 1 = force HIGGS's finger-close anim off so poking works
     bool     ApiTouchEnabled();         // touch-API master (apiTouch)
     float    ApiHz();                   // touch-API tick rate (clamped 1..90)
@@ -1207,6 +1481,7 @@ namespace ObjectHold {
     float    ApiDwellTailS();           // dwell filter: tail pseudo-slot
     bool     ApiRawEventsEnabled();     // verbose PPB_TouchRaw* stream (ships off)
     float    ApiWeaponRMaxU();          // blade-radius cap (6u; 0 = uncapped)
+    float    ApiObjectRMaxU();         // held-object segment radius cap (4u; 0 = uncapped)
     bool     ApiSubRegionInEvent();     // append the sub-region as a 5th packed field (off)
     bool     ApiSuppressHeldHand();
     bool     ApiSuppressHeldHandStrict();   // knob=2: full mute, no index exception     // mute a hand that is holding something
@@ -1218,6 +1493,17 @@ namespace ObjectHold {
     float    NpcFingerMassKg();         // floored at 0.01 kg (a 0-mass dynamic body is a solver hazard)
     float    NpcGarmentMassKg();        // light garment-capsule mass, floored at 0.01 kg
     float    NpcTailMassKg();           // meaty tail-capsule mass (tbl 1/2), floored at 0.01 kg
+    float    NpcGenMassKg();            // GEN (tbl 7) capsule mass
+    float    NpcGenR();                 // GEN capsule radius
+    float    NpcGenAlpha();             // GEN tracking stiffness (clamped like NpcFingerAlpha)
+    bool     GenBendEnabled();
+    bool     GenBendPlayerEnabled();
+    int      GenBendMax();
+    float    GenBendUpMs();
+    float    GenBendHoldSec();
+    float    GenBendDecaySec();
+    float    GenBendArousal();
+    float    GenBendTouchU();
     float    NpcSilentVelMS();          // silent-contact drive-velocity cap (m/s); <= 0.01 = clamp OFF
     float    NpcGarmentMat();           // garment capsule sound material selector (see npcGarmentMat)
     float    NpcBodyMat();              // BODY capsule sound material selector (see npcBodyMat)
@@ -1245,7 +1531,12 @@ namespace ObjectHold {
     void     LmNeutralPos(int idx, float out[3]);
     bool     LmReShapeEnabled();          // THE shape master switch (replaces bodyScale/meshShape)
     float    LmRegionGain(int region);    // per-ring trim; 1.0 = follow the flesh exactly
+    float    LmRegionGainM(int region);   // MALE family (sex-routed; the Carmella lesson)
     float    LmNeutLimbChord(int region); // leg/arm neutral chord (0 = not a limb region)
+    // MALE neutrals (2026-08-21, lmNeutM*): same index/region conventions as the female pair
+    // above. Breast indices (0..2) intentionally return 0 — no male breast channel exists.
+    void     LmNeutralPosM(int idx, float out[3]);
+    float    LmNeutLimbChordM(int region);
     float    LmNeutNoseChin();            // Lydia nose->chin (head channel neutral)
     // ReTouch ghost/mouth accessors
     bool     GhostZonesEnabled();
@@ -1276,11 +1567,35 @@ namespace ObjectHold {
     bool     HandBoxStepDtOn();   // invDt from real physics dt (handBoxStepDt)
     float    HandBoxTrack();      // per-frame error-closure fraction (handBoxTrack)
     bool     HandBoxWarpOn();     // player-space locomotion warp (handBoxWarp)
+    bool     PlayerWandOn();      // player genital wand master enable
+    float    PlayerWandR();       // wand lateral half-extent (game units, floored 0.3)
+    unsigned PlayerWandPart();    // sanitized: forbidden parts remap to 9
+    bool     PlayerWandLogOn();
+    int      HandBoxPrivGroupMode();   // 0 off / 1 always / 2 only-while-holding
+    unsigned HandBoxPrivGroupId();     // sanitized into 16 bits, never 0
+    // maleGeometry is TRI-STATE (semantics CORRECTED 2026-08-18):
+    //   0 = refuse all geometry writers on males
+    //   1 = FULL — capsule knobs + ReScale + ReShape
+    //   2 = SCULPT (default) — capsule knobs + **ReScale ON**, only ReShape suppressed.
+    // ⚠ ReScale is NOT female-calibrated: it reads the actor's own XP32 nodes/Havok pivots and
+    // kBaseArc 48.045 measures identically on the male skeleton. Disabling it for males (the
+    // original mode-2 behaviour) is what left baked males' joints off their XP32 nodes. ONLY
+    // ReShape is female-specific (kUvLandmarks = the CBBE female UV atlas).
+    int      MaleGeometryMode();
+    // handBoxNullUserData (2026-08-18) — the PLANCK-hit / IWP-stab fix. Nulls the hkpRigidBody
+    // userData back-pointer on our player boxes + wand so PLANCK early-returns before turning a
+    // finger touch on a HELD NPC into a real weapon hit (which IWP then dramatises into a stab +
+    // ragdoll). SELF-VERIFYING: only writes when the field still holds OUR OWN wrapper pointer, so
+    // a wrong offset can never corrupt anything. Default 0 (OFF at game start, per the user) —
+    // hot, so set 1 live once in-game and it persists across reloads.
+    int      HandBoxNullUserDataMode();   // 0 off / 1 always-on / 2 auto (off at boot, on after a load)
     int      SceneSuspendHandsMode(); // 0 off / 1 whole scene / 2 third-person only
     float    SceneFirstDistU();       // mode-2 HMD-to-head threshold (game units)
     bool     ApiWeaponDrawnOnly();    // weapon probe only while drawn (apiWeaponDrawnOnly)
     bool     WeaponSheathedColOff();  // disable HIGGS weapon collision while sheathed
     bool     PivGuardCombatLooseOn(); // allow PLANCK loosen during combat
+    bool     BumperSceneOff();    // scene bumper gate master (bumperSceneOff)
+    float    BumperSceneExcite();// excitement rank threshold (bumperSceneExcite)
     bool     PlanckLoosenOursOn();// PivGuard v2 master (planckLoosenOurs)
     float    PlanckLoosenGlobal();      // -1 leave alone / 0 force off / 1 force on
     bool     TouchProbeHudOn();  // mapping HUD (touchProbeHud)
@@ -1310,6 +1625,22 @@ namespace ObjectHold {
     float    MouthFingerBox();
     bool     TouchProbeEnabled();
     float    TouchProbeRangeU();
+    // ── ORIFICE DRIVE accessors (Orifice.cpp; read LIVE per frame). Every one clamps before
+    //    it returns — a NaN or a negative in the tuning file must never reach the bone write.
+    bool     OrificeEnabled();          // master
+    bool     OrificeVaginal();
+    bool     OrificeAnal();
+    bool     OrificeOral();
+    float    OrificeGateTol();          // ellipse-test slack, clamped 0..2
+    float    OrificeEaseHz();           // per-frame ease rate, clamped 0.1..60
+    float    OrificeRadiusGain();       // depth-vs-radius blend, clamped 0..1
+    float    OrificeRefRadU();          // "fully stretched" intruder radius, clamped 0.1..20
+    float    OrificeFingerRadU();       // fingertip radius for pad-less hand boxes, clamped 0..10
+    float    OrificeOpenMinU(int kind); // 0 = vaginal, 1 = anal — the ring's Scale
+    float    OrificeOpenMaxU(int kind); // ...and its ScaleMax (never below Min)
+    float    OrificeRangeU();           // probe->actor cull, clamped 1..400
+    float    OrificeForeignHoldS();     // stillness before ownership is reclaimed, clamped 0.1..30
+    bool     OrificeLogEnabled();
     float    LmClampLo();
     float    LmClampHi();
     // breast model: fills c[13] = AYc AYm BYc BYm AZc AZm BZc BZm Rc Rm AX latK latX (+latY0)

@@ -8,6 +8,8 @@
 #include "HandBox.h"
 #include "FsmpLink.h"
 #include "PpbApi.h"       // HandBox::FilterDecision/OnFrame/RegisterHiggs — same splice points
+#include "Orifice.h"      // Orifice::Sweep — the gate-independent teardown (see the lambda below)
+#include "RayTel.h"       // RayTel::OnFrame — raycast/query telemetry arm + 1 Hz report (knob-gated, ships OFF)
 
 #include <atomic>
 #include <iterator>
@@ -260,9 +262,15 @@ namespace PerfSys {
             PerfSys::OnFrame();
             NpcFinger::OnFrame();   // finger-rig frame counter + stale/retarget/knob-off destroys
             FsmpLink::OnFrame();    // SMP-link deferred logging (stage 1)
+            Orifice::Sweep();       // gate-independent teardown: restore any bone ring whose actor
+                                    // stopped reaching the drive seam (dismembered, left the driven
+                                    // set). Self-throttled; instant no-op while nothing is held.
             PpbApi::OnFrame();      // touch API tick: scan, contact table, events, snapshot
             HandBox::OnFrame();     // frame counter + deferred telemetry (2026-07-10 lag fix: the
                                     // pose snapshot moved into HandBox's first PrePhysicsStep fire)
+            RayTel::OnFrame();      // 2026-08-22 raycast/query telemetry: arm/disarm on the `rayTel`
+                                    // knob edge + the ~1 Hz report line. Knob 0 (shipping default) =
+                                    // one float read and return; the vtable slots hold vanilla.
         });
         HandBox::RegisterHiggs();   // PrePhysicsStep callback (vfunc 21) — same handshake site, idempotent
         g_higgsRegistered = true;
@@ -466,5 +474,22 @@ namespace PerfSys {
     bool HiggsRegistered()
     {
         return g_higgsRegistered;
+    }
+
+    // 2026-08-22 (RayTel): tier split of the actors driven in the last 3 frames.
+    void TierCensus(int& a_full, int& a_reduced, int& a_core)
+    {
+        a_full = a_reduced = a_core = 0;
+        const std::uint64_t frame = g_frame.load(std::memory_order_relaxed);
+        std::lock_guard<std::mutex> g(g_mx);
+        for (auto& [id, st] : g_state) {
+            (void)id;
+            if (frame - st.lastSeenFrame > 3) continue;
+            switch (st.tier) {
+                case Tier::Full:    ++a_full;    break;
+                case Tier::Reduced: ++a_reduced; break;
+                default:            ++a_core;    break;
+            }
+        }
     }
 }

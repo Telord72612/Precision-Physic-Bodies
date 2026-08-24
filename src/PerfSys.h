@@ -60,4 +60,11 @@ namespace PerfSys {
     // TRUE once the HIGGS comparison + frame callbacks are live — NpcFingerTest's
     // creation gate (finger bodies must never exist without the filter callback).
     bool HiggsRegistered();
+
+    // 2026-08-22 (RayTel): how many currently-driven actors sit at each child-LOD
+    // tier, so the raycast telemetry line can show the tier split next to the
+    // measured child-walk counts. Main thread only (takes the state mutex).
+    // All three come back 0 when nothing is driven; note that lodEnable 0 leaves
+    // every actor at FULL, which is what the shipped tuning file does today.
+    void TierCensus(int& a_full, int& a_reduced, int& a_core);
 }

@@ -8,12 +8,14 @@
 #include "PpbApi.h"     // public touch API: plugin-message listener + load teardown   // PPB_Native.SetStatuePose / SetHeelFix / ToggleHeelFix
 #include "Interop.h"   // Interop::AcquireHiggs — the PivFix grab gate's HIGGS handshake
 #include "PerfSys.h"
+#include "RayTel.h"    // RayTel — kPreLoadGame counter reset (the vtable patch itself lives in the EXE image)
 #include "FsmpLink.h"   // SMP engine plugin-interface handshake (stage 1, 2026-07-11)   // PerfSys::RegisterHiggs / ClearOnLoad — the collision perf system
 #include "Probe.h"     // Probe::DumpActorState — the `probe` console command
 #include "Diag.h"      // Diag — the read-only perf/contact/census instrument (`perf` + `capdis`)
 #include "NpcFingerTest.h"  // NpcFinger — the `nfing` console command + kPreLoadGame teardown
 #include "HandBox.h"   // HandBox — kPreLoadGame teardown (registration rides PerfSys::RegisterHiggs)
 #include "DismemberGuard.h"  // DF/NGD ↔ PLANCK guard: death-grace ignore + head-clone exclusion (2026-07-26)
+#include "Orifice.h"    // Orifice::ClearOnLoad — restore every held bone ring before a load
 
 #include <Windows.h>  // GetModuleHandleA — sibling-mod presence checks for the trace
 #include <cstdio>     // snprintf — the environment fingerprint line
@@ -27,7 +29,7 @@
 namespace logger = SKSE::log;
 
 SKSEPluginInfo(
-    .Version              = { 1, 4, 2 },
+    .Version              = { 2, 1, 0 },
     .Name                 = "PPB",
     .Author               = "mad72",
     .StructCompatibility  = SKSE::StructCompatibility::Independent,
@@ -504,6 +506,12 @@ public:
                         || _stricmp(n, "AnimationEnd") == 0;
         if (!start && !end) return RE::BSEventNotifyControl::kContinue;
         HandBox::SetSceneSuspended(start);
+        // ★ 2026-08-23: the PLAYER is hard-excluded from the driven path (ApplyToPoseTrack returns
+        // on him — VRIK owns his arms), so his bodies would never see the scene gate. Drive them
+        // from the edge itself. His hand boxes and the genital wand are handled by their own
+        // lifecycles off the same flag; this covers his RAGDOLL + bumper.
+        if (auto* pc = RE::PlayerCharacter::GetSingleton())
+            GrabDiag::SceneCollisionGate(pc, pc->GetFormID());
         logger::info("SCENE: '{}' -> hand colliders {} (sceneSuspendHands {})", n,
                      start ? "SUSPENDED" : "restored",
                      ObjectHold::SceneSuspendHandsMode() == 0 ? "0 - tracked but NOT acted on"
@@ -569,12 +577,25 @@ static void ApplySkeletonIni()
     if (!dh) { logger::info("SKELINI: no TESDataHandler — skipped."); return; }
     auto& races = dh->GetFormArray<RE::TESRace>();
 
-    auto setSkel = [](RE::TESRace* rc, const std::string& path) -> const char* {
+    // ── MALE SUPPORT (2026-08-18) ────────────────────────────────────────────────────────
+    // The skeleton is a per-SEX race field, so assigning a male skeleton is the same write on
+    // the other index. Sex is inferred from the KEY used, which keeps every existing ini line
+    // byte-for-byte backward compatible:
+    //     race / femaleModelContains / npc / npcName  -> kFemale   (unchanged)
+    //     maleRace / maleModelContains                -> kMale     (new)
+    // ⚠ Assigning a male skeleton does NOT switch on male GEOMETRY. The geometry writers stay
+    // refused by the `maleGeometry` gate (CapFix ActorCarriesBake) until a male neutral and male
+    // UV landmarks exist — otherwise female-dialled knobs and the CBBE female UV atlas would be
+    // written onto male bodies (doc 21 §5, the 2026-07-15 regression).
+    auto setSkelSex = [](RE::TESRace* rc, const std::string& path, RE::SEXES::SEX sex) -> const char* {
         if (!rc) return nullptr;
-        auto& m = rc->skeletonModels[RE::SEXES::kFemale];
+        auto& m = rc->skeletonModels[sex];
         static std::string before; before = m.GetModel() ? m.GetModel() : "";
         m.SetModel(path.c_str());
         return before.c_str();
+    };
+    auto setSkel = [&setSkelSex](RE::TESRace* rc, const std::string& path) -> const char* {
+        return setSkelSex(rc, path, RE::SEXES::kFemale);
     };
     auto lower = [](std::string s) {
         for (auto& c : s) c = static_cast<char>(::tolower(static_cast<unsigned char>(c)));
@@ -653,6 +674,25 @@ static void ApplySkeletonIni()
                 ++hit;
             }
             logger::info("SKELINI:   femaleModelContains '{}' -> {} race(s) repointed", val, hit);
+            nApplied += hit;
+        } else if (key == "maleRace") {
+            auto* rc = RE::TESForm::LookupByEditorID<RE::TESRace>(val);
+            if (!rc) { logger::info("SKELINI:   maleRace '{}' NOT FOUND — skipped", val); ++nBad; continue; }
+            const char* was = setSkelSex(rc, section, RE::SEXES::kMale);
+            logger::info("SKELINI:   maleRace {} : '{}' -> section (MALE slot)", val, was ? was : "?");
+            ++nApplied;
+        } else if (key == "maleModelContains") {
+            const std::string needle = lower(val);
+            int hit = 0;
+            for (auto* rc : races) {
+                if (!rc) continue;
+                const char* cur = rc->skeletonModels[RE::SEXES::kMale].GetModel();
+                if (!cur || !*cur) continue;
+                if (lower(cur).find(needle) == std::string::npos) continue;
+                setSkelSex(rc, section, RE::SEXES::kMale);
+                ++hit;
+            }
+            logger::info("SKELINI:   maleModelContains '{}' -> {} race(s) repointed (MALE slot)", val, hit);
             nApplied += hit;
         } else if (key == "npc") {
             // A skeleton is a RACE-level field — an NPC cannot carry her own without an exclusive
@@ -1001,6 +1041,7 @@ static void OnSKSEMessage(SKSE::MessagingInterface::Message* msg)
         // would silently restore the finger-close anim mid-session and make poking stop working
         // after a load. Idempotent — no-ops (and stays silent) when the value is already ours.
         Interop::ApplyHiggsPokeFix("kPostLoadGame");
+        HandBox::MarkSessionReloaded();   // AUTO userData-null arms after the first load (safe boot)
         break;
 
     case SKSE::MessagingInterface::kNewGame:
@@ -1025,8 +1066,12 @@ static void OnSKSEMessage(SKSE::MessagingInterface::Message* msg)
         ArmIK::ClearPoseConformCache(); // pose-conform node/ragdoll map (root + ragdoll pointers dangle across a load)
         Diag::ClearOnLoad();            // drop the cached Havok world (rebuilt across a load) + any pending spike
         PerfSys::ClearOnLoad();         // wipe per-actor LOD state (fresh bodies reload from the NIF fully enabled)
+        RayTel::ClearOnLoad();          // zero the raycast-telemetry window (rates across a load are meaningless)
         NpcFinger::ClearOnLoad();       // remove the finger-test capsules while the world is still alive, drop the pin
         PpbApi::ClearOnLoad();          // drop live touch contacts (no End events across a load)
+        Orifice::ClearOnLoad();         // ★ restore every armed bone ring FIRST (the 3D is still
+                                        //   alive at PRE-load — this is the last moment a restore
+                                        //   can land), then drop the FormID-keyed rest captures
         HandBox::ClearOnLoad();         // remove the hand boxes + drop slab baselines (HIGGS rebuilds its bodies)
         GrabDiag::CapFixClearOnLoad();  // FormID-keyed latches (measured effScale + identities) must not cross saves
         DismemberGuard::ClearOnLoad();  // actor handles + PLANCK-ignore bookkeeping don't survive a load
@@ -1059,7 +1104,7 @@ SKSEPluginLoad(const SKSE::LoadInterface* skse)
     SKSE::Init(skse);
 
     logger::info("==================================================");
-    logger::info("PPB v1.4.2 (Precision Physic Bodies) loaded.");
+    logger::info("PPB v2.1.0 (Precision Physic Bodies) loaded.");
     if (auto dir = SKSE::log::log_directory()) {
         logger::info("Log file: {}\\PPB.log", dir->string());
     }

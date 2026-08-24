@@ -39,16 +39,16 @@
 # the human base) AND keep ReShape working for every other woman. capMirrorL mirrors calf/foot to
 # her left leg. Her HORNS are baked into skeleton_female_draenei.nif head 15..22 (separate).
 # childIdx: main=0, C1=1 … . Needs the 2026-07-20 npcCap spaced-plugin parser fix (DLL 2e4ae535).
-npcCap 000800:Yvanni Follower.esp calf 0  0.5 -6.0 -2.4  0.92 -3.75 14.4  2.618
-npcCap 000800:Yvanni Follower.esp calf 1  0.6 -1.0 -9.9  0.775 -4.895 -2.745  3.838
-npcCap 000800:Yvanni Follower.esp calf 2  0.95 -4.31 13.59  0.525 -2.705 15.64  3.133
-npcCap 000800:Yvanni Follower.esp calf 3  0.2 -3.32 14.58  0.15 1.57 23.57  2.328
-npcCap 000800:Yvanni Follower.esp calf 4  0.0 -0.8 -11.5  0.0 -2.8 -4.5  1.313
-npcCap 000800:Yvanni Follower.esp foot 0  0.87 2.26 6.85  0.87 4.06 2.37  1.5
-npcCap 000800:Yvanni Follower.esp foot 1  1.82 1.76 9.85  1.82 2.76 -0.63  1.2
-npcCap 000800:Yvanni Follower.esp foot 2  -1.08 1.76 8.35  0.92 2.76 -0.63  0.8
-npcCap 000800:Yvanni Follower.esp spine2 11  2.853 7.587 11.565  5.404 11.788 10.565  4.6
-npcCap 000800:Yvanni Follower.esp spine2 12  -2.853 7.587 11.565  -5.404 11.788 10.565  4.6
+# [not shipped - personal dial, kept as a format example] npcCap 000800:Yvanni Follower.esp calf 0  0.5 -6.0 -2.4  0.92 -3.75 14.4  2.618
+# [not shipped - personal dial, kept as a format example] npcCap 000800:Yvanni Follower.esp calf 1  0.6 -1.0 -9.9  0.775 -4.895 -2.745  3.838
+# [not shipped - personal dial, kept as a format example] npcCap 000800:Yvanni Follower.esp calf 2  0.95 -4.31 13.59  0.525 -2.705 15.64  3.133
+# [not shipped - personal dial, kept as a format example] npcCap 000800:Yvanni Follower.esp calf 3  0.2 -3.32 14.58  0.15 1.57 23.57  2.328
+# [not shipped - personal dial, kept as a format example] npcCap 000800:Yvanni Follower.esp calf 4  0.0 -0.8 -11.5  0.0 -2.8 -4.5  1.313
+# [not shipped - personal dial, kept as a format example] npcCap 000800:Yvanni Follower.esp foot 0  0.87 2.26 6.85  0.87 4.06 2.37  1.5
+# [not shipped - personal dial, kept as a format example] npcCap 000800:Yvanni Follower.esp foot 1  1.82 1.76 9.85  1.82 2.76 -0.63  1.2
+# [not shipped - personal dial, kept as a format example] npcCap 000800:Yvanni Follower.esp foot 2  -1.08 1.76 8.35  0.92 2.76 -0.63  0.8
+# [not shipped - personal dial, kept as a format example] npcCap 000800:Yvanni Follower.esp spine2 11  2.853 7.587 11.565  5.404 11.788 10.565  4.6
+# [not shipped - personal dial, kept as a format example] npcCap 000800:Yvanni Follower.esp spine2 12  -2.853 7.587 11.565  -5.404 11.788 10.565  4.6
 
 # Orc: NO map line — uses the default human skeleton_female.nif (2026-07-19, user decision:
 # "orc jaw is not different enough to matter"). skeleton_female_orc.nif DELETED (archived to
@@ -80,14 +80,16 @@ npcCap 000800:Yvanni Follower.esp spine2 12  -2.853 7.587 11.565  -5.404 11.788 
 # pending), and (b) the game-close finalization = reset capHeadC15..22 to the up-20u seed +
 # Enable 0 + comment the `sculpt skeleton_female.nif head` gate. UNCOMMENT these there. NEVER bake
 # (shared human nif → every woman would get antlers). 4 segments/side, L=X-mirror of R.
-npcCap 000D63:018Auri.esp head 23   4.0  7.8  13.2    3.7  7.0   9.2   0.5
-npcCap 000D63:018Auri.esp head 24  -4.0  7.8  13.2   -3.7  7.0   9.2   0.5
-npcCap 000D63:018Auri.esp head 17   4.3  7.6  11.4    6.42 3.73 13.37  0.5
-npcCap 000D63:018Auri.esp head 18  -4.3  7.6  11.4   -6.42 3.73 13.37  0.5
-npcCap 000D63:018Auri.esp head 19   6.3  4.1  13.1    5.5 -2.5  13.5   0.5
-npcCap 000D63:018Auri.esp head 20  -6.3  4.1  13.1   -5.5 -2.5  13.5   0.5
-npcCap 000D63:018Auri.esp head 21   6.05 4.34 13.22   5.8  2.8  15.5   0.5
-npcCap 000D63:018Auri.esp head 22  -6.05 4.34 13.22  -5.8  2.8  15.5   0.5
+# 2026-08-17 (late): moved BACK 23/24 -> 15/16, her documented original layout (antlers 15..22).
+# 23/24 now carry the GLOBAL chin seal, which must reach her too; 15/16 are seeds on the human NIF.
+# [not shipped - personal dial, kept as a format example] npcCap 000D63:018Auri.esp head 15   4.0  7.8  13.2    3.7  7.0   9.2   0.5
+# [not shipped - personal dial, kept as a format example] npcCap 000D63:018Auri.esp head 16  -4.0  7.8  13.2   -3.7  7.0   9.2   0.5
+# [not shipped - personal dial, kept as a format example] npcCap 000D63:018Auri.esp head 17   4.3  7.6  11.4    6.42 3.73 13.37  0.5
+# [not shipped - personal dial, kept as a format example] npcCap 000D63:018Auri.esp head 18  -4.3  7.6  11.4   -6.42 3.73 13.37  0.5
+# [not shipped - personal dial, kept as a format example] npcCap 000D63:018Auri.esp head 19   6.3  4.1  13.1    5.5 -2.5  13.5   0.5
+# [not shipped - personal dial, kept as a format example] npcCap 000D63:018Auri.esp head 20  -6.3  4.1  13.1   -5.5 -2.5  13.5   0.5
+# [not shipped - personal dial, kept as a format example] npcCap 000D63:018Auri.esp head 21   6.05 4.34 13.22   5.8  2.8  15.5   0.5
+# [not shipped - personal dial, kept as a format example] npcCap 000D63:018Auri.esp head 22  -6.05 4.34 13.22  -5.8  2.8  15.5   0.5
 
 # ── SCULPT GATE (2026-07-17) ────────────────────────────────────────────────────────────────
 # During a capsule dial session, uncomment ONE `sculpt` line: global cap* knobs then apply ONLY
@@ -134,3 +136,34 @@ npcCap 000D63:018Auri.esp head 22  -6.05 4.34 13.22  -5.8  2.8  15.5   0.5
 # BASE offset — per-body-type neutrals (fingerprint-keyed, in the DLL) now handle it properly.
 # The mechanism stays for genuinely odd races:
 #raceBias <RaceEditorID> <mult>
+
+# ── SCULPT GATE — male capsule dialling session (2026-08-18) ───────────────────────────────
+# Scopes EVERY live cap*C* write to actors on the MALE skeleton only, so dialling him cannot
+# touch females in the scene. THIS IS THE PROTECTION FOR YVANNI: her draenei NIF carries real
+# baked horns at head children 15..22 with no npcCap, and a global head-knob enable buries them
+# (doc 21 §4). With this gate active those knobs only ever reach the male.
+# ⚠ Parsed ONCE at kDataLoaded — needs a game RESTART to take effect.
+# Remove (or comment out) this line when the male dial is finished and baked.
+# 2026-08-19: sculpt gate OFF. The male COM/spine0/spine1 dial is ARCHIVED at
+#   SKSE/Plugins/PPB_tuning.txt.male_dial_2026-08-18
+# and the live cap* knobs are back to the clean FEMALE set. Re-enable this line ONLY
+# after the male values are baked into his nif, and prefer the SLOT-SCOPED form
+# (e.g. 'sculpt skeleton.nif spine2') so females keep every other slot's dressing.
+# 2026-08-22 SHIP: all three male skeletons + argonian dial BAKED. Gate moves to the
+# HUMAN FEMALE for the front-neck tweak session (Carmella): global cap* knobs (synced to
+# her baked baseline = identity) reach ONLY skeleton_female.nif actors. Males + beast
+# females are protected by the gate; remove this line only after re-syncing the knobs.
+# [not shipped - dev sculpt gate] sculpt skeleton_female.nif
+#
+# ── THE SCULPT LOOP (2026-08-19) ────────────────────────────────────────────────────
+# Every race now carries its OWN baked geometry, so global cap* knobs are a TRANSIENT
+# dial layer, not the live layer. Steady state = gate OFF, knobs = the female set.
+#
+#   TO DIAL a race:  1. copy its archived dial over the cap* knobs in PPB_tuning.txt
+#                    2. point that race at sculpt.nif in PPB_Skeletons_Added_Race.ini
+#                    3. uncomment `sculpt sculpt.nif` above   4. RESTART (kDataLoaded)
+#   WHEN DONE:       5. bake the knobs into sculpt.nif  6. copy sculpt.nif -> that race's
+#                    shipped nif  7. restore the female knob set  8. re-comment the gate
+#
+# Prefer the SLOT-SCOPED form (`sculpt sculpt.nif spine2`) if any real NPC shares the
+# skeleton being dialled - a slot-less gate blanks every OTHER slot for them.

@@ -48,36 +48,36 @@ capHandR 2.0
 # FOREARM (NPC R Forearm [RLar]) — stock: capsule z 0.75->13.4, r 3.7 (starting values below = stock).
 # AXIS CALIBRATION 2026-07-03 (in-VR observed): forearm-bone +X = PALM side (not thumb!), so -X = knuckle
 # side. +Y = THUMB side (wrist +1.5Y move accepted). +Z = wrist-ward along the bone (B = wrist end).
-capForeEnable 1
-capForeAX 0.0
-capForeAY 2.7
-capForeAZ -1.3
-capForeBX -0.1
-capForeBY 2.0
-capForeBZ 4.3
-capForeR 2.2
+capForeEnable 1.0000
+capForeAX 0.6000
+capForeAY 2.3000
+capForeAZ -0.5000
+capForeBX 0.8000
+capForeBY 1.3000
+capForeBZ 4.3000
+capForeR 2.0000
 # UPPER ARM (NPC R UpperArm [RUar]) — stock: z 3.13->14.27, r 6.07.
 # AXIS CALIBRATION 2026-07-03 (in-VR observed): +X = TOWARD the body (inward), so -X = away/outward.
 # +Z = elbow-ward along the bone (A = shoulder end, B = elbow end). Front/back axis = ±Y, not yet observed.
-capUpperEnable 1
-capUpperAX 2.7
-capUpperAY 0.5
-capUpperAZ -0.5
-capUpperBX 1.3
-capUpperBY 0.2
-capUpperBZ 11.2
-capUpperR 3.0
+capUpperEnable 1.0000
+capUpperAX 2.7000
+capUpperAY 0.5000
+capUpperAZ 1.5000
+capUpperBX 1.8000
+capUpperBY 0.2000
+capUpperBZ 11.2000
+capUpperR 3.0000
 # HEAD (NPC Head [Head]) — IT IS A CAPSULE, revealed by the 2026-07-03 BEFORE log: a near-degenerate
 # BALL — A=[-0.01 3.00 3.20] B=[-0.01 2.24 3.20] r=8.17 (endpoints only 0.76u apart). That's why it
 # doesn't reach the face. Starting values below = live stock; dial = stretch it along the face axis.
-capHeadEnable 0
-capHeadAX -0.011
-capHeadAY 3.57
-capHeadAZ 7.46
-capHeadBX -0.011
-capHeadBY 1.197
-capHeadBZ 7.46
-capHeadR 5.517
+capHeadEnable 1.0000
+capHeadAX -0.0110
+capHeadAY 3.5700
+capHeadAZ 7.4600
+capHeadBX -0.0110
+capHeadBY 1.1970
+capHeadBZ 7.4600
+capHeadR 5.5170
 
 # --- 3-CAPSULE HAND (R hand = bhkListShape since the 2026-07-03 bake; VR-verified same day) ---
 # Each of the three palm rods is individually live-tunable (needs the DLL built 2026-07-03+; the tool
@@ -86,46 +86,46 @@ capHeadR 5.517
 # (+X thumb, +Y knuckles/back, +Z fingertips). Starting values = the baked NIF values.
 # NOTE: adding/removing a rod stays a FILE-ONLY operation (structure change) — these knobs only
 # move/resize the three that exist. Final values get re-baked into the NIF (mirrored left).
-capHandC1Enable 1
-capHandC1AX 2.7
-capHandC1AY -1.0
-capHandC1AZ -2.1
-capHandC1BX 2.87
-capHandC1BY -1.5
-capHandC1BZ 4.5
-capHandC1R 1.0
-capHandC2Enable 1
-capHandC2AX 3.3
-capHandC2AY -1.2
-capHandC2AZ -2.1
-capHandC2BX 4.67
-capHandC2BY -2.8
-capHandC2BZ 2.15
-capHandC2R 1.0
-capHandC3Enable 1
-capHandC3AX 0.0
-capHandC3AY -1.0
-capHandC3AZ -2.1
-capHandC3BX -0.93
-capHandC3BY -2.2
-capHandC3BZ 3.45
-capHandC3R 1.0
-capHandC4Enable 1
-capHandC4AX 1.8
-capHandC4AY -1.0
-capHandC4AZ -2.1
-capHandC4BX 1.603
-capHandC4BY -1.733
-capHandC4BZ 4.15
-capHandC4R 1.0
-capHandC5Enable 1
-capHandC5AX 0.9
-capHandC5AY -1.0
-capHandC5AZ -2.1
-capHandC5BX 0.337
-capHandC5BY -1.967
-capHandC5BZ 3.8
-capHandC5R 1.0
+capHandC1Enable 1.0000
+capHandC1AX 1.5000
+capHandC1AY -1.0000
+capHandC1AZ -2.1000
+capHandC1BX 1.6700
+capHandC1BY -1.5000
+capHandC1BZ 4.7000
+capHandC1R 1.0000
+capHandC2Enable 1.0000
+capHandC2AX 2.4000
+capHandC2AY -1.0000
+capHandC2AZ -2.1000
+capHandC2BX 3.4700
+capHandC2BY -1.5000
+capHandC2BZ 2.4500
+capHandC2R 1.0000
+capHandC3Enable 1.0000
+capHandC3AX 0.6000
+capHandC3AY -1.0000
+capHandC3AZ -2.1000
+capHandC3BX -0.0300
+capHandC3BY -1.5000
+capHandC3BZ 3.4500
+capHandC3R 1.0000
+capHandC4Enable 1.0000
+capHandC4AX 2.4000
+capHandC4AY -1.0000
+capHandC4AZ -2.1000
+capHandC4BX 3.4700
+capHandC4BY -1.5000
+capHandC4BZ 2.4500
+capHandC4R 1.0000
+capHandC5Enable 1.0000
+capHandC5AX 2.4000
+capHandC5AY -1.0000
+capHandC5AZ -2.1000
+capHandC5BX 3.4700
+capHandC5BY -1.5000
+capHandC5BZ 2.4500
+capHandC5R 1.0000
 
 # --- PIV FIX (2026-07-03, LIVE joint-pivot re-seat — the blue balls; RIGHT side only) ---
 # Knob = the pivot's ABSOLUTE position in the CHILD bone's local frame (skyrim u):
@@ -197,73 +197,81 @@ pivAutoSeat 0
 # ── FULL-BODY CAPSULE SLOTS (2026-07-05) — endpoints AUTO-FITTED ball-to-ball (capAutoFit),
 # radius = your knob (stock values staged from the live body dump; dial to flesh by eye).
 # foot + com are MANUAL (no bounding joints) — enable to discover, then dial like the old days.
-capSpine0Enable 1
-capSpine0AX -5.775
-capSpine0AY 3.728
-capSpine0AZ 10.238
-capSpine0BX 5.775
-capSpine0BY 3.728
-capSpine0BZ 10.238
-capSpine0R 4.401
-capSpine1Enable 1
-capSpine1AX 0.0
-capSpine1AY 6.485
-capSpine1AZ 7.56
-capSpine1BX 0.0
-capSpine1BY 6.485
-capSpine1BZ 11.13
-capSpine1R 6.033
-capSpine2Enable 1
-capSpine2AX 3.675
-capSpine2AY 2.338
-capSpine2AZ 15.015
-capSpine2BX -3.675
-capSpine2BY 2.338
-capSpine2BZ 15.015
-capSpine2R 6.099
-capNeckEnable 1
-capNeckAX 0.0
-capNeckAY 1.155
-capNeckAZ 1.26
-capNeckBX 0.0
-capNeckBY 0.315
-capNeckBZ 10.29
-capNeckR 3.575
-capThighEnable 1
-capThighAX -2.2
-capThighAY -3.2
-capThighAZ -6.0
-capThighBX 0.7
-capThighBY -0.3
-capThighBZ 27.4
-capThighR 2.472
-capCalfEnable 1
-capCalfAX 0.5
-capCalfAY -1.0
-capCalfAZ -6.4
-capCalfBX 1.0
-capCalfBY -0.7
-capCalfBZ 18.4
-capCalfR 1.818
-capFootEnable 1
-capFootAX 1.02
-capFootAY 3.38
-capFootAZ 2.27
-capFootBX 1.02
-capFootBY 5.18
-capFootBZ -2.21
-capFootR 1.5
+capSpine0Enable 1.0000
+capSpine0AX -5.5000
+capSpine0AY 3.5500
+capSpine0AZ 9.7500
+capSpine0BX 5.5000
+capSpine0BY 3.5500
+capSpine0BZ 9.7500
+capSpine0R 4.0000
+capSpine1Enable 1.0000
+capSpine1AX 0.0000
+capSpine1AY 5.7000
+capSpine1AZ 7.2000
+capSpine1BX 0.0000
+capSpine1BY 5.7000
+capSpine1BZ 10.6000
+capSpine1R 6.0000
+capSpine2Enable 1.0000
+capSpine2AX 3.5000
+capSpine2AY 1.7500
+capSpine2AZ 14.3000
+capSpine2BX -3.5000
+capSpine2BY 1.7500
+capSpine2BZ 14.3000
+capSpine2R 6.0000
+capNeckEnable 1.0000
+capNeckAX 0.0000
+capNeckAY -0.6096
+capNeckAZ 1.2000
+capNeckBX 0.0000
+capNeckBY -1.4096
+capNeckBZ 9.8000
+capNeckR 2.8000
+capNeckC1Enable 1.0000
+capNeckC1AX 0.0000
+capNeckC1AY 1.1573
+capNeckC1AZ 1.2000
+capNeckC1BX 0.0000
+capNeckC1BY 0.3573
+capNeckC1BZ 9.8000
+capNeckC1R 2.8952
+capThighEnable 1.0000
+capThighAX -2.2000
+capThighAY -3.2000
+capThighAZ -6.0000
+capThighBX 0.7000
+capThighBY -0.3000
+capThighBZ 27.4000
+capThighR 2.0000
+capCalfEnable 1.0000
+capCalfAX 0.5000
+capCalfAY -1.2000
+capCalfAZ -6.4000
+capCalfBX 1.0000
+capCalfBY -0.9000
+capCalfBZ 18.4000
+capCalfR 1.5000
+capFootEnable 1.0000
+capFootAX 1.0200
+capFootAY 3.3800
+capFootAZ 2.2700
+capFootBX 1.0200
+capFootBY 5.1800
+capFootBZ -2.2100
+capFootR 1.5000
 # COM (2026-07-07): full A/B/r knobs (NEW DLL). Discovered stock = a hip-to-hip ±X ROD, r 7.66
 # (A=[2.79,-3.83,5.33] B=[-2.79,-3.83,5.33]) — not a ball. Endpoint seeds below = stock, so the only
 # change on enable is the radius 7.66 -> 3.0 (user-requested "smaller and precise").
-capComEnable 1
-capComAX 1.99
-capComAY -3.33
-capComAZ 2.63
-capComBX -1.99
-capComBY -3.33
-capComBZ 2.63
-capComR 1.0
+capComEnable 1.0000
+capComAX 1.9900
+capComAY -3.3300
+capComAZ 2.6300
+capComBX -1.9900
+capComBY -3.3300
+capComBZ 2.6300
+capComR 1.0000
 # capAutoFit 1: forearm + upper-arm capsule ENDPOINTS derived from the seated joint balls
 #   (elbow->wrist, shoulder->elbow) — ball-to-ball spans, radius stays your dialed knob.
 capAutoFit 0
@@ -295,102 +303,102 @@ pivAnkleUpU 0
 # ADDED capsules below. Seeds = the exact baked values (enable = identity write, no visual change).
 # Thigh = 5 superposed rings, calf = 3, foot = 2 parallel sole rods, arms = 1 taper each.
 # capMirrorL replays every write on the LEFT twin (X-negated) so both sides stay matched.
-capUpperC1Enable 1
-capUpperC1AX 1.3
-capUpperC1AY 0.7
-capUpperC1AZ 11.2
-capUpperC1BX 0.4
-capUpperC1BY 1.0
-capUpperC1BZ 20.2
-capUpperC1R 2.6
-capForeC1Enable 1
-capForeC1AX 0.1
-capForeC1AY 2.0
-capForeC1AZ 5.3
-capForeC1BX 0.5
-capForeC1BY 1.3
-capForeC1BZ 11.3
-capForeC1R 2.0
-capThighC1Enable 1
-capThighC1AX 0.138
-capThighC1AY -4.397
-capThighC1AZ -3.046
-capThighC1BX -0.402
-capThighC1BY -2.902
-capThighC1BZ 0.78
-capThighC1R 5.564
-capThighC2Enable 1
-capThighC2AX -1.62
-capThighC2AY -0.62
-capThighC2AZ -9.62
-capThighC2BX 1.105
-capThighC2BY 0.105
-capThighC2BZ -1.645
-capThighC2R 3.503
-capThighC3Enable 1
-capThighC3AX -0.7
-capThighC3AY -1.7
-capThighC3AZ -1.0
-capThighC3BX -0.275
-capThighC3BY -0.975
-capThighC3BZ 5.975
-capThighC3R 6.079
-capThighC4Enable 1
-capThighC4AX 0.482
-capThighC4AY -1.018
-capThighC4AZ 7.5
-capThighC4BX 0.12
-capThighC4BY -0.08
-capThighC4BZ 12.52
-capThighC4R 5.564
-capThighC5Enable 1
-capThighC5AX 0.482
-capThighC5AY 0.082
-capThighC5AZ 17.5
-capThighC5BX 0.82
-capThighC5BY -0.08
-capThighC5BZ 23.52
-capThighC5R 4.018
-capCalfC1Enable 1
-capCalfC1AX 0.1
-capCalfC1AY -2.0
-capCalfC1AZ -3.9
-capCalfC1BX 0.275
-capCalfC1BY -1.895
-capCalfC1BZ 0.255
-capCalfC1R 3.838
-capCalfC2Enable 1
-capCalfC2AX 0.35
-capCalfC2AY -2.11
-capCalfC2AZ 2.09
-capCalfC2BX 0.525
-capCalfC2BY -2.005
-capCalfC2BZ 7.24
-capCalfC2R 3.333
-capCalfC3Enable 1
-capCalfC3AX 0.2
-capCalfC3AY -1.32
-capCalfC3AZ 9.58
-capCalfC3BX 0.35
-capCalfC3BY -1.23
-capCalfC3BZ 13.57
-capCalfC3R 2.828
-capFootC1Enable 1
-capFootC1AX 1.97
-capFootC1AY 2.88
-capFootC1AZ 5.27
-capFootC1BX 1.97
-capFootC1BY 3.88
-capFootC1BZ -5.21
-capFootC1R 1.2
-capFootC2Enable 1
-capFootC2AX -0.93
-capFootC2AY 2.88
-capFootC2AZ 3.77
-capFootC2BX 1.07
-capFootC2BY 3.88
-capFootC2BZ -5.21
-capFootC2R 0.8
+capUpperC1Enable 1.0000
+capUpperC1AX 1.8000
+capUpperC1AY 0.2000
+capUpperC1AZ 11.2000
+capUpperC1BX 1.1000
+capUpperC1BY 0.5000
+capUpperC1BZ 20.2000
+capUpperC1R 2.6000
+capForeC1Enable 1.0000
+capForeC1AX 0.8000
+capForeC1AY 1.3000
+capForeC1AZ 5.3000
+capForeC1BX 0.8000
+capForeC1BY 1.3000
+capForeC1BZ 11.3000
+capForeC1R 2.0000
+capThighC1Enable 1.0000
+capThighC1AX 0.1380
+capThighC1AY -4.3970
+capThighC1AZ -3.0460
+capThighC1BX -0.4020
+capThighC1BY -2.9020
+capThighC1BZ 0.7800
+capThighC1R 5.0000
+capThighC2Enable 1.0000
+capThighC2AX -1.6200
+capThighC2AY -0.6200
+capThighC2AZ -9.6200
+capThighC2BX 1.1050
+capThighC2BY 0.1050
+capThighC2BZ -1.6450
+capThighC2R 3.0000
+capThighC3Enable 1.0000
+capThighC3AX -0.7000
+capThighC3AY -1.7000
+capThighC3AZ -1.0000
+capThighC3BX -0.2750
+capThighC3BY -0.9750
+capThighC3BZ 5.9750
+capThighC3R 5.5000
+capThighC4Enable 1.0000
+capThighC4AX 0.4820
+capThighC4AY -1.0180
+capThighC4AZ 7.5000
+capThighC4BX 0.6200
+capThighC4BY -0.0800
+capThighC4BZ 12.5200
+capThighC4R 5.0000
+capThighC5Enable 1.0000
+capThighC5AX 0.4820
+capThighC5AY 0.0820
+capThighC5AZ 17.5000
+capThighC5BX 0.6200
+capThighC5BY -0.0800
+capThighC5BZ 23.5200
+capThighC5R 3.5000
+capCalfC1Enable 1.0000
+capCalfC1AX 0.1000
+capCalfC1AY -2.2000
+capCalfC1AZ -3.9000
+capCalfC1BX 0.2750
+capCalfC1BY -2.0950
+capCalfC1BZ 0.2550
+capCalfC1R 3.5000
+capCalfC2Enable 1.0000
+capCalfC2AX 0.3500
+capCalfC2AY -2.3100
+capCalfC2AZ 2.0900
+capCalfC2BX 0.5250
+capCalfC2BY -2.2050
+capCalfC2BZ 7.2400
+capCalfC2R 3.0000
+capCalfC3Enable 1.0000
+capCalfC3AX 0.2000
+capCalfC3AY -1.5200
+capCalfC3AZ 9.5800
+capCalfC3BX 0.3500
+capCalfC3BY -1.4300
+capCalfC3BZ 13.5700
+capCalfC3R 2.5000
+capFootC1Enable 1.0000
+capFootC1AX 1.9700
+capFootC1AY 2.8800
+capFootC1AZ 5.2700
+capFootC1BX 1.9700
+capFootC1BY 3.8800
+capFootC1BZ -5.2100
+capFootC1R 1.2000
+capFootC2Enable 1.0000
+capFootC2AX -0.9300
+capFootC2AY 2.8800
+capFootC2AZ 3.7700
+capFootC2BX 1.0700
+capFootC2BY 3.8800
+capFootC2BZ -5.2100
+capFootC2R 0.8000
 
 # ── LIVE LEFT-MIRROR (2026-07-07): every capsule slot/child write replays on the LEFT twin body
 # (X-negated endpoints, same r — the NIF-verified transform). 1 = on. Center slots have no twin.
@@ -406,150 +414,150 @@ pivGrabGate 1
 # sub-capsules, identity-seeded to the baked values (tiny r0.2 inside the main).
 # Dial them out to sculpt: spine0/1/2 = 10 each, COM = 20 (the orifice ring).
 # ============================================================================
-capSpine0C1Enable 1
-capSpine0C1AX 1.335
-capSpine0C1AY 7.875
-capSpine0C1AZ 4.237
-capSpine0C1BX 7.037
-capSpine0C1BY 6.336
-capSpine0C1BZ 10.097
-capSpine0C1R 2.200
-capSpine0C2Enable 1
-capSpine0C2AX -1.335
-capSpine0C2AY 7.875
-capSpine0C2AZ 4.237
-capSpine0C2BX -7.037
-capSpine0C2BY 6.336
-capSpine0C2BZ 10.097
-capSpine0C2R 2.200
-capSpine0C3Enable 1
-capSpine0C3AX -4.2
-capSpine0C3AY 6.825
-capSpine0C3AZ 11.55
-capSpine0C3BX 4.2
-capSpine0C3BY 6.825
-capSpine0C3BZ 11.55
-capSpine0C3R 3.300
-capSpine0C4Enable 1
-capSpine0C4AX -1.575
-capSpine0C4AY 7.35
-capSpine0C4AZ 7.35
-capSpine0C4BX 1.575
-capSpine0C4BY 7.35
-capSpine0C4BZ 7.35
-capSpine0C4R 3.300
-capSpine0C5Enable 1
-capSpine0C5AX 3.623
-capSpine0C5AY -0.819
-capSpine0C5AZ 8.43
-capSpine0C5BX 2.435
-capSpine0C5BY 1.24
-capSpine0C5BZ 12.975
-capSpine0C5R 3.300
-capSpine0C6Enable 1
-capSpine0C6AX -3.623
-capSpine0C6AY -0.819
-capSpine0C6AZ 8.43
-capSpine0C6BX -2.435
-capSpine0C6BY 1.24
-capSpine0C6BZ 12.975
-capSpine0C6R 3.300
-capSpine0C7Enable 1
-capSpine0C7AX 6.773
-capSpine0C7AY 1.281
-capSpine0C7AZ 7.38
-capSpine0C7BX 4.955
-capSpine0C7BY 2.29
-capSpine0C7BZ 12.975
-capSpine0C7R 3.300
-capSpine0C8Enable 1.0
+capSpine0C1Enable 1.0000
+capSpine0C1AX 1.2710
+capSpine0C1AY 7.5000
+capSpine0C1AZ 4.0350
+capSpine0C1BX 6.7020
+capSpine0C1BY 6.0340
+capSpine0C1BZ 9.6160
+capSpine0C1R 2.0000
+capSpine0C2Enable 1.0000
+capSpine0C2AX -1.2710
+capSpine0C2AY 7.5000
+capSpine0C2AZ 4.0350
+capSpine0C2BX -6.7020
+capSpine0C2BY 6.0340
+capSpine0C2BZ 9.6160
+capSpine0C2R 2.0000
+capSpine0C3Enable 1.0000
+capSpine0C3AX -4.0000
+capSpine0C3AY 6.5000
+capSpine0C3AZ 11.0000
+capSpine0C3BX 4.0000
+capSpine0C3BY 6.5000
+capSpine0C3BZ 11.0000
+capSpine0C3R 3.0000
+capSpine0C4Enable 1.0000
+capSpine0C4AX -1.5000
+capSpine0C4AY 7.0000
+capSpine0C4AZ 7.0000
+capSpine0C4BX 1.5000
+capSpine0C4BY 7.0000
+capSpine0C4BZ 7.0000
+capSpine0C4R 3.0000
+capSpine0C5Enable 1.0000
+capSpine0C5AX 3.4500
+capSpine0C5AY -0.7800
+capSpine0C5AZ 8.0290
+capSpine0C5BX 2.3190
+capSpine0C5BY 1.1810
+capSpine0C5BZ 12.3570
+capSpine0C5R 3.0000
+capSpine0C6Enable 1.0000
+capSpine0C6AX -3.4500
+capSpine0C6AY -0.7800
+capSpine0C6AZ 8.0290
+capSpine0C6BX -2.3190
+capSpine0C6BY 1.1810
+capSpine0C6BZ 12.3570
+capSpine0C6R 3.0000
+capSpine0C7Enable 1.0000
+capSpine0C7AX 6.4500
+capSpine0C7AY 1.2200
+capSpine0C7AZ 7.0290
+capSpine0C7BX 4.7190
+capSpine0C7BY 2.1810
+capSpine0C7BZ 12.3570
+capSpine0C7R 3.0000
+capSpine0C8Enable 0
 capSpine0C8AX 0.0
-capSpine0C8AY 0.0
+capSpine0C8AY 5.000
 capSpine0C8AZ 0.0
 capSpine0C8BX 0.0
-capSpine0C8BY 0.0
+capSpine0C8BY 5.000
 capSpine0C8BZ 2.0
 capSpine0C8R 0.500
-capSpine0C9Enable 1.0
+capSpine0C9Enable 0
 capSpine0C9AX 0.0
-capSpine0C9AY 0.0
+capSpine0C9AY 5.000
 capSpine0C9AZ 0.0
 capSpine0C9BX 0.0
-capSpine0C9BY 0.0
+capSpine0C9BY 5.000
 capSpine0C9BZ 2.0
 capSpine0C9R 0.500
-capSpine0C10Enable 1.0
-capSpine0C10AX 1.276
-capSpine0C10AY -27.773
-capSpine0C10AZ 10.238
-capSpine0C10BX 2.326
-capSpine0C10BY -27.773
-capSpine0C10BZ 10.238
-capSpine0C10R 0.220
-capSpine1C1Enable 1.0
-capSpine1C1AX 2.835
-capSpine1C1AY 7.56
-capSpine1C1AZ 5.791
-capSpine1C1BX 4.087
-capSpine1C1BY 8.4
-capSpine1C1BZ 12.05
-capSpine1C1R 3.812
-capSpine1C2Enable 1
-capSpine1C2AX -2.835
-capSpine1C2AY 7.56
-capSpine1C2AZ 5.791
-capSpine1C2BX -4.087
-capSpine1C2BY 8.4
-capSpine1C2BZ 12.05
-capSpine1C2R 3.812
-capSpine1C3Enable 1
-capSpine1C3AX 4.2
-capSpine1C3AY 4.725
-capSpine1C3AZ 5.145
-capSpine1C3BX 4.2
-capSpine1C3BY 3.545
-capSpine1C3BZ 14.587
-capSpine1C3R 3.267
-capSpine1C4Enable 1
-capSpine1C4AX -4.2
-capSpine1C4AY 4.725
-capSpine1C4AZ 5.145
-capSpine1C4BX -4.2
-capSpine1C4BY 3.545
-capSpine1C4BZ 14.587
-capSpine1C4R 3.267
-capSpine1C5Enable 1
-capSpine1C5AX 5.46
-capSpine1C5AY 5.985
-capSpine1C5AZ 5.145
-capSpine1C5BX 6.443
-capSpine1C5BY 6.929
-capSpine1C5BZ 14.58
-capSpine1C5R 2.178
-capSpine1C6Enable 1
-capSpine1C6AX -5.46
-capSpine1C6AY 5.985
-capSpine1C6AZ 5.145
-capSpine1C6BX -6.443
-capSpine1C6BY 6.929
-capSpine1C6BZ 14.58
-capSpine1C6R 2.178
-capSpine1C7Enable 1.0
-capSpine1C7AX 0.0
-capSpine1C7AY 5.0
-capSpine1C7AZ 0.0
-capSpine1C7BX 0.0
-capSpine1C7BY 5.0
-capSpine1C7BZ 2.0
-capSpine1C7R 0.495
-capSpine1C8Enable 1.0
-capSpine1C8AX 0.0
-capSpine1C8AY 5.0
-capSpine1C8AZ 0.0
-capSpine1C8BX 0.0
-capSpine1C8BY 5.0
-capSpine1C8BZ 2.0
-capSpine1C8R 0.495
+capSpine0C10Enable 0
+capSpine0C10AX 0.0
+capSpine0C10AY 5.0
+capSpine0C10AZ 0.0
+capSpine0C10BX 0.0
+capSpine0C10BY 5.0
+capSpine0C10BZ 2.0
+capSpine0C10R 0.500
+capSpine1C1Enable 1.0000
+capSpine1C1AX 2.7000
+capSpine1C1AY 7.2000
+capSpine1C1AZ 5.5150
+capSpine1C1BX 3.8920
+capSpine1C1BY 8.0000
+capSpine1C1BZ 11.4760
+capSpine1C1R 3.5000
+capSpine1C2Enable 1.0000
+capSpine1C2AX -2.7000
+capSpine1C2AY 7.2000
+capSpine1C2AZ 5.5150
+capSpine1C2BX -3.8920
+capSpine1C2BY 8.0000
+capSpine1C2BZ 11.4760
+capSpine1C2R 3.5000
+capSpine1C3Enable 1.0000
+capSpine1C3AX 4.0000
+capSpine1C3AY 4.5000
+capSpine1C3AZ 4.9000
+capSpine1C3BX 4.0000
+capSpine1C3BY 3.3760
+capSpine1C3BZ 13.8920
+capSpine1C3R 3.0000
+capSpine1C4Enable 1.0000
+capSpine1C4AX -4.0000
+capSpine1C4AY 4.5000
+capSpine1C4AZ 4.9000
+capSpine1C4BX -4.0000
+capSpine1C4BY 3.3760
+capSpine1C4BZ 13.8920
+capSpine1C4R 3.0000
+capSpine1C5Enable 1.0000
+capSpine1C5AX 5.2000
+capSpine1C5AY 5.7000
+capSpine1C5AZ 4.9000
+capSpine1C5BX 6.1360
+capSpine1C5BY 6.5990
+capSpine1C5BZ 13.8860
+capSpine1C5R 2.0000
+capSpine1C6Enable 1.0000
+capSpine1C6AX -5.2000
+capSpine1C6AY 5.7000
+capSpine1C6AZ 4.9000
+capSpine1C6BX -6.1360
+capSpine1C6BY 6.5990
+capSpine1C6BZ 13.8860
+capSpine1C6R 2.0000
+capSpine1C7Enable 1.0000
+capSpine1C7AX 0.0000
+capSpine1C7AY 5.0000
+capSpine1C7AZ 0.0000
+capSpine1C7BX 0.0000
+capSpine1C7BY 5.0000
+capSpine1C7BZ 2.0000
+capSpine1C7R 0.4950
+capSpine1C8Enable 1.0000
+capSpine1C8AX 0.0000
+capSpine1C8AY 5.0000
+capSpine1C8AZ 0.0000
+capSpine1C8BX 0.0000
+capSpine1C8BY 5.0000
+capSpine1C8BZ 2.0000
+capSpine1C8R 0.4950
 # spine1 C9/C10 = BACK (R/L) — 2026-07-29. ⚠ These keys ALREADY EXISTED with stale
 # values 25u behind the body from an old session; they were inert only because the
 # apply loop stopped at C8. Raising the bound would have made them live. Reset to the
@@ -558,339 +566,339 @@ capSpine1C8R 0.495
 # main spine1 capsule so a touch on the BACK resolves to a different capsule than a touch on the
 # FRONT. INTENTIONAL AND LOAD-BEARING — do not disable it because it looks asymmetric: C10 is a
 # separate seed, not its missing twin. (2026-08-13: disabled in error, restored the same day.)
-capSpine1C9Enable 1
-capSpine1C9AX 0.0
-capSpine1C9AY 5.485
-capSpine1C9AZ 7.56
-capSpine1C9BX 0.0
-capSpine1C9BY 5.485
-capSpine1C9BZ 11.13
-capSpine1C9R 6.033
-capSpine1C10Enable 1
-capSpine1C10AX 0.0
-capSpine1C10AY 5.0
-capSpine1C10AZ 0.0
-capSpine1C10BX 0.0
-capSpine1C10BY 5.0
-capSpine1C10BZ 2.0
-capSpine1C10R 0.5
-capSpine2C1Enable 1
-capSpine2C1AX 4.725
-capSpine2C1AY 2.625
-capSpine2C1AZ 5.25
-capSpine2C1BX 6.461
-capSpine2C1BY -0.805
-capSpine2C1BZ 13.483
-capSpine2C1R 3.300
-capSpine2C2Enable 1
-capSpine2C2AX -4.725
-capSpine2C2AY 2.625
-capSpine2C2AZ 5.25
-capSpine2C2BX -6.461
-capSpine2C2BY -0.805
-capSpine2C2BZ 13.483
-capSpine2C2R 3.300
-capSpine2C3Enable 1
-capSpine2C3AX 4.2
-capSpine2C3AY 8.4
-capSpine2C3AZ 5.25
-capSpine2C3BX 5.411
-capSpine2C3BY 6.02
-capSpine2C3BZ 13.483
-capSpine2C3R 3.300
-capSpine2C4Enable 1
-capSpine2C4AX -4.2
-capSpine2C4AY 8.4
-capSpine2C4AZ 5.25
-capSpine2C4BX -5.411
-capSpine2C4BY 6.02
-capSpine2C4BZ 13.483
-capSpine2C4R 3.300
-capSpine2C5Enable 1
-capSpine2C5AX 2.625
-capSpine2C5AY 1.312
-capSpine2C5AZ 7.665
-capSpine2C5BX -2.625
-capSpine2C5BY 1.312
-capSpine2C5BZ 7.665
-capSpine2C5R 3.300
-capSpine2C6Enable 1
-capSpine2C6AX 9.45
-capSpine2C6AY -1.312
-capSpine2C6AZ 19.215
-capSpine2C6BX 2.1
-capSpine2C6BY 0.263
-capSpine2C6BZ 23.94
-capSpine2C6R 2.749
-capSpine2C7Enable 1
-capSpine2C7AX -9.45
-capSpine2C7AY -1.312
-capSpine2C7AZ 19.215
-capSpine2C7BX -2.1
-capSpine2C7BY 0.263
-capSpine2C7BZ 23.94
-capSpine2C7R 2.749
-capSpine2C8Enable 1
-capSpine2C8AX 9.45
-capSpine2C8AY 0.263
-capSpine2C8AZ 20.265
-capSpine2C8BX 1.301
-capSpine2C8BY 3.57
-capSpine2C8BZ 21.557
-capSpine2C8R 2.200
-capSpine2C9Enable 1
-capSpine2C9AX -9.45
-capSpine2C9AY 0.263
-capSpine2C9AZ 20.265
-capSpine2C9BX -1.301
-capSpine2C9BY 3.57
-capSpine2C9BZ 21.557
-capSpine2C9R 2.200
-capSpine2C10Enable 1
-capSpine2C10AX 2.625
-capSpine2C10AY 7.613
-capSpine2C10AZ 9.765
-capSpine2C10BX -2.625
-capSpine2C10BY 7.613
-capSpine2C10BZ 9.765
-capSpine2C10R 4.400
-capComC1Enable 1
-capComC1AX 1.99
-capComC1AY -3.33
-capComC1AZ 4.63
-capComC1BX -1.99
-capComC1BY -3.33
-capComC1BZ 4.63
-capComC1R 0.5
-capComC2Enable 1
-capComC2AX 1.99
-capComC2AY -2.83
-capComC2AZ 6.63
-capComC2BX -1.99
-capComC2BY -2.83
-capComC2BZ 6.63
-capComC2R 0.5
-capComC3Enable 1
-capComC3AX 3.0
-capComC3AY 0.16
-capComC3AZ 1.13
-capComC3BX 3.0
-capComC3BY -7.699
-capComC3BZ 4.105
-capComC3R 1.0
-capComC4Enable 1
-capComC4AX -3.0
-capComC4AY 0.16
-capComC4AZ 1.13
-capComC4BX -3.0
-capComC4BY -7.699
-capComC4BZ 4.105
-capComC4R 1.0
-capComC5Enable 1
-capComC5AX 2.49
-capComC5AY 2.67
-capComC5AZ 5.63
-capComC5BX -2.49
-capComC5BY 2.67
-capComC5BZ 5.63
-capComC5R 1.0
-capComC6Enable 1
-capComC6AX 0.49
-capComC6AY 2.67
-capComC6AZ 4.13
-capComC6BX 3.0
-capComC6BY 0.16
-capComC6BZ 1.13
-capComC6R 1.0
-capComC7Enable 1
-capComC7AX -0.514
-capComC7AY 2.804
-capComC7AZ 4.337
-capComC7BX -3.15
-capComC7BY 0.168
-capComC7BZ 1.186
-capComC7R 1.1
-capComC8Enable 1
-capComC8AX 3.455
-capComC8AY 2.804
-capComC8AZ 5.912
-capComC8BX 3.99
-capComC8BY -0.357
-capComC8BZ 1.186
-capComC8R 1.1
-capComC9Enable 1
-capComC9AX -3.455
-capComC9AY 2.804
-capComC9AZ 5.912
-capComC9BX -3.99
-capComC9BY -0.357
-capComC9BZ 1.186
-capComC9R 1.1
-capComC10Enable 1
-capComC10AX 0.011
-capComC10AY -7.697
-capComC10AZ 6.962
-capComC10BX -2.625
-capComC10BY -7.707
-capComC10BZ 4.862
-capComC10R 1.1
-capComC11Enable 1
-capComC11AX -0.011
-capComC11AY -7.697
-capComC11AZ 6.962
-capComC11BX 2.625
-capComC11BY -7.707
-capComC11BZ 4.862
-capComC11R 1.1
-capComC12Enable 1
-capComC12AX 2.022
-capComC12AY -6.64
-capComC12AZ 11.42
-capComC12BX 3.217
-capComC12BY -8.763
-capComC12BZ 5.653
-capComC12R 2.2
-capComC13Enable 1
-capComC13AX -2.022
-capComC13AY -6.64
-capComC13AZ 11.42
-capComC13BX -3.217
-capComC13BY -8.763
-capComC13BZ 5.653
-capComC13R 2.2
-capComC14Enable 1
-capComC14AX 3.15
-capComC14AY 1.218
-capComC14AZ 5.912
-capComC14BX 3.15
-capComC14BY -7.161
-capComC14BZ 8.011
-capComC14R 0.55
-capComC15Enable 1
-capComC15AX -3.15
-capComC15AY 1.218
-capComC15AZ 5.912
-capComC15BX -3.15
-capComC15BY -7.161
-capComC15BZ 8.011
-capComC15R 0.55
-capComC16Enable 1
-capComC16AX 5.25
-capComC16AY -7.140
-capComC16AZ 4.725
-capComC16BX 5.25
-capComC16BY -7.140
-capComC16BZ 7.875
-capComC16R 4.4
-capComC17Enable 1
-capComC17AX -5.25
-capComC17AY -7.140
-capComC17AZ 4.725
-capComC17BX -5.25
-capComC17BY -7.140
-capComC17BZ 7.875
-capComC17R 4.4
-capComC18Enable 1
-capComC18AX 6.3
-capComC18AY -0.347
-capComC18AZ 6.951
-capComC18BX 6.3
-capComC18BY -3.497
-capComC18BZ 3.822
-capComC18R 3.85
-capComC19Enable 1
-capComC19AX -6.3
-capComC19AY -0.347
-capComC19AZ 6.951
-capComC19BX -6.3
-capComC19BY -3.497
-capComC19BZ 3.822
-capComC19R 3.85
-capComC20Enable 0
-capComC20AX 0.525
-capComC20AY -3.465
-capComC20AZ 2.73
-capComC20BX -0.525
-capComC20BY -3.465
-capComC20BZ 2.73
-capComC20R 0.051
+capSpine1C9Enable 1.0000
+capSpine1C9AX 0.0000
+capSpine1C9AY 5.4850
+capSpine1C9AZ 7.5600
+capSpine1C9BX 0.0000
+capSpine1C9BY 5.4850
+capSpine1C9BZ 11.1300
+capSpine1C9R 6.0330
+capSpine1C10Enable 1.0000
+capSpine1C10AX 0.0000
+capSpine1C10AY 5.0000
+capSpine1C10AZ 0.0000
+capSpine1C10BX 0.0000
+capSpine1C10BY 5.0000
+capSpine1C10BZ 2.0000
+capSpine1C10R 0.5000
+capSpine2C1Enable 1.0000
+capSpine2C1AX 4.5000
+capSpine2C1AY 2.5000
+capSpine2C1AZ 5.0000
+capSpine2C1BX 6.1530
+capSpine2C1BY -0.7670
+capSpine2C1BZ 12.8410
+capSpine2C1R 3.0000
+capSpine2C2Enable 1.0000
+capSpine2C2AX -4.5000
+capSpine2C2AY 2.5000
+capSpine2C2AZ 5.0000
+capSpine2C2BX -6.1530
+capSpine2C2BY -0.7670
+capSpine2C2BZ 12.8410
+capSpine2C2R 3.0000
+capSpine2C3Enable 1.0000
+capSpine2C3AX 4.0000
+capSpine2C3AY 8.0000
+capSpine2C3AZ 5.0000
+capSpine2C3BX 5.1530
+capSpine2C3BY 5.7330
+capSpine2C3BZ 12.8410
+capSpine2C3R 3.0000
+capSpine2C4Enable 1.0000
+capSpine2C4AX -4.0000
+capSpine2C4AY 8.0000
+capSpine2C4AZ 5.0000
+capSpine2C4BX -5.1530
+capSpine2C4BY 5.7330
+capSpine2C4BZ 12.8410
+capSpine2C4R 3.0000
+capSpine2C5Enable 1.0000
+capSpine2C5AX 2.5000
+capSpine2C5AY 1.2500
+capSpine2C5AZ 7.3000
+capSpine2C5BX -2.5000
+capSpine2C5BY 1.2500
+capSpine2C5BZ 7.3000
+capSpine2C5R 3.0000
+capSpine2C6Enable 1.0000
+capSpine2C6AX 9.0000
+capSpine2C6AY -1.2500
+capSpine2C6AZ 18.3000
+capSpine2C6BX 2.0000
+capSpine2C6BY 0.2500
+capSpine2C6BZ 22.8000
+capSpine2C6R 2.5000
+capSpine2C7Enable 1.0000
+capSpine2C7AX -9.0000
+capSpine2C7AY -1.2500
+capSpine2C7AZ 18.3000
+capSpine2C7BX -2.0000
+capSpine2C7BY 0.2500
+capSpine2C7BZ 22.8000
+capSpine2C7R 2.5000
+capSpine2C8Enable 1.0000
+capSpine2C8AX 9.0000
+capSpine2C8AY 0.2500
+capSpine2C8AZ 19.3000
+capSpine2C8BX 1.2390
+capSpine2C8BY 3.4000
+capSpine2C8BZ 20.5300
+capSpine2C8R 2.0000
+capSpine2C9Enable 1.0000
+capSpine2C9AX -9.0000
+capSpine2C9AY 0.2500
+capSpine2C9AZ 19.3000
+capSpine2C9BX -1.2390
+capSpine2C9BY 3.4000
+capSpine2C9BZ 20.5300
+capSpine2C9R 2.0000
+capSpine2C10Enable 1.0000
+capSpine2C10AX 2.5000
+capSpine2C10AY 7.2500
+capSpine2C10AZ 9.3000
+capSpine2C10BX -2.5000
+capSpine2C10BY 7.2500
+capSpine2C10BZ 9.3000
+capSpine2C10R 4.0000
+capComC1Enable 1.0000
+capComC1AX 1.9900
+capComC1AY -3.3300
+capComC1AZ 4.6300
+capComC1BX -1.9900
+capComC1BY -3.3300
+capComC1BZ 4.6300
+capComC1R 0.5000
+capComC2Enable 1.0000
+capComC2AX 1.9900
+capComC2AY -2.8300
+capComC2AZ 6.6300
+capComC2BX -1.9900
+capComC2BY -2.8300
+capComC2BZ 6.6300
+capComC2R 0.5000
+capComC3Enable 1.0000
+capComC3AX 3.0000
+capComC3AY 0.1600
+capComC3AZ 1.1300
+capComC3BX 3.0000
+capComC3BY -7.6990
+capComC3BZ 4.1050
+capComC3R 1.0000
+capComC4Enable 1.0000
+capComC4AX -3.0000
+capComC4AY 0.1600
+capComC4AZ 1.1300
+capComC4BX -3.0000
+capComC4BY -7.6990
+capComC4BZ 4.1050
+capComC4R 1.0000
+capComC5Enable 1.0000
+capComC5AX 2.4900
+capComC5AY 2.6700
+capComC5AZ 5.6300
+capComC5BX -2.4900
+capComC5BY 2.6700
+capComC5BZ 5.6300
+capComC5R 1.0000
+capComC6Enable 1.0000
+capComC6AX 0.4900
+capComC6AY 2.6700
+capComC6AZ 4.1300
+capComC6BX 3.0000
+capComC6BY 0.1600
+capComC6BZ 1.1300
+capComC6R 1.0000
+capComC7Enable 1.0000
+capComC7AX -0.4900
+capComC7AY 2.6700
+capComC7AZ 4.1300
+capComC7BX -3.0000
+capComC7BY 0.1600
+capComC7BZ 1.1300
+capComC7R 1.0000
+capComC8Enable 1.0000
+capComC8AX 3.2900
+capComC8AY 2.6700
+capComC8AZ 5.6300
+capComC8BX 3.8000
+capComC8BY -0.3400
+capComC8BZ 1.1300
+capComC8R 1.0000
+capComC9Enable 1.0000
+capComC9AX -3.2900
+capComC9AY 2.6700
+capComC9AZ 5.6300
+capComC9BX -3.8000
+capComC9BY -0.3400
+capComC9BZ 1.1300
+capComC9R 1.0000
+capComC10Enable 1.0000
+capComC10AX 0.0100
+capComC10AY -7.3300
+capComC10AZ 6.6300
+capComC10BX -2.5000
+capComC10BY -7.3400
+capComC10BZ 4.6300
+capComC10R 1.0000
+capComC11Enable 1.0000
+capComC11AX -0.0100
+capComC11AY -7.3300
+capComC11AZ 6.6300
+capComC11BX 2.5000
+capComC11BY -7.3400
+capComC11BZ 4.6300
+capComC11R 1.0000
+capComC12Enable 1.0000
+capComC12AX 1.9260
+capComC12AY -6.3240
+capComC12AZ 10.8760
+capComC12BX 3.0640
+capComC12BY -8.3460
+capComC12BZ 5.3840
+capComC12R 2.0000
+capComC13Enable 1.0000
+capComC13AX -1.9260
+capComC13AY -6.3240
+capComC13AZ 10.8760
+capComC13BX -3.0640
+capComC13BY -8.3460
+capComC13BZ 5.3840
+capComC13R 2.0000
+capComC14Enable 1.0000
+capComC14AX 3.0000
+capComC14AY 1.1600
+capComC14AZ 5.6300
+capComC14BX 3.0000
+capComC14BY -6.8200
+capComC14BZ 7.6300
+capComC14R 0.5000
+capComC15Enable 1.0000
+capComC15AX -3.0000
+capComC15AY 1.1600
+capComC15AZ 5.6300
+capComC15BX -3.0000
+capComC15BY -6.8200
+capComC15BZ 7.6300
+capComC15R 0.5000
+capComC16Enable 1.0000
+capComC16AX 5.0000
+capComC16AY -6.8000
+capComC16AZ 4.5000
+capComC16BX 5.0000
+capComC16BY -6.8000
+capComC16BZ 7.5000
+capComC16R 4.0000
+capComC17Enable 1.0000
+capComC17AX -5.0000
+capComC17AY -6.8000
+capComC17AZ 4.5000
+capComC17BX -5.0000
+capComC17BY -6.8000
+capComC17BZ 7.5000
+capComC17R 4.0000
+capComC18Enable 1.0000
+capComC18AX 6.0000
+capComC18AY -0.3300
+capComC18AZ 6.6200
+capComC18BX 6.0000
+capComC18BY -3.3300
+capComC18BZ 3.6400
+capComC18R 3.5000
+capComC19Enable 1.0000
+capComC19AX -6.0000
+capComC19AY -0.3300
+capComC19AZ 6.6200
+capComC19BX -6.0000
+capComC19BY -3.3300
+capComC19BZ 3.6400
+capComC19R 3.5000
+capComC20Enable 1.0000
+capComC20AX 0.0100
+capComC20AY -7.3300
+capComC20AZ 6.6300
+capComC20BX -2.5000
+capComC20BY -7.3400
+capComC20BZ 4.6300
+capComC20R 1.0000
 
 # ===== WAVE-2B new children (baked 2026-07-09) — Enable 0, dormant tiny seeds inside the body.
 # Head is a NEW list (main=capHead*). Spine2 gained C11/C12 for the L/R breast.
 # Dial next session: I'll enable + position each when you say 'bring head C1' etc.
 # (spine0 C8-C10 / spine1 C7-C10 knobs are now inert no-ops — their NIF children were trimmed.)
-capHeadC1Enable 1
-capHeadC1AX -0.85
-capHeadC1AY 8.90
-capHeadC1AZ 2.61
-capHeadC1BX 0.83
-capHeadC1BY 8.90
-capHeadC1BZ 2.61
-capHeadC1R 0.88
-capHeadC2Enable 1
-capHeadC2AX 3.35
-capHeadC2AY 2.08
-capHeadC2AZ 0.41
-capHeadC2BX 0.62
-capHeadC2BY 8.38
-capHeadC2BZ -1.16
-capHeadC2R 0.88
-capHeadC3Enable 1
-capHeadC3AX -3.35
-capHeadC3AY 2.08
-capHeadC3AZ 0.41
-capHeadC3BX -0.62
-capHeadC3BY 8.38
-capHeadC3BZ -1.16
-capHeadC3R 0.88
-capHeadC4Enable 1
-capHeadC4AX 2.61
-capHeadC4AY 8.06
-capHeadC4AZ 3.35
-capHeadC4BX 1.46
-capHeadC4BY 7.12
-capHeadC4BZ -0.85
-capHeadC4R 0.88
-capHeadC5Enable 1
-capHeadC5AX -2.61
-capHeadC5AY 8.06
-capHeadC5AZ 3.35
-capHeadC5BX -1.46
-capHeadC5BY 7.12
-capHeadC5BZ -0.85
-capHeadC5R 0.88
-capHeadC6Enable 1
-capHeadC6AX 3.56
-capHeadC6AY 2.60
-capHeadC6AZ 2.82
-capHeadC6BX 2.72
-capHeadC6BY 6.80
-capHeadC6BZ 4.08
-capHeadC6R 1.65
-capHeadC7Enable 0
-capHeadC7AX -3.56
-capHeadC7AY 2.604
-capHeadC7AZ 2.825
-capHeadC7BX -2.72
-capHeadC7BY 6.804
-capHeadC7BZ 4.085
-capHeadC7R 1.65
-capHeadC8Enable 1
-capHeadC8AX -0.01
-capHeadC8AY 9.85
-capHeadC8AZ 3.56
-capHeadC8BX -0.01
-capHeadC8BY 7.85
-capHeadC8BZ 6.92
-capHeadC8R 0.77
-capHeadC9Enable 1
-capHeadC9AX -1.80
-capHeadC9AY 7.75
-capHeadC9AZ 4.19
-capHeadC9BX 1.77
-capHeadC9BY 7.75
-capHeadC9BZ 4.19
-capHeadC9R 1.32
+capHeadC1Enable 1.0000
+capHeadC1AX -0.8510
+capHeadC1AY 8.9040
+capHeadC1AZ 2.6150
+capHeadC1BX 0.8300
+capHeadC1BY 8.9040
+capHeadC1BZ 2.6150
+capHeadC1R 0.8800
+capHeadC2Enable 1.0000
+capHeadC2AX 3.3490
+capHeadC2AY 2.0790
+capHeadC2AZ 0.4100
+capHeadC2BX 0.6190
+capHeadC2BY 8.3790
+capHeadC2BZ -1.1650
+capHeadC2R 0.8800
+capHeadC3Enable 1.0000
+capHeadC3AX -3.3490
+capHeadC3AY 2.0790
+capHeadC3AZ 0.4100
+capHeadC3BX -0.6190
+capHeadC3BY 8.3790
+capHeadC3BZ -1.1650
+capHeadC3R 0.8800
+capHeadC4Enable 1.0000
+capHeadC4AX 2.6150
+capHeadC4AY 8.0640
+capHeadC4AZ 3.3500
+capHeadC4BX 1.4600
+capHeadC4BY 7.1190
+capHeadC4BZ -0.8500
+capHeadC4R 0.8800
+capHeadC5Enable 1.0000
+capHeadC5AX -2.6150
+capHeadC5AY 8.0640
+capHeadC5AZ 3.3500
+capHeadC5BX -1.4600
+capHeadC5BY 7.1190
+capHeadC5BZ -0.8500
+capHeadC5R 0.8800
+capHeadC6Enable 1.0000
+capHeadC6AX 3.5600
+capHeadC6AY 2.6040
+capHeadC6AZ 2.8250
+capHeadC6BX 2.7200
+capHeadC6BY 6.8040
+capHeadC6BZ 4.0850
+capHeadC6R 1.6500
+capHeadC7Enable 1.0000
+capHeadC7AX -3.5600
+capHeadC7AY 2.6040
+capHeadC7AZ 2.8250
+capHeadC7BX -2.7200
+capHeadC7BY 6.8040
+capHeadC7BZ 4.0850
+capHeadC7R 1.6500
+capHeadC8Enable 1.0000
+capHeadC8AX -0.0110
+capHeadC8AY 9.8490
+capHeadC8AZ 3.5600
+capHeadC8BX -0.0110
+capHeadC8BY 7.8540
+capHeadC8BZ 6.9200
+capHeadC8R 0.7700
+capHeadC9Enable 1.0000
+capHeadC9AX -1.7960
+capHeadC9AY 7.7490
+capHeadC9AZ 4.1900
+capHeadC9BX 1.7740
+capHeadC9BY 7.7490
+capHeadC9BZ 4.1900
+capHeadC9R 1.3200
 # C10 = THROAT WALL (2026-07-26): the END of the mouth cavity — a vertical bar at the back
 # (Y=2.3, where the chin lines C2/C3 end deep), spanning jaw height up to palate height.
 # The mouth gate's deep-hold keeps the mouth open while a tip is within mouthThroatU of it,
@@ -900,123 +908,123 @@ capHeadC9R 1.32
 #   A = back/deep end [0, 3.4, 4.11]  ·  B = front end [0, 6.4, 3.61]  ·  r 1.5  (head-body frame)
 # Global knob -> applies to head child 10 on EVERY skeleton whose head list carries C10.
 # NOTE: beast/Khajiit muzzles differ; user will per-skeleton tune when time permits.
-capHeadC10Enable 1
-capHeadC10AX 0.0
-capHeadC10AY 3.4
-capHeadC10AZ 4.11
-capHeadC10BX 0.0
-capHeadC10BY 6.4
-capHeadC10BZ 3.61
-capHeadC10R 1.5
-capSpine2C11Enable 1
-capSpine2C11AX 2.353
-capSpine2C11AY 4.005
-capSpine2C11AZ 10.203
-capSpine2C11BX 5.179
-capSpine2C11BY 9.887
-capSpine2C11BZ 9.759
-capSpine2C11R 2.686
-capSpine2C12Enable 1
-capSpine2C12AX -2.353
-capSpine2C12AY 4.587
-capSpine2C12AZ 10.565
-capSpine2C12BX -4.904
-capSpine2C12BY 8.788
-capSpine2C12BZ 9.565
-capSpine2C12R 3.600
+capHeadC10Enable 1.0000
+capHeadC10AX -2.1110
+capHeadC10AY 5.5440
+capHeadC10AZ -0.7450
+capHeadC10BX 2.0900
+capHeadC10BY 5.5440
+capHeadC10BZ -0.7450
+capHeadC10R 0.8800
+capSpine2C11Enable 1.0000
+capSpine2C11AX 3.6700
+capSpine2C11AY 4.7500
+capSpine2C11AZ 9.3000
+capSpine2C11BX 4.6700
+capSpine2C11BY 8.7500
+capSpine2C11BZ 9.3000
+capSpine2C11R 3.0000
+capSpine2C12Enable 1.0000
+capSpine2C12AX -3.6700
+capSpine2C12AY 4.7500
+capSpine2C12AZ 9.3000
+capSpine2C12BX -4.6700
+capSpine2C12BY 8.7500
+capSpine2C12BZ 9.3000
+capSpine2C12R 3.0000
 
 # ===== WAVE-2B new children (baked 2026-07-09) — Enable 0, dormant tiny seeds inside the body.
 # Head is a NEW list (main=capHead*). Spine2 gained C11/C12 for the L/R breast.
 # Dial next session: I'll enable + position each when you say 'bring head C1' etc.
 # (spine0 C8-C10 / spine1 C7-C10 knobs are now inert no-ops — their NIF children were trimmed.)
-capHeadC11Enable 0
-capHeadC11AX -2.898
-capHeadC11AY 3.444
-capHeadC11AZ -0.325
-capHeadC11BX 2.877
-capHeadC11BY 3.444
-capHeadC11BZ -0.325
-capHeadC11R 0.88
-capHeadC12Enable 0
-capHeadC12AX 3.56
-capHeadC12AY -0.021
-capHeadC12AZ 2.3
-capHeadC12BX 2.72
-capHeadC12BY 6.069
-capHeadC12BZ 1.46
-capHeadC12R 1.21
-capHeadC13Enable 0
-capHeadC13AX -3.56
-capHeadC13AY -0.021
-capHeadC13AZ 2.3
-capHeadC13BX -2.72
-capHeadC13BY 6.069
-capHeadC13BZ 1.46
-capHeadC13R 1.21
-capHeadC14Enable 0
-capHeadC14AX -1.071
-capHeadC14AY -0.42
-capHeadC14AZ 3.035
-capHeadC14BX 1.05
-capHeadC14BY -0.42
-capHeadC14BZ 3.035
-capHeadC14R 3.3
-capSpine2C13Enable 1
-capSpine2C13AX 6.793
-capSpine2C13AY 0.693
-capSpine2C13AZ 19.667
-capSpine2C13BX 12.044
-capSpine2C13BY 1.743
-capSpine2C13BZ 17.567
-capSpine2C13R 2.200
-capSpine2C14Enable 1
-capSpine2C14AX -6.793
-capSpine2C14AY 0.693
-capSpine2C14AZ 19.667
-capSpine2C14BX -12.044
-capSpine2C14BY 1.743
-capSpine2C14BZ 17.567
-capSpine2C14R 2.200
-capUpperC2Enable 0
-capUpperC2AX 3.0
-capUpperC2AY 0
-capUpperC2AZ 2.0
-capUpperC2BX 6.29
-capUpperC2BY -1.0
-capUpperC2BZ 0.71
-capUpperC2R 2.0
+capHeadC11Enable 1.0000
+capHeadC11AX -2.8980
+capHeadC11AY 3.4440
+capHeadC11AZ -0.3250
+capHeadC11BX 2.8770
+capHeadC11BY 3.4440
+capHeadC11BZ -0.3250
+capHeadC11R 0.8800
+capHeadC12Enable 1.0000
+capHeadC12AX 3.5600
+capHeadC12AY -0.0210
+capHeadC12AZ 2.3000
+capHeadC12BX 2.7200
+capHeadC12BY 6.0690
+capHeadC12BZ 1.4600
+capHeadC12R 1.2100
+capHeadC13Enable 1.0000
+capHeadC13AX -3.5600
+capHeadC13AY -0.0210
+capHeadC13AZ 2.3000
+capHeadC13BX -2.7200
+capHeadC13BY 6.0690
+capHeadC13BZ 1.4600
+capHeadC13R 1.2100
+capHeadC14Enable 1.0000
+capHeadC14AX -1.0710
+capHeadC14AY -0.4200
+capHeadC14AZ 3.0350
+capHeadC14BX 1.0500
+capHeadC14BY -0.4200
+capHeadC14BZ 3.0350
+capHeadC14R 3.3000
+capSpine2C13Enable 1.0000
+capSpine2C13AX 7.4700
+capSpine2C13AY -0.3400
+capSpine2C13AZ 18.2300
+capSpine2C13BX 12.4700
+capSpine2C13BY -0.3400
+capSpine2C13BZ 13.2300
+capSpine2C13R 2.0000
+capSpine2C14Enable 1.0000
+capSpine2C14AX -7.4700
+capSpine2C14AY -0.3400
+capSpine2C14AZ 18.2300
+capSpine2C14BX -12.4700
+capSpine2C14BY -0.3400
+capSpine2C14BZ 13.2300
+capSpine2C14R 2.0000
+capUpperC2Enable 1.0000
+capUpperC2AX 3.0000
+capUpperC2AY 0.0000
+capUpperC2AZ 2.0000
+capUpperC2BX 7.0000
+capUpperC2BY 0.0000
+capUpperC2BZ -2.0000
+capUpperC2R 2.0000
 capUpperC3Enable 0
-capUpperC3AX 1.8
-capUpperC3AY 0
-capUpperC3AZ -1.0
-capUpperC3BX 1.8
-capUpperC3BY 0
-capUpperC3BZ 2.0
-capUpperC3R 2.0
-capFootC3Enable 1
-capFootC3AX 1.0
-capFootC3AY 9.0
-capFootC3AZ -4.0
-capFootC3BX 1.0
-capFootC3BY 5.0
-capFootC3BZ -4.0
-capFootC3R 1.2
-capThighC6Enable 1
-capThighC6AX 0.7
-capThighC6AY 0.7
-capThighC6AZ 26.4
-capThighC6BX 0.7
-capThighC6BY -2.8
-capThighC6BZ 28.9
-capThighC6R 1.442
-capCalfC4Enable 1
-capCalfC4AX 0.0
-capCalfC4AY -2.8
-capCalfC4AZ -9.5
-capCalfC4BX 0.0
-capCalfC4BY 0.2
-capCalfC4BZ -5.5
-capCalfC4R 1.313
+capUpperC3AX 1.8000
+capUpperC3AY 0.0000
+capUpperC3AZ 11.2000
+capUpperC3BX 1.1000
+capUpperC3BY 0.5000
+capUpperC3BZ 20.2000
+capUpperC3R 2.2000
+capFootC3Enable 1.0000
+capFootC3AX 1.0000
+capFootC3AY 9.0000
+capFootC3AZ -4.0000
+capFootC3BX 1.0000
+capFootC3BY 5.0000
+capFootC3BZ -4.0000
+capFootC3R 1.2000
+capThighC6Enable 1.0000
+capThighC6AX 0.7000
+capThighC6AY 0.7000
+capThighC6AZ 26.4000
+capThighC6BX 0.7000
+capThighC6BY -2.8000
+capThighC6BZ 28.9000
+capThighC6R 1.0000
+capCalfC4Enable 1.0000
+capCalfC4AX 0.0000
+capCalfC4AY -3.0000
+capCalfC4AZ -9.5000
+capCalfC4BX 0.0000
+capCalfC4BY 0.0000
+capCalfC4BZ -5.5000
+capCalfC4R 1.0000
 perfPreset 50
 filterSelfThigh -1
 filterCrossPelvis -1
@@ -1026,6 +1034,16 @@ lodFarDist 700
 lodHystPct 0.10
 lodSettleFrames 45
 lodStageBits 6
+# --- RAYCAST / QUERY TELEMETRY (RayTel.cpp, 2026-08-22) -------------------------
+#   Turns doc 08 3.5's MODELLED ray cost into a MEASURED one. Watch PPB.log for
+#   lines beginning "RAYTEL" - one per second while armed.
+#   0 = OFF (shipping default). The five bhkCollisionFilter sub-object vtable slots
+#       hold the untouched engine pointers, so "off" is byte-identical to vanilla.
+#   1 = arm the counters (per-child ray walks, per-child narrowphase walks,
+#       per-body ray tests, broadphase pairs). Hot-swappable mid-scene.
+#   2 = as 1, plus __rdtsc timing around each filter call -> a measured
+#       filter-CPU ms/s figure. Costs ~2 rdtsc per call, so it perturbs slightly.
+rayTel 0
 npcFingerEnable 0
 npcFingerOwnBody 1
 npcFingerFollow 0.8
@@ -1143,6 +1161,18 @@ fsmpPush 1
 fsmpPushForce 12000
 fsmpPushMaxForce 32000
 fsmpPushMinDispU 0.15
+npcGenCap 1
+npcGenMassKg 2.0
+npcGenR 1.6
+npcGenAlpha 0.85
+genBend 1
+genBendPlayer 1
+genBendMax 7
+genBendUpMs 1000
+genBendHoldSec 60
+genBendDecaySec 5
+genBendArousal 60
+genBendTouchU 8
 npcFollower 1
 fsmpPushMult 1.0
 # ── GARMENT-RIG BUDGET (2026-07-30) ───────────────────────────────────────────────
@@ -1229,7 +1259,7 @@ apiDwellTailS 0.25
 # apiLog: START/END receipt lines in PPB.log. ON for this dev session (first in-game
 # verification); the packager refuses to ship it on.
 # dev machine: 1 for verification sessions; flip to 0 at packaging (shipping default)
-apiLog 1
+apiLog 0
 npcRigRangeU 700
 npcRigRangeHystU 100
 npcRigMaxActors 2
@@ -1251,7 +1281,7 @@ fsmpMassScale 1
 # chord, so the caps yield SILENTLY (live, ~1 s file poll — no rebuild). 0 = off. GLOBAL (also softens
 # tail touch, but the contact gate below blocks the old lag->push drag). Set 0 to revert instantly.
 # Material selector npcGarmentMat: 0 skin / 1 cloth / 2 snow / 3 grass / 4 none.
-npcGarmentMat 4
+npcGarmentMat 3
 # 2026-07-26 REVERTED 0.15 -> 0: this clamp is GLOBAL (all garment rigs incl. TAILS) and re-created the
 # Report-15 tail drag/mush when a hand is near (user: "khajiit/argonian tails don't act the same"). It also
 # throttled the hair's own drive. Proper hair-noise fix = garment-scoped fMinSoundVel raise (code), pending.
@@ -1282,70 +1312,70 @@ fsmpContactHoldMS 200
 # seed + Enable 0 = buried for every woman; a named NPC's antlers/horns come from her npcCap or her
 # own baked NIF. Re-enable + arm a `sculpt` gate only for a future head dial (dialed values archived
 # at tools/ppb-scratch/auri_antlers.txt + yvanni_horns_baked.txt).
-capHeadC15Enable 1
-capHeadC15AX 1.85
-capHeadC15AY 0.08
-capHeadC15AZ 0.41
-capHeadC15BX 0.62
-capHeadC15BY 6.38
-capHeadC15BZ -1.16
-capHeadC15R 0.880
-capHeadC16Enable 1
-capHeadC16AX -1.85
-capHeadC16AY 0.08
-capHeadC16AZ 0.41
-capHeadC16BX -0.62
-capHeadC16BY 6.38
-capHeadC16BZ -1.16
-capHeadC16R 0.880
-capHeadC17Enable 0
-capHeadC17AX 0
-capHeadC17AY 0
-capHeadC17AZ 20
-capHeadC17BX 0
-capHeadC17BY 0
-capHeadC17BZ 22
-capHeadC17R 0.5
-capHeadC18Enable 0
-capHeadC18AX 0
-capHeadC18AY 0
-capHeadC18AZ 20
-capHeadC18BX 0
-capHeadC18BY 0
-capHeadC18BZ 22
-capHeadC18R 0.5
-capHeadC19Enable 0
-capHeadC19AX 0
-capHeadC19AY 0
-capHeadC19AZ 20
-capHeadC19BX 0
-capHeadC19BY 0
-capHeadC19BZ 22
-capHeadC19R 0.5
-capHeadC20Enable 0
-capHeadC20AX 0
-capHeadC20AY 0
-capHeadC20AZ 20
-capHeadC20BX 0
-capHeadC20BY 0
-capHeadC20BZ 22
-capHeadC20R 0.5
-capHeadC21Enable 0
-capHeadC21AX 0
-capHeadC21AY 0
-capHeadC21AZ 20
-capHeadC21BX 0
-capHeadC21BY 0
-capHeadC21BZ 22
-capHeadC21R 0.5
-capHeadC22Enable 0
-capHeadC22AX 0
-capHeadC22AY 0
-capHeadC22AZ 20
-capHeadC22BX 0
-capHeadC22BY 0
-capHeadC22BZ 22
-capHeadC22R 0.5
+capHeadC15Enable 1.0000
+capHeadC15AX 0.0000
+capHeadC15AY 0.0000
+capHeadC15AZ 0.0000
+capHeadC15BX 0.0000
+capHeadC15BY 0.0000
+capHeadC15BZ 2.0000
+capHeadC15R 0.5000
+capHeadC16Enable 1.0000
+capHeadC16AX 0.0000
+capHeadC16AY 0.0000
+capHeadC16AZ 0.0000
+capHeadC16BX 0.0000
+capHeadC16BY 0.0000
+capHeadC16BZ 2.0000
+capHeadC16R 0.5000
+capHeadC17Enable 1.0000
+capHeadC17AX 0.0000
+capHeadC17AY 0.0000
+capHeadC17AZ 0.0000
+capHeadC17BX 0.0000
+capHeadC17BY 0.0000
+capHeadC17BZ 2.0000
+capHeadC17R 0.5000
+capHeadC18Enable 1.0000
+capHeadC18AX 0.0000
+capHeadC18AY 0.0000
+capHeadC18AZ 0.0000
+capHeadC18BX 0.0000
+capHeadC18BY 0.0000
+capHeadC18BZ 2.0000
+capHeadC18R 0.5000
+capHeadC19Enable 1.0000
+capHeadC19AX 0.0000
+capHeadC19AY 0.0000
+capHeadC19AZ 0.0000
+capHeadC19BX 0.0000
+capHeadC19BY 0.0000
+capHeadC19BZ 2.0000
+capHeadC19R 0.5000
+capHeadC20Enable 1.0000
+capHeadC20AX 0.0000
+capHeadC20AY 0.0000
+capHeadC20AZ 0.0000
+capHeadC20BX 0.0000
+capHeadC20BY 0.0000
+capHeadC20BZ 2.0000
+capHeadC20R 0.5000
+capHeadC21Enable 1.0000
+capHeadC21AX 0.0000
+capHeadC21AY 0.0000
+capHeadC21AZ 0.0000
+capHeadC21BX 0.0000
+capHeadC21BY 0.0000
+capHeadC21BZ 2.0000
+capHeadC21R 0.5000
+capHeadC22Enable 1.0000
+capHeadC22AX 0.0000
+capHeadC22AY 0.0000
+capHeadC22AZ 0.0000
+capHeadC22BX 0.0000
+capHeadC22BY 0.0000
+capHeadC22BZ 2.0000
+capHeadC22R 0.5000
 
 # ── ARGONIAN DORSAL RIDGE (2026-07-16): extra spine children that exist ONLY in
 # skeletonbeast_female.nif (spine0 10 / spine1 9 / spine2 17). Human + Khajiit spines are
@@ -1356,27 +1386,35 @@ capHeadC22R 0.5
 # copies were byte-identical seeds, but two definitions of one key is last-wins-ambiguous (the
 # ledger's 2026-07-29 warning) and would silently override any future edit made in the canonical
 # block above. Canonical definitions now live in ONE place only, next to C6.
-capSpine2C15Enable 1
-capSpine2C15AX 0.0
-capSpine2C15AY 5.0
-capSpine2C15AZ 0.0
-capSpine2C15BX 0.0
-capSpine2C15BY 5.0
-capSpine2C15BZ 2.0
-capSpine2C15R 0.500
-capSpine2C16Enable 1
-capSpine2C16AX 0.0
-capSpine2C16AY 5.0
-capSpine2C16AZ 0.0
-capSpine2C16BX 0.0
-capSpine2C16BY 5.0
-capSpine2C16BZ 2.0
-capSpine2C16R 0.500
+capSpine2C15Enable 1.0000
+capSpine2C15AX 0.0000
+capSpine2C15AY 5.0000
+capSpine2C15AZ 0.0000
+capSpine2C15BX 0.0000
+capSpine2C15BY 5.0000
+capSpine2C15BZ 2.0000
+capSpine2C15R 0.5000
+capSpine2C16Enable 1.0000
+capSpine2C16AX 0.0000
+capSpine2C16AY 5.0000
+capSpine2C16AZ 0.0000
+capSpine2C16BX 0.0000
+capSpine2C16BY 5.0000
+capSpine2C16BZ 2.0000
+capSpine2C16R 0.5000
 
 # --- 2026-07-18 BUILD: morph translation + shrink boost + body material + auto re-fit ---
 # npcBodyMat: ALL 18 body capsules' touch-sound material (the ground-thud killer).
 #   0 skin/NIF (loud thud), 1 cloth, 2 snow, 3 grass (near-silent, DEFAULT), 4 none.
-npcBodyMat 4
+# 2026-08-23 TRUE-SILENCE A/B: modes 5 and 6 are NEW. Modes 1-4 only choose a quieter entry in
+# another material's impact set (grass = a rustle, and only when the other side is skin -- two PPB
+# capsules is both-null and untested, which is exactly the NPC-vs-NPC report). 5 and 6 remove it:
+#   5 = unknown material hash (in no impact set; neither direction resolves) -- safer
+#   6 = null the shape->wrapper pointer (engine cannot reach a material at all) -- absolute,
+#       but if the engine does not null-check that read it CTDs on first contact => use 5.
+# Set BOTH npcBodyMat and npcGarmentMat to the same mode. npcGarmentMat applies at rig CREATE,
+# so flip npcFollower 0 -> 1 after changing it to rebuild hair/tail/GEN rigs.
+npcBodyMat 3
 # Morph-driven TRANSLATION (u per morph unit, es-scaled): breasts ride forward+up, butt cheeks
 # ride backward. Signed — petite presets pull them inward past the neutral base.
 bodyShiftBreastsUpU 1.25
@@ -1638,10 +1676,17 @@ mouthRampOut 3
 mouthFingerBox 1
 # touchProbe: capsule-DIALLING aid. Logs the nearest capsule to each fingertip every 45
 # frames. Ships OFF. Flip to 1 (with touchProbeHud 1) to re-enter a mapping session.
-touchProbe 1
+touchProbe 0
 touchProbeRangeU 3.0
 lmGainThigh 1.0
 lmGainArm 1.0
+lmNeutMChestY 12.832
+lmGainMChest 1.0
+lmGainMBelly 0.80
+lmGainMWaist 0.76
+lmGainMButt 1.0
+lmGainMThigh 0.79
+lmGainMArm 1.0
 lmClampLo 0.70
 lmClampHi 1.60
 # BREAST MODEL - fully computed, not knob+delta. Fitted from the M'rissi/Sofia
@@ -1793,7 +1838,7 @@ dgVictimPlanck 1
 #   geomHidden=  how many of those are hidden
 #   bodyArmor= / revealing= / armor='name'   the biped-slot-32 signal
 # Whichever column flips in lockstep with what you SEE is the signal the rig can trust.
-genProbe 2
+genProbe 0
 
 # maleGeometry: 0 = the geometry writers REFUSE a male even if he carries a PPB bake.
 # PPB decides "we own this actor's geometry" by a SHAPE test (COM is a bhkListShape). That was
@@ -1806,7 +1851,17 @@ genProbe 2
 # Flip to 1 ONLY after a male neutral body is captured and male UV landmarks exist.
 # Live (takes effect within one poll) and snapshot-participating (flipping it re-dresses everyone).
 # Receipt when it refuses: "CapFix <id> '<name>' carries a PPB bake but is MALE - geometry writers REFUSED".
-maleGeometry 0
+# maleGeometry — TRI-STATE. 0 = males untouched (was the default).
+# 1 = FULL: capsule knobs + ReScale + ReShape. DO NOT USE until a male neutral + male UV
+#     landmarks exist — ReShape reads the CBBE FEMALE UV atlas and ReScale uses the female
+#     48.045 base; together they are the 2026-07-15 "male re-scaled + capsules shrunk" bug.
+# 2 = SCULPT MODE (set now): capsule knobs write DIALLED values on males AND **ReScale RUNS**
+#     (it must — ReScale is what puts Havok joints on the XP32 nodes at the NPC's REAL scale;
+#     NPCs are not scale 1, that is the whole reason ReScale exists). Only ReShape is
+#     suppressed, because its UV landmarks are the CBBE FEMALE atlas.
+#     CORRECTED 2026-08-18: mode 2 used to disable ReScale for males too — that is exactly why
+#     the baked male's joints sat off their XP32 nodes. Needs the rebuilt DLL to take effect.
+maleGeometry 1
 
 # ── HAND JITTER (2026-08-02 investigation) ────────────────────────────────────────────
 # handBoxRelAlpha — the mode-2 relation filter. The box target is E = T_higgs . EMA(R),
@@ -1850,7 +1905,7 @@ handBoxWarp 1
 #   the bigger lever for scene weirdness. This knob is the PPB half.
 # 0 = never  |  1 = whole scene  |  2 = THIRD PERSON ONLY (fingers return in first person)
 # OStim VR ships DefaultThirdPerson=1, so scenes START third-person; the OStim Wheel switches.
-sceneSuspendHands 2
+sceneSuspendHands 1
 
 # sceneFirstDistU — mode 2's first/third-person signal (the engine's IsInFirstPerson never
 # flips in VR). First person = the HMD rides the scene body's head within this distance;
@@ -1898,6 +1953,19 @@ touchProbeHudU 1.0
 # duration of a PPB-skeleton actor's own drive, AND the guard captures each ragdoll's baked
 # pivots on first sight and writes back any pivot found collapsed (~2 Hz). v1's stranded-pivot
 # failure is structurally impossible: we own the restore. 0 = off (PLANCK stock everywhere).
+
+# ── SCENE BUMPER GATE (2026-08-23) ──────────────────────────────────────────────────────────
+# The CharacterBumper is the 19th collision body: a 20u x 76u capsule on layer 30 whose JOB is
+# shoving characters apart. In an OStim scene the actors are MEANT to share a space, so the
+# bumpers grind for the whole scene -- the NPC-vs-NPC noise, plus a constant shove fighting the
+# animation. The engine already does this for FURNITURE (it removes the non-ragdoll bodies from
+# the world); this is the reversible version: drop the bumper's collision while the actor carries
+# OStim excitement, restore it when the excitement decays away.
+# Trigger = OStimExcitementFaction rank. Inert if OStim is not installed (faction absent).
+bumperSceneOff 1
+# Excitement rank at/above which the bumper stops colliding. The rank DECAYS after a scene, so 1
+# covers the scene plus its settle. Raise for a tighter/later gate.
+bumperSceneExcite 1
 planckLoosenOurs 1
 
 # LIVE A/B on PLANCK's GLOBAL loosenRagdollConstraintPivots (its joint-loosening band-aid).
@@ -1917,114 +1985,114 @@ planckLoosenGlobal -1
 #   in Report 08 before enabling many of them at once.
 
 # C21 = CLITORIS — EYE-CONFIRMED on Lydia 2026-07-29
-capComC21Enable 1
-capComC21AX 0.0
-capComC21AY 2.0
-capComC21AZ 2.3
-capComC21BX 0.0
-capComC21BY 2.4
-capComC21BZ 4.3
-capComC21R 0.5
+capComC21Enable 1.0000
+capComC21AX 0.0000
+capComC21AY 2.0000
+capComC21AZ 2.3000
+capComC21BX 0.0000
+capComC21BY 2.4000
+capComC21BZ 4.3000
+capComC21R 0.5000
 
 # C22 = VAGINAL OPENING right side — EYE-CONFIRMED 2026-07-29
-capComC22Enable 1
-capComC22AX 2.0
-capComC22AY 1.0
-capComC22AZ 2.0
-capComC22BX 2.0
-capComC22BY -2.0
-capComC22BZ 2.0
-capComC22R 0.3
+capComC22Enable 1.0000
+capComC22AX 2.0000
+capComC22AY 1.0000
+capComC22AZ 2.0000
+capComC22BX 2.0000
+capComC22BY -2.0000
+capComC22BZ 2.0000
+capComC22R 0.3000
 
 # C23 = VAGINAL OPENING left side (X-mirror of C22)
-capComC23Enable 1
-capComC23AX -2.0
-capComC23AY 1.0
-capComC23AZ 2.0
-capComC23BX -2.0
-capComC23BY -2.0
-capComC23BZ 2.0
-capComC23R 0.3
+capComC23Enable 1.0000
+capComC23AX -2.0000
+capComC23AY 1.0000
+capComC23AZ 2.0000
+capComC23BX -2.0000
+capComC23BY -2.0000
+capComC23BZ 2.0000
+capComC23R 0.3000
 
 # C24 = CERVIX right side — EYE-CONFIRMED 2026-07-29
-capComC24Enable 1
-capComC24AX 2.0
-capComC24AY 0.6
-capComC24AZ 4.8
-capComC24BX 2.0
-capComC24BY -2.4
-capComC24BZ 4.8
-capComC24R 0.3
+capComC24Enable 1.0000
+capComC24AX 2.0000
+capComC24AY 0.6000
+capComC24AZ 4.8000
+capComC24BX 2.0000
+capComC24BY -2.4000
+capComC24BZ 4.8000
+capComC24R 0.3000
 
 # C25 = CERVIX left side (X-mirror of C24); the cervix OPENING is between C24/C25
-capComC25Enable 1
-capComC25AX -2.0
-capComC25AY 0.6
-capComC25AZ 4.8
-capComC25BX -2.0
-capComC25BY -2.4
-capComC25BZ 4.8
-capComC25R 0.3
+capComC25Enable 1.0000
+capComC25AX -2.0000
+capComC25AY 0.6000
+capComC25AZ 4.8000
+capComC25BX -2.0000
+capComC25BY -2.4000
+capComC25BZ 4.8000
+capComC25R 0.3000
 
 # C26 = UTERUS right side — EYE-CONFIRMED 2026-07-29
-capComC26Enable 1
-capComC26AX 1.5
-capComC26AY 0.6
-capComC26AZ 7.8
-capComC26BX 1.5
-capComC26BY -2.4
-capComC26BZ 7.8
-capComC26R 0.3
+capComC26Enable 1.0000
+capComC26AX 1.5000
+capComC26AY 0.6000
+capComC26AZ 7.8000
+capComC26BX 1.5000
+capComC26BY -2.4000
+capComC26BZ 7.8000
+capComC26R 0.3000
 
 # C27 = UTERUS left side (X-mirror of C26); the uterus is between C26/C27
-capComC27Enable 1
-capComC27AX -1.5
-capComC27AY 0.6
-capComC27AZ 7.8
-capComC27BX -1.5
-capComC27BY -2.4
-capComC27BZ 7.8
-capComC27R 0.3
+capComC27Enable 1.0000
+capComC27AX -1.5000
+capComC27AY 0.6000
+capComC27AZ 7.8000
+capComC27BX -1.5000
+capComC27BY -2.4000
+capComC27BZ 7.8000
+capComC27R 0.3000
 
 # C28 = ANUS right side — EYE-CONFIRMED 2026-07-29
-capComC28Enable 1
-capComC28AX 2.0
-capComC28AY -4.2
-capComC28AZ 3.2
-capComC28BX 2.0
-capComC28BY -7.2
-capComC28BZ 4.0
-capComC28R 0.3
+capComC28Enable 1.0000
+capComC28AX 2.0000
+capComC28AY -4.2000
+capComC28AZ 3.2000
+capComC28BX 2.0000
+capComC28BY -7.2000
+capComC28BZ 4.0000
+capComC28R 0.3000
 
 # C29 = ANUS left side (X-mirror of C28); the anal OPENING is between C28/C29
-capComC29Enable 1
-capComC29AX -2.0
-capComC29AY -4.2
-capComC29AZ 3.2
-capComC29BX -2.0
-capComC29BY -7.2
-capComC29BZ 4.0
-capComC29R 0.3
+capComC29Enable 1.0000
+capComC29AX -2.0000
+capComC29AY -4.2000
+capComC29AZ 3.2000
+capComC29BX -2.0000
+capComC29BY -7.2000
+capComC29BZ 4.0000
+capComC29R 0.3000
 
 # C30 = RECTUM right side — EYE-CONFIRMED 2026-07-29
-capComC30Enable 1
-capComC30AX 2.0
-capComC30AY -3.7
-capComC30AZ 8.2
-capComC30BX 2.0
-capComC30BY -6.7
-capComC30BZ 9.0
-capComC30R 0.3
+capComC30Enable 1.0000
+capComC30AX 2.0000
+capComC30AY -3.7000
+capComC30AZ 8.2000
+capComC30BX 2.0000
+capComC30BY -6.7000
+capComC30BZ 9.0000
+capComC30R 0.3000
 
 # C31 = RECTUM left side (X-mirror of C30)
-capComC31Enable 1
-capComC31AX -2.0
-capComC31AY -3.7
-capComC31AZ 8.2
-capComC31BX -2.0
-capComC31BY -6.7
-capComC31BZ 9.0
-capComC31R 0.3
+capComC31Enable 1.0000
+capComC31AX -2.0000
+capComC31AY -3.7000
+capComC31AZ 8.2000
+capComC31BX -2.0000
+capComC31BY -6.7000
+capComC31BZ 9.0000
+capComC31R 0.3000
 
 # ══ BACK + SHOULDER BLADE (2026-07-29) ═══════════════════════════════════════════════════
 # spine1 C9/C10 = BACK (R/L) · spine2 C17/C18 = SHOULDER BLADE (R/L).
@@ -2035,63 +2103,512 @@ capComC31R 0.3
 
 
 # Spine2 C17 = SHOULDER BLADE R
-capSpine2C17Enable 1
-capSpine2C17AX 3.675
-capSpine2C17AY 1.338
-capSpine2C17AZ 15.015
-capSpine2C17BX -3.675
-capSpine2C17BY 1.338
-capSpine2C17BZ 15.015
-capSpine2C17R 6.099
+capSpine2C17Enable 1.0000
+capSpine2C17AX 3.6750
+capSpine2C17AY 1.3380
+capSpine2C17AZ 15.0150
+capSpine2C17BX -3.6750
+capSpine2C17BY 1.3380
+capSpine2C17BZ 15.0150
+capSpine2C17R 6.0990
 
 # Spine2 C18 = SHOULDER BLADE L
-capSpine2C18Enable 1
-capSpine2C18AX 0.0
-capSpine2C18AY 5.0
-capSpine2C18AZ 0.0
-capSpine2C18BX 0.0
-capSpine2C18BY 5.0
-capSpine2C18BZ 2.0
-capSpine2C18R 0.5
+capSpine2C18Enable 1.0000
+capSpine2C18AX 0.0000
+capSpine2C18AY 5.0000
+capSpine2C18AZ 0.0000
+capSpine2C18BX 0.0000
+capSpine2C18BY 5.0000
+capSpine2C18BZ 2.0000
+capSpine2C18R 0.5000
 
 # ── NEW CHILDREN 2026-08-17 ────────────────────────────────────────────────────────────────
 # capComC32/C33 = the DRESS GATE pair. Two pelvic capsules to be raised/lowered by the
 #   clothed-state signal so the orifices are not reachable while the NPC is dressed (the
 #   female counterpart of the male slot-52 test). Shipped at the buried seed, Enable 0,
 #   until they are dialled in VR. COM is now 34 children = kMaxListChildren exactly.
+# ── 2026-08-17 (late) REASSIGNED: C23/C24 = THE CHIN SEAL. C15/C16 = Auri's antlers again.
+# Why the swap: capHead* knobs are GLOBAL and reach ANY actor whose head list has that child --
+# owning a private skeleton NIF does not shield an actor, it only makes EXTRA children exclusive.
+# skeleton_female_draenei.nif carries Yvanni's real baked horns at head 15..22 (verified in
+# inv_FINAL.json: C15 A=(2.0,6.0,10.8) B=(6.99,1.99,12.18) r=1.9, nifClass=baked-real), and the
+# beast head gate does NOT cover her -- IsBeastSkeletonActor matches the substring "beast" in the
+# skeleton path, and hers is skeleton_female_draenei.nif. So the seal at 15/16 was burying two horn
+# segments. The seal now lives on the two children ADDED 2026-08-17 (head 23->25), which are fresh
+# seeds on both human and draenei: no baked geometry anywhere to bury. Auri's antler npcCap moves
+# back to 15/16, where the HUMAN NIF has only seeds -- her documented original layout (15..22).
+# OLD NOTE (superseded):
 # capHeadC23/C24 = AURI'S ANTLERS, relocated. Her npcCap lines moved 15/16 -> 23/24 so that
 #   head 15/16 are free for the chin seal on HER too (npcCap wins over the knob, so while
 #   her antlers sat on 15/16 she was the one female who never got the seal). These stay
 #   Enable 0 for everyone: npcCap drives a child even with no knob covering it.
-capComC32Enable 1
-capComC32AX 1.0
-capComC32AY 1.5
-capComC32AZ 9.4
-capComC32BX 1.0
-capComC32BY -6.5
-capComC32BZ 10.5
-capComC32R 1.000
-capComC33Enable 1
-capComC33AX -1.0
-capComC33AY 1.5
-capComC33AZ 9.4
-capComC33BX -1.0
-capComC33BY -6.5
-capComC33BZ 10.5
-capComC33R 1.000
-capHeadC23Enable 0
-capHeadC23AX 0.0
-capHeadC23AY 0.0
-capHeadC23AZ 0.0
-capHeadC23BX 0.0
-capHeadC23BY 0.0
-capHeadC23BZ 2.0
-capHeadC23R 0.500
-capHeadC24Enable 0
-capHeadC24AX 0.0
-capHeadC24AY 0.0
-capHeadC24AZ 0.0
-capHeadC24BX 0.0
-capHeadC24BY 0.0
-capHeadC24BZ 2.0
-capHeadC24R 0.500
+capComC32Enable 1.0000
+capComC32AX 1.0000
+capComC32AY 1.5000
+capComC32AZ 9.4000
+capComC32BX 1.0000
+capComC32BY -6.5000
+capComC32BZ 10.5000
+capComC32R 1.0000
+capComC33Enable 1.0000
+capComC33AX -1.0000
+capComC33AY 1.5000
+capComC33AZ 9.4000
+capComC33BX -1.0000
+capComC33BY -6.5000
+capComC33BZ 10.5000
+capComC33R 1.0000
+capHeadC23Enable 1.0000
+capHeadC23AX 1.8500
+capHeadC23AY 0.0800
+capHeadC23AZ 0.4100
+capHeadC23BX 0.6200
+capHeadC23BY 6.3800
+capHeadC23BZ -1.1600
+capHeadC23R 0.8800
+capHeadC24Enable 1.0000
+capHeadC24AX -1.8500
+capHeadC24AY 0.0800
+capHeadC24AZ 0.4100
+capHeadC24BX -0.6200
+capHeadC24BY 6.3800
+capHeadC24BZ -1.1600
+capHeadC24R 0.8800
+
+# ── PLAYER GENITAL WAND (2026-08-18, v1 test instrument) ──────────────────────────────────
+# Two keyframed boxes riding the player's SOS chain (GenBase->mid->tip), HandBox family.
+# Receipts in PPB.log: "WAND: chain resolved", "WAND CREATE", ~1 Hz "WAND base=..." while
+# playerWandLog 1. All hot (~1 s poll). part 9 by design -- collides with the player's own
+# hands (parts 3/4/5) and NPC flesh, skips every special-cased part; see Tuning.h.
+playerWand 1
+playerWandR 0.9
+playerWandPart 9
+playerWandLog 0
+
+# ── PRIVATE COLLISION GROUP (2026-08-18) — the grab-through fix ───────────────────────────
+# HIGGS kills any contact between a body it HOLDS and a non-HIGGS body in the PLAYER's group
+# (physics.cpp:677-683). Our boxes/wand inherit that group, so poking a grabbed limb did
+# nothing. There is no API to be "recognized", so we leave the group instead.
+#   0 = off (legacy, bug present)   1 = always private   2 = private only while holding
+# Receipts: PPB.log "HBOX privGroup mode=... playerGrp=... -> ourGrp=..."
+handBoxPrivGroup 2
+handBoxPrivGroupId 65520
+# ── PLANCK-hit / IWP-stab fix (2026-08-18) ────────────────────────────────────────────────
+# Poking a HIGGS-grabbed NPC made PLANCK read the finger box as a REAL weapon hit -> TESHitEvent
+# -> Immersive Weapon Penetration VR dramatised it into a stab + downed-crit ragdoll. Fix: null
+# the box/wand hkpRigidBody userData so PLANCK bails before the hit (the finger still TOUCHES).
+# SELF-VERIFYING (only writes when the field holds our own wrapper) so a wrong offset cannot crash.
+#   0 = off   1 = always on   2 = AUTO: off at game start, on after the first save load (safe boot)
+# Receipts: PPB.log "NULLUD ... nulled" (success) or "NULLUD REFUSED" (offset unverified, safe).
+handBoxNullUserData 2
+
+# ── ORIFICE DRIVE (2026-08-20) ──────────────────────────────────────────────────────────
+# Turns the EXISTING COM sensor contacts (C21-C31, dialled + eye-confirmed 2026-07-29) into
+# actual gape-bone motion. Detection is unchanged — this is the reaction layer only.
+# Penetration requires BOTH twins of a depth pair (distL+distR <= sep*(1+tol)); a single
+# capsule grazed from outside can never pass. Stands down while a scene owns the actor.
+# NPCs only (the player is excluded at the per-actor seam, by design).
+orificeEnable 1
+orificeLog 0
+
+
+# Orifice gape widened 10% (user, 2026-08-21 — 'really tight, like the finger's mesh
+# wasn't incorporated'). Base was Min/Max 1.5/3.0 vaginal, 2.0/4.5 anal (PPA's own values).
+orificeVagMinU 1.65
+orificeVagMaxU 3.30
+orificeAnalMinU 2.20
+orificeAnalMaxU 4.95
+
+
+
+
+
+# ================================================================================================
+# 2026-08-22  MALE-DIAL SAFETY RECORD  —  THIS FILE IS THE MALE SCULPT WORKING SET, NOT THE
+#                                          SHIPPING FEMALE KNOB SET.
+# ================================================================================================
+# Steady state (doc 23, "THE GATE IS A SESSION TOOL"): gate OFF + knobs = the FEMALE set.
+# Right now `sculpt sculpt.nif` is ACTIVE in PPB_skeletons.txt, so SculptAllows() scopes EVERY
+# global cap* write to actors on sculpt.nif — no female actor receives any knob value from this
+# file while the gate stands.
+#
+#   ★ THE FEMALE KNOB SET IS ARCHIVED AT  PPB_tuning.txt.bak_pre_com20back  ("clean female knobs",
+#     doc 23 table). Session step 7 = restore it and re-comment the gate. NEVER ship this file.
+#
+# The male's lists were grown for spares + probes, which RESURRECTS knob indices that his earlier
+# trim had made dead. Those indices carry FEMALE-NAMED public-API values, so the male dial buries
+# or parks them. Each row below is a DELIBERATE male-dial value, not junk, and each is restored
+# from the archive above — never re-derived by hand:
+#
+#   knob            female part (capsule_body_part_map.json)   male-dial value here
+#   capSpine0C7     'flank R'            (slot 4 c7)           Enable 0 + spine burial
+#   capSpine0C8/C9  argonian ridge?      (slot 4 c8/c9, doc 21 s3 DO-NOT-ACT)  spine burial (0,5,*)
+#   capSpine0C10    beyond every female list (max idx 9)       Enable 0 + spine burial
+#   capSpine1C8/C10 unnamed seeds        (slot 5 c8/c10)       spine burial (0,5,*)
+#   capSpine1C9     'BACK (lower)'       (slot 5 c9)           spine burial — the male already
+#                                                              carries that capsule at child 7
+#                                                              (capSpine1C7), so leaving C9 live
+#                                                              gives him TWO coincident r6.033
+#                                                              back capsules.
+#   capComC27..C31  'uterus L','anus R/L','rectum R/L'         Enable 0 + COM burial. On the male
+#                                                              these DUPLICATE his own C23..C26
+#                                                              anal capsules exactly (byte-equal),
+#                                                              so they add contacts and no surface.
+#   capUpperC3      slot 2 c3 (named range 4)                  limb burial (0,0,0)->(0,0,2) r0.5
+#
+# ⚠ doc 21 s3: capSpine0C8/C9 (and capSpine1C7/C8, capSpine2C15/C16) may be the Argonian dorsal
+#   ridge. NOTHING here disables them — they are parked at the spine burial, exactly as the knob
+#   already did before (it wrote a 0.5u seed over that geometry either way). Settling what they
+#   are needs the user's eye on an Argonian in VR, not more static analysis.
+# ================================================================================================
+
+# ================================================================================================
+# 2026-08-22  MALE SCULPT: buried spare children + the SIX LANDMARK PROBES
+# ================================================================================================
+# sculpt.nif ONLY. Every index below exists solely in
+#   meshes/actors/character/character assets/PPB/sculpt.nif
+# so per-race-geometry-by-existence keeps them unreachable on every female skeleton
+# (ApplyListSlot bounds on the ACTOR'S OWN childInfo.size()).
+#
+# BURIED SPARES ship Enable 0 with the burial seed for their slot family:
+#   SPINE slots (spine0/1/2): (0,5,0)->(0,5,2) r 0.5  — the bone-frame origin sits ON THE
+#     BACK SURFACE (doc 22 s8), so +5Y is 5u INTO the body. An origin-parked capsule there
+#     would be touchable.
+#   EVERYWHERE ELSE (COM / head / limbs): (0,0,0)->(0,0,2) r 0.5 — origin is deep inside.
+#   Never A==B (the documented degenerate-invisible trap).
+
+capSpine0C11Enable 0
+capSpine0C11AX 0.000
+capSpine0C11AY 5.000
+capSpine0C11AZ 0.000
+capSpine0C11BX 0.000
+capSpine0C11BY 5.000
+capSpine0C11BZ 2.000
+capSpine0C11R 0.500
+capSpine1C11Enable 0
+capSpine1C11AX 0.000
+capSpine1C11AY 5.000
+capSpine1C11AZ 0.000
+capSpine1C11BX 0.000
+capSpine1C11BY 5.000
+capSpine1C11BZ 2.000
+capSpine1C11R 0.500
+capSpine1C12Enable 0
+capSpine1C12AX 0.000
+capSpine1C12AY 5.000
+capSpine1C12AZ 0.000
+capSpine1C12BX 0.000
+capSpine1C12BY 5.000
+capSpine1C12BZ 2.000
+capSpine1C12R 0.500
+capSpine2C19Enable 0
+capSpine2C19AX 0.000
+capSpine2C19AY 5.000
+capSpine2C19AZ 0.000
+capSpine2C19BX 0.000
+capSpine2C19BY 5.000
+capSpine2C19BZ 2.000
+capSpine2C19R 0.500
+capSpine2C20Enable 0
+capSpine2C20AX 0.000
+capSpine2C20AY 5.000
+capSpine2C20AZ 0.000
+capSpine2C20BX 0.000
+capSpine2C20BY 5.000
+capSpine2C20BZ 2.000
+capSpine2C20R 0.500
+capSpine2C21Enable 0
+capSpine2C21AX 0.000
+capSpine2C21AY 5.000
+capSpine2C21AZ 0.000
+capSpine2C21BX 0.000
+capSpine2C21BY 5.000
+capSpine2C21BZ 2.000
+capSpine2C21R 0.500
+capSpine2C22Enable 0
+capSpine2C22AX 0.000
+capSpine2C22AY 5.000
+capSpine2C22AZ 0.000
+capSpine2C22BX 0.000
+capSpine2C22BY 5.000
+capSpine2C22BZ 2.000
+capSpine2C22R 0.500
+capSpine2C23Enable 0
+capSpine2C23AX 0.000
+capSpine2C23AY 5.000
+capSpine2C23AZ 0.000
+capSpine2C23BX 0.000
+capSpine2C23BY 5.000
+capSpine2C23BZ 2.000
+capSpine2C23R 0.500
+capHeadC25Enable 0
+capHeadC25AX 0.000
+capHeadC25AY 0.000
+capHeadC25AZ 0.000
+capHeadC25BX 0.000
+capHeadC25BY 0.000
+capHeadC25BZ 2.000
+capHeadC25R 0.500
+capHeadC26Enable 0
+capHeadC26AX 0.000
+capHeadC26AY 0.000
+capHeadC26AZ 0.000
+capHeadC26BX 0.000
+capHeadC26BY 0.000
+capHeadC26BZ 2.000
+capHeadC26R 0.500
+capHeadC27Enable 0
+capHeadC27AX 0.000
+capHeadC27AY 0.000
+capHeadC27AZ 0.000
+capHeadC27BX 0.000
+capHeadC27BY 0.000
+capHeadC27BZ 2.000
+capHeadC27R 0.500
+capHeadC28Enable 0
+capHeadC28AX 0.000
+capHeadC28AY 0.000
+capHeadC28AZ 0.000
+capHeadC28BX 0.000
+capHeadC28BY 0.000
+capHeadC28BZ 2.000
+capHeadC28R 0.500
+capHeadC29Enable 0
+capHeadC29AX 0.000
+capHeadC29AY 0.000
+capHeadC29AZ 0.000
+capHeadC29BX 0.000
+capHeadC29BY 0.000
+capHeadC29BZ 2.000
+capHeadC29R 0.500
+capHeadC30Enable 0
+capHeadC30AX 0.000
+capHeadC30AY 0.000
+capHeadC30AZ 0.000
+capHeadC30BX 0.000
+capHeadC30BY 0.000
+capHeadC30BZ 2.000
+capHeadC30R 0.500
+capHeadC31Enable 0
+capHeadC31AX 0.000
+capHeadC31AY 0.000
+capHeadC31AZ 0.000
+capHeadC31BX 0.000
+capHeadC31BY 0.000
+capHeadC31BZ 2.000
+capHeadC31R 0.500
+capHeadC32Enable 0
+capHeadC32AX 0.000
+capHeadC32AY 0.000
+capHeadC32AZ 0.000
+capHeadC32BX 0.000
+capHeadC32BY 0.000
+capHeadC32BZ 2.000
+capHeadC32R 0.500
+capHeadC33Enable 0
+capHeadC33AX 0.000
+capHeadC33AY 0.000
+capHeadC33AZ 0.000
+capHeadC33BX 0.000
+capHeadC33BY 0.000
+capHeadC33BZ 2.000
+capHeadC33R 0.500
+capHeadC34Enable 0
+capHeadC34AX 0.000
+capHeadC34AY 0.000
+capHeadC34AZ 0.000
+capHeadC34BX 0.000
+capHeadC34BY 0.000
+capHeadC34BZ 2.000
+capHeadC34R 0.500
+capComC34Enable 0
+capComC34AX 0.000
+capComC34AY 0.000
+capComC34AZ 0.000
+capComC34BX 0.000
+capComC34BY 0.000
+capComC34BZ 2.000
+capComC34R 0.500
+capComC35Enable 0
+capComC35AX 0.000
+capComC35AY 0.000
+capComC35AZ 0.000
+capComC35BX 0.000
+capComC35BY 0.000
+capComC35BZ 2.000
+capComC35R 0.500
+capComC36Enable 0
+capComC36AX 0.000
+capComC36AY 0.000
+capComC36AZ 0.000
+capComC36BX 0.000
+capComC36BY 0.000
+capComC36BZ 2.000
+capComC36R 0.500
+capUpperC4Enable 0
+capUpperC4AX 0.000
+capUpperC4AY 0.000
+capUpperC4AZ 0.000
+capUpperC4BX 0.000
+capUpperC4BY 0.000
+capUpperC4BZ 2.000
+capUpperC4R 0.500
+capForeC2Enable 0
+capForeC2AX 0.000
+capForeC2AY 0.000
+capForeC2AZ 0.000
+capForeC2BX 0.000
+capForeC2BY 0.000
+capForeC2BZ 2.000
+capForeC2R 0.500
+capForeC3Enable 0
+capForeC3AX 0.000
+capForeC3AY 0.000
+capForeC3AZ 0.000
+capForeC3BX 0.000
+capForeC3BY 0.000
+capForeC3BZ 2.000
+capForeC3R 0.500
+capHandC6Enable 0
+capHandC6AX 0.000
+capHandC6AY 0.000
+capHandC6AZ 0.000
+capHandC6BX 0.000
+capHandC6BY 0.000
+capHandC6BZ 2.000
+capHandC6R 0.500
+capHandC7Enable 0
+capHandC7AX 0.000
+capHandC7AY 0.000
+capHandC7AZ 0.000
+capHandC7BX 0.000
+capHandC7BY 0.000
+capHandC7BZ 2.000
+capHandC7R 0.500
+capThighC7Enable 0
+capThighC7AX 0.000
+capThighC7AY 0.000
+capThighC7AZ 0.000
+capThighC7BX 0.000
+capThighC7BY 0.000
+capThighC7BZ 2.000
+capThighC7R 0.500
+capThighC8Enable 0
+capThighC8AX 0.000
+capThighC8AY 0.000
+capThighC8AZ 0.000
+capThighC8BX 0.000
+capThighC8BY 0.000
+capThighC8BZ 2.000
+capThighC8R 0.500
+capCalfC5Enable 0
+capCalfC5AX 0.000
+capCalfC5AY 0.000
+capCalfC5AZ 0.000
+capCalfC5BX 0.000
+capCalfC5BY 0.000
+capCalfC5BZ 2.000
+capCalfC5R 0.500
+capCalfC6Enable 0
+capCalfC6AX 0.000
+capCalfC6AY 0.000
+capCalfC6AZ 0.000
+capCalfC6BX 0.000
+capCalfC6BY 0.000
+capCalfC6BZ 2.000
+capCalfC6R 0.500
+capFootC4Enable 0
+capFootC4AX 0.000
+capFootC4AY 0.000
+capFootC4AZ 0.000
+capFootC4BX 0.000
+capFootC4BY 0.000
+capFootC4BZ 2.000
+capFootC4R 0.500
+capFootC5Enable 0
+capFootC5AX 0.000
+capFootC5AY 0.000
+capFootC5AZ 0.000
+capFootC5BX 0.000
+capFootC5BY 0.000
+capFootC5BZ 2.000
+capFootC5R 0.500
+
+# ------------------------------------------------------------------------------------------------
+# *** LANDMARK PROBES — REFERENCE ONLY — STRIP BEFORE SHIP ***
+# These SIX knob blocks and the SIX sculpt.nif children they drive are a measuring tool.
+# They are NEVER baked into the shipped male nif. To strip: delete the six blocks below AND
+# the tail child on each host list (spine0 12, spine1 13, spine2 24, COM 37, R+L Thigh 9,
+# R+L UpperArm 5), then drop CapFixChildKnobs/ChildPtr for those slots by one.
+#
+# Mesh-space positions were validated (uvErr < 0.005, all 8 landmarks) against the true
+# winning body malebody_1.nif shape 'HIMBO - Body' (11007 verts). MESH -> BONE LOCAL used the
+# FULL accumulated bind transform (rotation AND translation up the parent chain), NOT a bare
+# subtraction — the limb bones are rotated. Chord LENGTH is preserved to 1e-4u, and the thigh
+# chord comes out at Z = +19.92 (not -19.92), which is the documented sign check.
+#
+# POINT probes: 0.8u long, r 0.9, CENTRED on the landmark along the host bone's local +Z.
+# CHORD probes: ONE capsule whose two endpoints ARE the two landmarks, r 0.45 (a thin rod
+# that runs THROUGH the limb).
+# The L twins carry the X-negated chords via capMirrorL / the baked mirror children.
+# ------------------------------------------------------------------------------------------------
+
+# CHEST      point probe  mesh (0.00, 7.02, 97.93)  -> NPC Spine2 [Spn2] local (0.0000, 11.9430, 8.3518)
+capSpine2C24Enable 0
+capSpine2C24AX 0.0200
+capSpine2C24AY 12.4560
+capSpine2C24AZ 11.6360
+capSpine2C24BX 0.0200
+capSpine2C24BY 12.4560
+capSpine2C24BZ 12.4360
+capSpine2C24R 0.9000
+
+# BELLY      point probe  mesh (0.00, 7.81, 89.22)  -> NPC Spine1 [Spn1] local (0.0000, 13.4284, 6.3754)
+capSpine1C13Enable 0
+capSpine1C13AX 0.0100
+capSpine1C13AY 13.1405
+capSpine1C13AZ 9.0586
+capSpine1C13BX 0.0100
+capSpine1C13BY 13.1405
+capSpine1C13BZ 9.8586
+capSpine1C13R 0.9000
+
+# WAISTLINE  point probe  mesh (0.00, 6.45, 76.18)  -> NPC Spine [Spn0] local (0.0000, 11.5272, 3.9833)
+capSpine0C12Enable 0
+capSpine0C12AX 0.0000
+capSpine0C12AY 11.7039
+capSpine0C12AZ 8.4431
+capSpine0C12BX 0.0000
+capSpine0C12BY 11.7039
+capSpine0C12BZ 9.2431
+capSpine0C12R 0.9000
+
+# BUTTCHEEK-R point probe mesh (3.69,-10.18, 71.08) -> NPC COM [COM ] local (3.6900, -10.1800, 2.1687)
+capComC37Enable 0
+capComC37AX 2.9314
+capComC37AY -8.3888
+capComC37AZ 5.1313
+capComC37BX 2.9314
+capComC37BY -8.3888
+capComC37BZ 5.9313
+capComC37R 0.9000
+
+# LEG CHORD  front (9.09, 4.68, 48.95) / back (12.44,-5.22, 49.54) -> NPC R Thigh [RThg]; chord len 10.4681u mesh == 10.4681u local
+capThighC9Enable 0
+capThighC9AX 0.1620
+capThighC9AY 5.6870
+capThighC9AZ 10.3930
+capThighC9BX -3.1180
+capThighC9BY -5.9560
+capThighC9BZ 10.0890
+capThighC9R 0.4500
+
+# ARM CHORD  front (16.90,-1.07, 95.54) / back (19.41,-7.99, 94.74) -> NPC R UpperArm [RUar]; chord len 7.4045u mesh == 7.4045u local
+capUpperC5Enable 0
+capUpperC5AX 1.3090
+capUpperC5AY 4.0050
+capUpperC5AZ 11.6480
+capUpperC5BX -0.5400
+capUpperC5BY -3.1870
+capUpperC5BZ 12.6250
+capUpperC5R 0.4500

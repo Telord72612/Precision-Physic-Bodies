@@ -8,6 +8,10 @@
 //  ball-to-ball capsule auto-fit, and the `capfix` console entry.
 // ============================================================================
 namespace GrabDiag {
+    // ★ 2026-08-23: scene physics gate. Driven per-actor for NPCs from CapFixApply; the PLAYER is
+    // excluded from that path entirely (VRIK owns his arms), so main.cpp drives him separately.
+    void SceneCollisionGate(RE::Actor* actor, std::uint32_t id);
+    bool IsBeastActorForNames(RE::Actor* actor);   // beast-skeleton test for API part naming
     // The 12-slot gen sweep: applies the cap* knobs to this actor's bodies once per generation,
     // with a 1 Hz body-identity probe (ragdoll-rebuild self-heal) and the capAutoFit dispatcher.
     // Call each hook fire per driven actor — gated internally by the generation.
@@ -29,6 +33,9 @@ namespace GrabDiag {
     // read off HIGGS's weapon rigid body. Falls back to a zero-length segment at the body
     // position when the shape is unreadable. false = no weapon body at all.
     bool WeaponSegmentU(bool left, float aOutU[3], float bOutU[3], float* rOutU);
+    // The held object's bound-box SEGMENT (longest axis + radius, world game units). false =
+    // no readable/anisotropic bound, caller keeps the worldBound sphere. 2026-08-19.
+    bool ObjectSegmentU(RE::TESObjectREFR* refr, float aOutU[3], float bOutU[3], float* rOutU);
     bool SlotBodyPoseU(RE::Actor* a, int slot, float posOutU[3], float rotOut[9]);
 
     // The raw hkpRigidBody backing a slot (void* keeps SDK types out of this header).

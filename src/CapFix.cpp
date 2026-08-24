@@ -1,5 +1,6 @@
 #include "PCH.h"
 #include "CapFix.h"
+#include "HandBox.h"   // HandBox::IsSceneSuspended — the proven ostim_start/end flag
 #include "Tuning.h"    // ObjectHold::CapFixGen/CapFixSlot/CapFixChildSlot/CapFixSet/CapAutoFitEnabled/CapMirrorLEnabled
 #include "PivFix.h"    // ObjectHold::PivReadJointLocal — the joint-ball reader for the capsule auto-fit
 #include "Interop.h"   // Interop::IsActorGrabbedByPlayer — the auto-fit grab gate (2026-07-07)
@@ -46,7 +47,12 @@ namespace GrabDiag {
     // the wave-2 torso bake gives COM 21 children (spine0/1/2 get 11 each), so the old `n > 8` plausibility
     // gate would have silently SKIPPED the whole COM list — mains included. 24 leaves headroom and stays
     // far below Havok's own caps (hkpListShape::kMaxChildrenForSPUMidPhase = 252).
-    static constexpr int kMaxListChildren = 34;   // 2026-07-29: COM grew to 32 (pelvis sensors)
+    // 2026-08-22: the male SCULPT nif grows COM to 38 (10 buried spares + the ButtCheekR landmark
+    // probe), head 35, spine2 25, spine1 14, spine0 13. 44 clears the largest target with headroom
+    // and stays far below hkpListShape::kMaxChildrenForSPUMidPhase (252). ⚠ This constant also
+    // SIZES wroteChild/wa/wb/wr below — the mirror replay loops it, so it must never shrink under
+    // any live child count.
+    static constexpr int kMaxListChildren = 44;   // 2026-08-22: male sculpt COM -> 38 children
 
     // ---- slot tables (file-scope: the gen sweep, the list path and the L mirror all use them) ----
     static constexpr const char* kSlotNode[12] = {
@@ -79,6 +85,118 @@ namespace GrabDiag {
         if (typeOut) *typeOut = static_cast<int>(shape->type);
         if (shape->type != RE::hkpShapeType::kCapsule) return nullptr;
         return const_cast<RE::hkpCapsuleShape*>(static_cast<const RE::hkpCapsuleShape*>(shape));
+    }
+
+    // ── ★ SCENE BUMPER GATE (2026-08-23) ────────────────────────────────────────────────────
+    // The CharacterBumper (20u x 76u, layer 30) exists to push characters APART. During an OStim
+    // scene that is actively wrong: the actors are supposed to occupy the same space, so the
+    // bumpers grind together for the whole scene — noise, and a constant shove fighting the
+    // animation. The engine already solves this for FURNITURE by calling
+    // BSAnimationGraphManager::RemoveNonRagdollRigidBodiesFromWorld (VR 0x61A0E0), which drops
+    // the bumper out of the world entirely; PLANCK hooks it on furniture enter AND exit.
+    // We do the same thing the cheap, fully reversible way: flip the collidable's NO-COLLIDE bit
+    // (0x4000) instead of removing the body from the world. No task queue, no add/remove ordering
+    // hazard (PLANCK needs a 0.1s delay for exactly that reason), and the worst possible failure
+    // is one actor whose bumper stays non-colliding until their 3D reloads — versus a body
+    // stranded outside the world, which is unrecoverable.
+    //
+    // The trigger is OSTIM'S OWN EXCITEMENT FACTION (user's call, and the safest signal available):
+    // it is set by OStim for scene participants and DECAYS afterwards, so the gate covers the
+    // whole scene plus the settling period, and needs no scene-start/scene-end event to stay in
+    // sync. Same lookup pattern PPB already uses for sla_Arousal.
+    static RE::TESFaction* ExcitementFaction()
+    {
+        static RE::TESFaction* s_f = nullptr;
+        static bool s_tried = false;
+        if (!s_tried) {
+            s_tried = true;
+            s_f = RE::TESForm::LookupByEditorID<RE::TESFaction>("OStimExcitementFaction");
+            logger::info("BUMPER scene gate: faction 'OStimExcitementFaction' {} — gate {}",
+                         s_f ? "FOUND" : "ABSENT", s_f ? "live" : "INERT (no OStim: bumper never gated)");
+        }
+        return s_f;
+    }
+
+    // Rank = excitement 0..100. <0 means "not in the faction" = not in a scene.
+    static int ExcitementOf(RE::Actor* a)
+    {
+        auto* f = ExcitementFaction();
+        if (!a || !f) return -1;
+        return a->GetFactionRank(f, a->IsPlayerRef());
+    }
+
+    // Per-actor, throttled: GetFactionRank walks the faction list, so it is not a per-frame read.
+    void SceneCollisionGate(RE::Actor* actor, std::uint32_t id)
+    {
+        if (!ObjectHold::BumperSceneOff()) return;
+        struct Cached { std::uint64_t ms; bool off; };
+        static std::unordered_map<std::uint32_t, Cached> s_state;
+        const auto nowMs = (std::uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+                               std::chrono::steady_clock::now().time_since_epoch()).count();
+        auto it = s_state.find(id);
+        const bool due = (it == s_state.end() || nowMs - it->second.ms > 500);
+        if (!due) return;
+        if (s_state.size() > 512) s_state.clear();
+
+        // ★ 2026-08-23 CORRECTED: excitement alone did NOT work. The faction resolves, but no
+        // driven actor ever read a rank at/above the threshold, so the gate never armed — proven
+        // by eye (the bumper never went green) and by the total absence of a state-change receipt.
+        // The first "success" was a scene on a TABLE, i.e. the ENGINE's furniture path removing
+        // the bumper for us; on the floor the noise would have come straight back.
+        // PPB already had the right signal all along: the ostim_start / ostim_end mod events that
+        // drive hand suspension (main.cpp SceneEventSink), verified firing for the very floor
+        // scene that disproved the faction. Use that as the primary and keep excitement as a
+        // secondary, because the RANK DECAYS — which covers the post-scene settle the event's
+        // hard end edge does not.
+        const bool inScene = HandBox::IsSceneSuspended();
+        const int  excite  = ExcitementOf(actor);
+        const bool want    = inScene ||
+                             (excite >= (int)(ObjectHold::BumperSceneExcite() + 0.5f));
+        // ★ 2026-08-23: report the RANK ITSELF, once per actor per distinct value. Without this
+        // a gate that never arms is indistinguishable from a gate that never ran — the first
+        // OStim test read silent and the silence turned out to be the engine's FURNITURE path
+        // (a table scene) rather than this gate. An explicit number ends that ambiguity.
+        {
+            static std::unordered_map<std::uint32_t, int> s_seen;
+            if (s_seen.size() > 512) s_seen.clear();
+            auto sit = s_seen.find(id);
+            if (sit == s_seen.end() || sit->second != excite) {
+                s_seen[id] = excite;
+                logger::info("BUMPER {:08X} scene={} excitement={} (threshold {}) -> collision {}",
+                             id, inScene ? 1 : 0, excite,
+                             (int)(ObjectHold::BumperSceneExcite() + 0.5f), want ? "OFF" : "ON");
+            }
+        }
+
+        // ★ 2026-08-23 FINAL (user directive): "NPC and player to have NO HAVOK PHYSIC during
+        // scene." The bumper alone was not enough — with only it gated, scene ALIGNMENT was still
+        // completely off, which means the RAGDOLL bodies themselves are what fight the animation.
+        // So every body PPB knows about goes non-colliding for the duration: the 12 slots, the 6
+        // left twins, and the bumper. NOTHING is moved or removed — only the collide bit flips, so
+        // the pose, the constraints and every capsule's geometry are untouched and the restore is
+        // a single bit per body.
+        int changed = 0;
+        auto setBody = [&](const char* nodeName) {
+            if (!nodeName) return;
+            auto* hn = FindNode(actor, nodeName);
+            auto* colObj = hn ? hn->collisionObject.get() : nullptr;
+            if (!colObj) return;
+            auto* body = static_cast<RE::bhkCollisionObject*>(colObj)->GetRigidBody();
+            auto* hkp  = body ? body->GetRigidBody() : nullptr;
+            auto* col  = hkp ? hkp->GetCollidableRW() : nullptr;
+            if (!col) return;
+            std::uint32_t& filt = col->broadPhaseHandle.collisionFilterInfo.filter;
+            const bool isOff = (filt & 0x4000u) != 0;
+            if (want == isOff) return;
+            if (want) filt |= 0x4000u; else filt &= ~0x4000u;
+            ++changed;
+        };
+        for (int sl = 0; sl < 12; ++sl) { setBody(kSlotNode[sl]); setBody(kSlotNodeL[sl]); }
+        setBody("CharacterBumper");
+        if (changed)
+            logger::info("SCENEPHYS {:08X} collision {} on {} bodies (scene {} / excitement {})",
+                         id, want ? "OFF" : "ON", changed, inScene ? 1 : 0, excite);
+        s_state[id] = { nowMs, want };
     }
 
     // Same chain from an ALREADY-RESOLVED node (no name search, no string interning) — the per-frame
@@ -132,26 +250,50 @@ namespace GrabDiag {
     // Raw capsule float write (endpoints/radius in GAME units — converted here). Pure float edits,
     // the proven-safe class; shape TYPE is never touched.
     // ── BODY MATERIAL STAMP (2026-07-18, the "ground-hitting noise" fix — scope: every capsule
-    // CapFix resolves, i.e. all BAKED-FEMALE bodies. Males keep NIF skin; mixed male-female
-    // contacts still go quiet because the grass side of the pair falls to the soft entries.) ──
+    // CapFix resolves. 2026-08-23 V2.0: that is now ALL driven bodies, both sexes — males joined
+    // at maleGeometry 1 (ActorCarriesBake) and the beast-head early return stamps before exiting.
+    // Garment/wig/tail/GEN rigs are stamped separately at creation via npcGarmentMat.) ──
     // The engine plays contact sounds via a material-PAIR BGSImpactDataSet lookup on the two bhk
     // wrapper materialIds (NpcFingerTest.cpp:215 — the garment fix proved the mechanism in-game).
     // NIF-loaded capsules carry MaterialSkin -> the body-fall dirt THUD on every touch, absurd now
     // that ragdolls are always on. Offsets byte-validated in the Port structs: hkpShape userData
     // @0x10 -> bhk wrapper, wrapper materialId @0x20. npcBodyMat selector matches npcGarmentMat
     // (0 = leave the NIF material / skin, 1 cloth, 2 snow, 3 grass DEFAULT, 4 none).
+    // ── TRUE SILENCE MODES 5 and 6 (2026-08-23, user directive) ────────────────────────────
+    // Modes 1-4 all pick an entry in somebody else's impact table: grass/snow have NULL own sets,
+    // so the pair falls through to the OTHER material's set and plays ITS soft entry. That is a
+    // QUIETER SOUND, not silence, and it is only guaranteed when the other side is skin — two PPB
+    // capsules touching each other (NPC-vs-NPC) is both-sides-null and was never tested.
+    // The engine's whole sound path is one chain:
+    //     hkpShape +0x10 -> bhk wrapper -> +0x20 -> materialId -> BGSMaterialType.HavokImpactDataSet
+    // Break any link and there is nothing to play, for ANY pair, with no dependence on PLANCK's
+    // ragdollSoundVel or on which material the other body carries. Two ways, both here to be A/B'd:
+    //   5 = UNKNOWN HASH  — a materialId no impact set contains, so neither direction resolves.
+    //                       No null pointers anywhere; the safer of the two.
+    //   6 = NULL USERDATA — clear the wrapper pointer itself; the engine cannot reach a material
+    //                       at all. Absolute, but it relies on the engine null-checking that read.
+    //                       If mode 6 CTDs on first contact, that is the answer: use 5.
+    // Whichever proves truly silent in VR becomes the permanent shipped default.
+    constexpr std::uint32_t kPpbSilentMat = 0x50504231u;   // "PPB1" — matches no BGSMaterialType
     static void StampBodyMaterial(RE::hkpCapsuleShape* cap)
     {
         if (!cap) return;
-        std::uint32_t mat;
-        switch (static_cast<int>(ObjectHold::NpcBodyMat() + 0.5f)) {
-        case 0:  return;                       // skin/NIF — leave untouched
-        case 1:  mat = 0xE4D39CA3u; break;     // MaterialCloth
-        case 2:  mat = 0x17C77AAFu; break;     // MaterialSnow
-        case 4:  mat = 0u;          break;     // none
-        default: mat = 0x6E2F68EEu; break;     // MaterialGrass (direction-proof near-silent)
+        const int mode = static_cast<int>(ObjectHold::NpcBodyMat() + 0.5f);
+        if (mode == 0) return;                 // skin/NIF — leave untouched
+        void** wrapSlot = reinterpret_cast<void**>(reinterpret_cast<std::uint8_t*>(cap) + 0x10);
+        if (mode == 6) {                       // sever the chain at the shape
+            if (*wrapSlot) *wrapSlot = nullptr;
+            return;
         }
-        void* wrap = *reinterpret_cast<void**>(reinterpret_cast<std::uint8_t*>(cap) + 0x10);
+        std::uint32_t mat;
+        switch (mode) {
+        case 1:  mat = 0xE4D39CA3u;   break;   // MaterialCloth
+        case 2:  mat = 0x17C77AAFu;   break;   // MaterialSnow
+        case 4:  mat = 0u;            break;   // none
+        case 5:  mat = kPpbSilentMat; break;   // unknown hash — no set contains it
+        default: mat = 0x6E2F68EEu;   break;   // MaterialGrass (direction-proof NEAR-silent)
+        }
+        void* wrap = *wrapSlot;
         if (!wrap) return;
         auto* mid = reinterpret_cast<std::uint32_t*>(reinterpret_cast<std::uint8_t*>(wrap) + 0x20);
         if (*mid != mat) *mid = mat;
@@ -497,6 +639,13 @@ namespace GrabDiag {
         bool  lmNoseOk  = false;
         float lmChin[3] = {};
         bool  lmChinOk  = false;
+        // ★ SEX ROUTE (2026-08-21): stamped at latch so every consumer that only holds the
+        // RegionData (UvRegionRatio has no actor) resolves against the right neutral table.
+        // Latched-before-a-mode-flip data cannot go stale: the 1 Hz knob-watch edge-detects
+        // MaleGeometryMode() and ERASES every male-stamped record on a flip (a gen bump alone
+        // only re-applies geometry — the latch runs solely while !latched, so it needs that
+        // explicit erase; see the MALE-GEOMETRY MODE EDGE block).
+        bool  male = false;
     };
     static std::unordered_map<std::uint32_t, RegionData> s_regionRatio;
     // OBody push-event queue (2026-07-18): the Obody_ApplyMorph sink (main.cpp) runs on the Papyrus
@@ -948,6 +1097,62 @@ namespace GrabDiag {
                                                {-0.4113f, 0.0415f,-0.9106f}};
     static constexpr const char* kLmBoneName[6] =
         { "spine2", "COM", "spine1", "spine0", "RThigh", "RUpperArm" };
+
+    // ★★ MALE LANDMARK TABLE (2026-08-21) — the user's design: "males get their own ReShape
+    // UV mesh calculation, with no nipples and breast calculation, but that's the only
+    // difference with female". Derived OFFLINE from the load order's winning male body (the
+    // HIMBO PG-Patcher build) by INVERTING the runtime direction: the 4 ring anatomies were
+    // located GEOMETRICALLY on the known-neutral base mesh and THOSE vertices' UVs read back
+    // (tools/ppb-scratch/derive_male_landmarks.py; numbers + provenance in
+    // derive_male_landmarks_results.md). Round-tripped on BOTH HIMBO builds in the order:
+    // uvErr 0.0000 everywhere, so the addresses resolve the same anatomy on each.
+    //   u < 0 = CHANNEL STRUCTURALLY ABSENT. Breasts do not EXIST on the male table, so the
+    //   breast free-capsule model and every breast-derived driver (lmBreastOk, LMDRIVE,
+    //   UvBreastCapsule) self-disable by construction — lmOk is simply never set — instead of
+    //   by a gate somebody must remember to keep wired after the next rewrite (the exact
+    //   failure mode that produced the 2026-08-21 female-UV-on-male defect).
+    // Bone owners are IDENTICAL to the female table on purpose: the ring/limb consumers and
+    // the marker code index bones through the shared enum and must agree between the sexes.
+    static constexpr UvLandmark kUvLandmarksMale[kNumUvLandmarks] = {
+        { "R_nipple",     -1.f, -1.f, 0 },              // 0  ABSENT — no male breast channel
+        { "R_breast_up",  -1.f, -1.f, 0 },              // 1  ABSENT
+        { "R_breast_dn",  -1.f, -1.f, 0 },              // 2  ABSENT
+        // ★ 2026-08-22 PASS 2 — USER-PICKED off the real male atlas, resolved against the TRUE
+        // winning mesh `Bodyslide Output/.../malebody_1.nif` (shape "HIMBO - Body", 11007 verts).
+        // ⚠ The pass-1 values these replace were derived on `PG Patcher Output/.../ashe - fire and
+        // blood/malebody_1.nif` — a FOLLOWER-SPECIFIC body at a custom path, 9307 verts. Table AND
+        // neutrals were both wrong, and consistently so, which is why nothing looked broken.
+        // V here is RAW MESH V. The picker reports flipped V; table V = 1 - picker V.
+        { "chest_center", 0.500890f, 0.667550f, 0 },    // 3  upper chest, centreline
+        { "belly",        0.500000f, 0.775225f, 2 },    // 4  -> SPINE1 (pass 3, 2026-08-22:
+                                                        //    walked down live vs the pivot-
+                                                        //    corrected probe; world z 86.59)
+        { "waist",        0.500890f, 0.844300f, 3 },    // 5  -> SPINE0
+        { "butt_cheek",   0.472371f, 0.155440f, 1 },    // 6  COM — right glute; LATERAL only
+        { "R_leg_a",      0.190731f, 0.709533f, 4 },    // 7  thigh FRONT }- chord = FRONT-BACK
+        { "R_leg_b",      0.098734f, 0.707750f, 4 },    // 8  thigh BACK  }  thickness (pass 1 was
+                                                        //    an outer/inner GIRTH chord — changed)
+        { "R_arm_a",      0.238859f, 0.570410f, 5 },    // 9  arm front }- front-back thickness,
+        { "R_arm_b",      0.240294f, 0.469501f, 5 },    // 10 arm rear  }  the file's arm rule
+    };
+    // MALE bind frames (sculpt.nif — the shipped PPB male skeleton — parent-chain
+    // accumulation, same composition as every female constant). Only spine2/spine1 differ
+    // from the female chain; spine0, COM, and BOTH limb frames incl. rotations were verified
+    // digit-for-digit identical in the same derivation run, so those constants are SHARED,
+    // not assumed. If the user's ongoing skeleton sculpt moves a spine joint, re-run the
+    // derivation and refresh these TOGETHER with the lmNeutM* knob defaults — measurement
+    // and neutral must always come from the same frame.
+    static constexpr float kSpine2FrameZM = 91.2488f, kSpine2BindYM = -5.9318f;
+    static constexpr float kSpine1FrameZM = 81.4433f, kSpine1BindYM = -4.8585f;
+    static constexpr float kSpine0FrameZM = 72.7029f, kSpine0BindYM = -5.2399f;
+
+    // ONE definition of "male" for the whole ReShape path — the same base read every other
+    // male gate in this file uses. A null base counts as female (the safe, unchanged route).
+    static bool IsMaleShape(RE::Actor* actor)
+    {
+        auto* base = actor ? actor->GetActorBase() : nullptr;
+        return base && !base->IsFemale();
+    }
 
     // == HEAD NOSE SAMPLER (2026-07-23) -- DIAGNOSTIC-FIRST, the probe method that cracked the
     // body. The head is SEPARATE facegen geometry the body finder rejects by design (too few
@@ -1890,9 +2095,15 @@ namespace GrabDiag {
             const bool leg = (region == BodyScale::kThighs);
             const int ia = leg ? kLmLegA : kLmArmA, ib = leg ? kLmLegB : kLmArmB;
             if (!d.lmOk[ia] || !d.lmOk[ib]) return false;
-            const float gain = ObjectHold::LmRegionGain(region);
+            const float gain = d.male ? ObjectHold::LmRegionGainM(region)
+                                      : ObjectHold::LmRegionGain(region);
             if (gain < 0.001f) return false;
-            const float nC = ObjectHold::LmNeutLimbChord(region);
+            // SEX ROUTE (2026-08-21): the male neutrals are their own knob family — the
+            // female path takes the exact call it always took (zero-regression rule). A male
+            // neutral of 0 fails the < 1 check below = that channel self-disables, the
+            // established uncaptured convention (doc 04 §10b).
+            const float nC = d.male ? ObjectHold::LmNeutLimbChordM(region)
+                                    : ObjectHold::LmNeutLimbChord(region);
             if (nC < 1.f) return false;
             const float dx = d.lmPos[ia][0] - d.lmPos[ib][0];
             const float dy = d.lmPos[ia][1] - d.lmPos[ib][1];
@@ -1907,9 +2118,15 @@ namespace GrabDiag {
         }
         const int idx = LmIndexForRegion(region);
         if (idx < 0 || !d.lmOk[idx]) return false;
-        const float gain = ObjectHold::LmRegionGain(region);
+        const float gain = d.male ? ObjectHold::LmRegionGainM(region)
+                                  : ObjectHold::LmRegionGain(region);
         if (gain < 0.001f) return false;                  // channel disabled
-        float neut[3]; ObjectHold::LmNeutralPos(idx, neut);
+        // SEX ROUTE (2026-08-21): rings resolve against the neutral table of the SEX the
+        // landmarks were measured with. Female = the untouched original call; male = the
+        // lmNeutM* knobs (0 radial fails the < 1 check = channel self-disabled, doc 04 §10b).
+        float neut[3];
+        if (d.male) ObjectHold::LmNeutralPosM(idx, neut);
+        else        ObjectHold::LmNeutralPos(idx, neut);
         const float nR = LmRadial(neut), gR = LmRadial(d.lmPos[idx]);
         if (nR < 1.f || gR < 1.f) return false;           // degenerate — refuse rather than guess
         float r = 1.f + (gR / nR - 1.f) * gain;
@@ -1962,6 +2179,24 @@ namespace GrabDiag {
     //     or sits lower (Sofia: +0.4 out, -0.25 down vs Lydia) could never be reached.
     //   * Scale-free base-mesh units, added BEFORE the es multiply in ApplyScaleShape — same
     //     convention as the legacy shift, so the skeleton scale still rides on top exactly once.
+    // The cheek anchor for a given sex (2026-08-21). Female = the hand-confirmed knob, which
+    // stores Lydia's landmark ALREADY pushed — untouched. Male = the derived raw landmark
+    // pushed along its own outward radial AT READ TIME: one male knob (the raw landmark)
+    // instead of a second pre-pushed copy, and any lmButtOutU retune stays consistent between
+    // the sexes automatically. A zero male landmark = uncaptured -> false = the cheek fit
+    // self-disables (doc 04 §10b) and the capsules keep their knob placement.
+    static bool ButtNeutralAnchor(bool male, float out[3])
+    {
+        if (!male) { ObjectHold::LmButtNeutral(out); return true; }
+        ObjectHold::LmNeutralPosM(kLmButt, out);
+        const float nr = std::sqrt(out[0] * out[0] + out[1] * out[1]);
+        if (nr < 1.f) return false;
+        const float push = ObjectHold::LmButtOutU();
+        out[0] += push * (out[0] / nr);
+        out[1] += push * (out[1] / nr);
+        return true;
+    }
+
     static bool ButtLandmarkDelta(RE::Actor* actor, float out[3])
     {
         out[0] = out[1] = out[2] = 0.f;
@@ -1972,7 +2207,8 @@ namespace GrabDiag {
         const float  rad = std::sqrt(p[0] * p[0] + p[1] * p[1]);
         if (rad < 1.f) return false;              // degenerate reading — refuse rather than guess
         const float push = ObjectHold::LmButtOutU();
-        float neut[3]; ObjectHold::LmButtNeutral(neut);
+        float neut[3];
+        if (!ButtNeutralAnchor(it->second.male, neut)) return false;   // male uncaptured -> inert
         out[0] = p[0] + push * (p[0] / rad) - neut[0];
         out[1] = p[1] + push * (p[1] / rad) - neut[1];
         out[2] = p[2]                       - neut[2];   // push is radial (XY) — height is raw
@@ -2000,13 +2236,24 @@ namespace GrabDiag {
     static float BodyScaleRegionRatio(RE::Actor* actor, int slot, int child);   // defined below
 
     static void ApplyScaleShape(RE::Actor* actor, int slot, int child,
-                                float a[3], float b[3], float* r)
+                                float a[3], float b[3], float* r, bool withEs = true)
     {
-        const float es = CapScaleOf(actor);
+        // withEs=false (2026-08-23 V2.0): the knobless BAKED-children pass feeds geometry the
+        // ENGINE already actor-scaled at rig creation (measured: Faralda's baked C14 reads
+        // 1.059x Lydia's), so only the q/rb shape machinery below may apply — es would double.
+        const float es = withEs ? CapScaleOf(actor) : 1.f;
         // ── UV ReShape (2026-07-23): the ring ratio now comes from ONE source, the landmark
         // distance-from-node against Lydia's neutral. The girth sampler and the OBody-slider
         // fallback that used to feed this are gone — a second source that can quietly take over
         // is exactly what produced capsules nobody could account for.
+        // SEX SAFETY (2026-08-21): no sex check needed HERE — and that is by construction,
+        // not omission. A male in maleGeometry 0/2 latches an EMPTY record (no lmOk anywhere;
+        // a record measured under mode 1 cannot linger here either — the MALE-GEOMETRY MODE
+        // EDGE erases male records on every flip)
+        // so UvRegionRatio declines and q stays 1; in mode 1 the record is male-stamped and
+        // UvRegionRatio resolves against the MALE table. The 2026-08-21 defect (female UVs on
+        // FF0028CA) existed precisely because this path bypassed BodyScaleRegionRatio's male
+        // gate — the fix lives at the latch, the single source both paths drink from.
         float q = 1.f;
         if (actor) {
             const int reg = RegionForSlotChild(slot, child);
@@ -2058,12 +2305,26 @@ namespace GrabDiag {
         return l == RE::ACTOR_LIFE_STATE::kDead || l == RE::ACTOR_LIFE_STATE::kDying;
     }
 
+    // ── 2026-08-18: read the skeleton model for the ACTOR'S OWN SEX. Every site below used to
+    // hardcode kFemale, which reads the wrong path the moment a male carries a PPB skeleton.
+    // Kept as one helper so there is a single place to be wrong.
+    static const char* SkeletonModelForActor(RE::Actor* actor, RE::TESRace* race)
+    {
+        if (!race) return nullptr;
+        auto* base = actor ? actor->GetActorBase() : nullptr;
+        const auto sex = (base && !base->IsFemale()) ? RE::SEXES::kMale : RE::SEXES::kFemale;
+        return race->skeletonModels[sex].GetModel();
+    }
+
+    static bool IsBeastSkeletonActor(RE::Actor* actor);
+    // public wrapper for the API's name routing (2026-08-22: beast heads need their own names)
+    bool IsBeastActorForNames(RE::Actor* actor) { return IsBeastSkeletonActor(actor); }
     static bool IsBeastSkeletonActor(RE::Actor* actor)
     {
         auto* base = actor ? actor->GetActorBase() : nullptr;
         auto* race = base ? base->GetRace() : nullptr;
         if (!race) return false;
-        const char* mdl = race->skeletonModels[RE::SEXES::kFemale].GetModel();
+        const char* mdl = SkeletonModelForActor(actor, race);
         if (!mdl) return false;
         for (const char* p = mdl; *p; ++p)
             if ((*p == 'b' || *p == 'B') && _strnicmp(p, "beast", 5) == 0) return true;
@@ -2079,6 +2340,17 @@ namespace GrabDiag {
     static float BodyScaleRegionRatio(RE::Actor* actor, int slot, int child)
     {
         if (!actor) return 1.f;
+        // ── SCULPT MODE (2026-08-18, maleGeometry 2; comment refreshed 2026-08-21) ──────────
+        // Returning 1.0 means "no shape scaling": the capsule knobs write their DIALLED values
+        // verbatim, which is what hand-sculpting needs. Since 2026-08-21 the PRIMARY male
+        // gate lives at BodyScaleLatch (modes 0/2 latch EMPTY and never scan the mesh; mode 1
+        // measures with the MALE table) — this check stays as second-line defence because it
+        // is the one place a caller reaches without going through the latch cache, and a
+        // redundant 1.0 can never be wrong for modes != 1.
+        if (ObjectHold::MaleGeometryMode() != 1) {
+            auto* mb = actor->GetActorBase();
+            if (mb && !mb->IsFemale()) return 1.f;
+        }
         auto it = s_regionRatio.find(actor->GetFormID());
         if (it == s_regionRatio.end() || !it->second.latched) return 1.f;
         const int region = RegionForSlotChild(slot, child);
@@ -2149,6 +2421,34 @@ namespace GrabDiag {
         const bool trulyDead = (lifeSt == RE::ACTOR_LIFE_STATE::kDead ||
                                 lifeSt == RE::ACTOR_LIFE_STATE::kDying);
         if (actor && !isRef && (trulyDead || DismemberGuard::IsExcluded(actor))) return;
+        // ══ MALE ROUTE (2026-08-21) ═══════════════════════════════════════════════════════
+        // THE gate that closes the female-UV-on-male defect (FF0028CA, "breastSize=-1.57":
+        // the 2026-07-23 UV rewrite moved the ring path to ApplyScaleShape -> UvRegionRatio,
+        // which never consulted BodyScaleRegionRatio's male check — so the female atlas was
+        // measured and LATCHED on male meshes). The fix sits HERE, at the single source both
+        // consumers drink from, not at each consumer.
+        //   modes 0 + 2 (sculpt, the live mode): ReShape fully INERT for him. Latch an EMPTY
+        //   record — q = 1.0 everywhere by construction (no landmark ever sets lmOk), no mesh
+        //   scan, no UVMEAS line, no breast/butt free-capsule write. His capsules = knob x es
+        //   exactly, which is what hand-sculpting needs.
+        //   mode 1 (FULL): fall through — the sampler + every consumer route to the MALE
+        //   landmark table via d.male.
+        // A mode flip does NOT re-latch by itself (the snap-knob gen bump only re-applies;
+        // the latch runs solely while !rr.latched) — the 1 Hz knob-watch's MALE-GEOMETRY MODE
+        // EDGE erases every male-stamped record on a MaleGeometryMode() change, so an empty
+        // record can never linger into mode 1, nor a measured one back into sculpt mode.
+        const bool male = IsMaleShape(actor);
+        if (male && ObjectHold::MaleGeometryMode() != 1) {
+            RegionData md;
+            md.latched = true;
+            md.male    = true;
+            s_regionRatio[id] = md;
+            // never a silent exit (ledger rule): one line says WHY his ReShape is inert
+            logger::info("BodyScale {:08X} MALE, maleGeometry {} -> ReShape INERT (no UV scan, "
+                         "no landmark latch; capsules = knob x es)",
+                         id, ObjectHold::MaleGeometryMode());
+            return;
+        }
         RE::BSDynamicTriShape* hg = FindHeadGeom(actor);
         // Reference head capture (Lydia): both flavours, once, so NPCs compare like-with-like.
         if (isRef) {
@@ -2156,12 +2456,17 @@ namespace GrabDiag {
             if (g_refHeadDepth <= 1.f) { const float d = HeadVertDepth(hg);  if (d > 1.f) g_refHeadDepth = d; }
         }
         RegionData d;
+        d.male = male;   // sex-stamp the record: every actor-less consumer routes off this
         for (int reg = 0; reg < BodyScale::kMorphRegionCount; ++reg)
             d.net[reg] = Interop::GetRegionMorph(actor, reg);         // 0 if SKEE absent / no morphs
         // HEAD (reordered 2026-07-14): the morphed-vertex extent is the ONLY per-NPC-varying head number,
         // so try it FIRST (src=2); modelBound.radius is the authored local bound (near-constant per race,
         // ratio ~1.0 = no sizing) so it is only the FALLBACK (src=1). Both guarded; each needs its ref.
-        if (hg) {
+        // ★ 2026-08-21: the head channel stays FEMALE-ONLY for now — the male head UV layout
+        // is UNVERIFIED (measured-not-assumed rule) and the extent reference is Lydia, a
+        // female head, so a male extent ratio would compare unlike things. Skipping the whole
+        // block leaves headSrc 0 -> head ratio 1.0 for every male, even in mode 1.
+        if (hg && !male) {
             const float dep = HeadVertDepth(hg);
             if (dep > 0.f && g_refHeadDepth > 1.f) { d.headRaw = dep; d.headRef = g_refHeadDepth; d.headSrc = 2; }
             else {
@@ -2171,7 +2476,9 @@ namespace GrabDiag {
         }
         // ONE stage diagnostic (so a future src=0 shows WHICH stage failed): head bone found? head geom
         // found? and each raw measure + its reference, independent of which one won above.
-        {
+        // Suppressed for males — printing female-reference head numbers on an actor whose head
+        // channel is deliberately closed would be a diagnostic describing a dead path.
+        if (!male) {
             auto* r3d = actor ? actor->Get3D() : nullptr;
             const bool headBoneFound = r3d && r3d->GetObjectByName(RE::BSFixedString("NPC Head [Head]"));
             logger::info("BodyScale {:08X} HEADSTAGE headBoneFound={} hgFound={} boundDiam={:.2f} vertDepth={:.2f} "
@@ -2195,8 +2502,10 @@ namespace GrabDiag {
         // that has now cost two sessions — meshShape 0 froze the readings as well as the reaction.
         // lmButtFit therefore keeps the sampler alive on its own.
         if (ObjectHold::LmReShapeEnabled() && ObjectHold::BoneShapeEnabled()) {
-            if (!IsBeastSkeletonActor(actor))               // beast gate: never run the facegen
-                SampleHeadNose(actor, id, d);               // walker on a muzzle (garbage UVs)
+            if (!IsBeastSkeletonActor(actor) && !male)      // beast gate: never run the facegen
+                SampleHeadNose(actor, id, d);               // walker on a muzzle (garbage UVs);
+                                                            // male gate: head UVs unverified on
+                                                            // the male head — female-only for now
             BoneBands bb;
             bool bbOk = SampleBoneBands(actor, id, bb, false);
             // ── DECOY DETECTION (2026-07-23, the Faralda 17:57 case): her outfit carried an
@@ -2272,7 +2581,10 @@ namespace GrabDiag {
                     if (ObjectHold::LmButtFitEnabled()) {
                         const float* q = d.lmButt;
                         const float rr = std::sqrt(q[0] * q[0] + q[1] * q[1]);
-                        float nt[3]; ObjectHold::LmButtNeutral(nt);
+                        // sex-routed anchor so this receipt shows the SAME delta the apply
+                        // path will use; an uncaptured male anchor reads all-zero (inert)
+                        float nt[3] = { 0.f, 0.f, 0.f };
+                        ButtNeutralAnchor(d.male, nt);
                         const float pu = ObjectHold::LmButtOutU();
                         logger::info("LMBUTT {:08X} landmark=({:6.2f},{:7.2f},{:5.2f}) radial={:5.2f} "
                                      "-> cheek delta=({:+.2f},{:+.2f},{:+.2f}) vs neutral ({:.2f},{:.2f},{:.2f})",
@@ -2426,7 +2738,11 @@ namespace GrabDiag {
         if (!*tgt) return true;                          // gate off -> legacy
         auto* race = actor ? actor->GetRace() : nullptr;
         if (!race) return false;
-        const char* mdl = race->skeletonModels[RE::SEXES::kFemale].GetModel();
+        // ★ 2026-08-18: read the ACTOR'S OWN-SEX skeleton, not always kFemale — otherwise a
+        // `sculpt skeleton.nif` (the male) never matches a male actor (his female-slot path is a
+        // different file), and the whole point of scoping the dial to the male is lost. Same
+        // sex-hardcoding class fixed in IsBeastSkeletonActor.
+        const char* mdl = SkeletonModelForActor(actor, race);
         if (!mdl || !*mdl) return false;
         const char* base = mdl;                          // basename of the race's skeleton path
         for (const char* p = mdl; *p; ++p)
@@ -2465,7 +2781,19 @@ namespace GrabDiag {
         // eye-confirmed on spawned Khajiit + Argonian). Beast actors keep their BAKED head
         // list untouched — knobs, npcCap and the knobless captured×ratio branch all skipped —
         // until per-skeleton beast dials land via a sculpt-gate session + bake.
-        if (slot == 3 && IsBeastSkeletonActor(actor)) return;
+        if (slot == 3 && IsBeastSkeletonActor(actor)) {
+            // ★ 2026-08-23 V2.0: geometry stays baked, but the SOUND fix must still land here —
+            // this early return used to skip the per-child StampBodyMaterial loop below, so
+            // beast heads (khajiit/argonian, both sexes) kept their NIF material and head
+            // touches thudded. Stamp every live child, touch nothing else.
+            for (std::int32_t i = 0; i < n && i < kMaxListChildren; ++i) {
+                const RE::hkpShape* ch = list->childInfo[i].shape;
+                if (!ch || ch->type != RE::hkpShapeType::kCapsule) continue;
+                StampBodyMaterial(const_cast<RE::hkpCapsuleShape*>(
+                    static_cast<const RE::hkpCapsuleShape*>(ch)));
+            }
+            return;
+        }
 
         static constexpr const char* kHandChild[5] = { "c1-center", "c2-thumb", "c3-pinky", "c4-fill", "c5-fill" };
         const bool sculptOk = SculptAllowsSlot(actor, slot);   // once per slot, not per child
@@ -2515,7 +2843,16 @@ namespace GrabDiag {
             // covers it (Enable 0 / beyond the knob count). This is the "personal skeleton" layer:
             // seed children in the shared NIF stay buried for everyone except the named NPC.
             StampBodyMaterial(cap);   // 2026-07-18 sound fix: stamp EVERY live child, knobbed or baked
-            const bool haveKnob = sculptOk && ObjectHold::CapFixChildSlot(slot, static_cast<int>(i), a, b, r);
+            // ★ MALE BANK SKIP (2026-08-23 V2.0): there is exactly ONE global cap* bank and it is
+            // FEMALE-dialled — writing it onto a male is the 2026-07-15 "males re-scaled + capsules
+            // shrunk" regression, re-armed. A male's dial is his BAKE; he takes the knobless baked-q
+            // branch below instead. EXCEPTION: an active sculpt gate that admitted him (sculptOk with
+            // the gate ON) means a dial session is deliberately driving him — banks apply, exactly
+            // how all three male skeletons were sculpted. npcCap (per-NPC layer) stays male-legal.
+            const bool gateOn   = *ObjectHold::SculptTarget() != 0;
+            const bool maleBank = IsMaleShape(actor) && !gateOn;
+            const bool haveKnob = sculptOk && !maleBank &&
+                                  ObjectHold::CapFixChildSlot(slot, static_cast<int>(i), a, b, r);
             const bool haveNpc  = ObjectHold::NpcCapOverride(npcBaseId, slot, static_cast<int>(i), a, b, &r);
             if (!haveKnob && !haveNpc) {
                 // ── KNOBLESS HEAD CHILDREN (2026-07-24, the missing ReShape wire): the head is
@@ -2574,6 +2911,51 @@ namespace GrabDiag {
                                       "A=[{:.2f} {:.2f} {:.2f}] B=[{:.2f} {:.2f} {:.2f}] r={:.2f}",
                                       id, label, hr, na[0], na[1], na[2], nb[0], nb[1], nb[2], nr);
                     }
+                } else {
+                    // ── KNOBLESS BAKED CHILDREN (2026-08-23 V2.0, the male-ship wire) ─────────
+                    // An actor whose dial lives in his BAKED nif — every male at maleGeometry 1
+                    // (the bank skip above), and any actor a sculpt gate excludes — still needs
+                    // ReShape: the OBody q measured for him at latch. Same self-healing captured-
+                    // base machinery as the head branch, but through ApplyScaleShape's own q/rb
+                    // ring/long-bone semantics with es OFF: the engine bakes actor scale into the
+                    // live shape at rig creation, so captured-live x q is his true silhouette.
+                    // Always resolve base x q against the LIVE value: when q returns to 1.0 the
+                    // capsule must come home to its baked base, exactly like the knob path
+                    // rewriting from the bank every pass.
+                    struct BakedBase { float base[7]; float last[7]; };
+                    static std::unordered_map<const void*, BakedBase> s_bakedBase;
+                    if (s_bakedBase.size() > 8192) s_bakedBase.clear();
+                    const float cur[7] = {
+                        va[0] * kHavokToSkyrim, va[1] * kHavokToSkyrim, va[2] * kHavokToSkyrim,
+                        vb[0] * kHavokToSkyrim, vb[1] * kHavokToSkyrim, vb[2] * kHavokToSkyrim,
+                        cap->radius * kHavokToSkyrim };
+                    auto bbIt = s_bakedBase.find(cap);
+                    bool fresh = (bbIt == s_bakedBase.end());
+                    if (!fresh)
+                        for (int c2 = 0; c2 < 7 && !fresh; ++c2)
+                            if (std::fabs(cur[c2] - bbIt->second.last[c2]) > 0.05f) fresh = true;
+                    auto& bb = s_bakedBase[cap];
+                    if (fresh) std::memcpy(bb.base, cur, sizeof(cur));
+                    float na[3]  = { bb.base[0], bb.base[1], bb.base[2] };
+                    float nb2[3] = { bb.base[3], bb.base[4], bb.base[5] };
+                    float nr     = bb.base[6];
+                    ApplyScaleShape(actor, slot, static_cast<int>(i), na, nb2, &nr, /*withEs=*/false);
+                    float drift = 0.f;
+                    const float fin[7] = { na[0], na[1], na[2], nb2[0], nb2[1], nb2[2], nr };
+                    for (int c2 = 0; c2 < 7; ++c2)
+                        if (std::fabs(fin[c2] - cur[c2]) > drift) drift = std::fabs(fin[c2] - cur[c2]);
+                    if (drift > 0.01f) {
+                        WriteCapsule(cap, na, nb2, nr);
+                        wrote = true;
+                        wroteChild[i] = true;
+                        wa[i][0] = na[0];  wa[i][1] = na[1];  wa[i][2] = na[2];
+                        wb[i][0] = nb2[0]; wb[i][1] = nb2[1]; wb[i][2] = nb2[2];
+                        wr[i] = nr;
+                        logger::debug("CapFix {:08X} APPLIED {} baked-q "
+                                      "A=[{:.2f} {:.2f} {:.2f}] B=[{:.2f} {:.2f} {:.2f}] r={:.2f}",
+                                      id, label, na[0], na[1], na[2], nb2[0], nb2[1], nb2[2], nr);
+                    }
+                    std::memcpy(bb.last, fin, sizeof(fin));
                 }
                 continue;
             }
@@ -2911,6 +3293,66 @@ namespace GrabDiag {
         return fallbackPoint();
     }
 
+    // ── HELD-OBJECT SEGMENT (2026-08-19) ────────────────────────────────────────────────────
+    // The object probe was a single SPHERE (`worldBound.center` + `worldBound.radius`). For a
+    // 3x3x18u DD plug that is a ~9u ball: it reads "touching" from a hand's width away and can
+    // never express an INSERTION DEPTH, so every orifice/depth consumer of an OBJECT contact was
+    // being misled (VRTE report 23 s7.6 gap 2). Cure = the one WeaponSegmentU already uses: the
+    // base form's bound box, longest axis as the segment, second extent as the radius. The bound
+    // box is a stable public structure in the same model space the 3D transforms, so there is no
+    // Havok layout guessing at all.
+    //
+    // Returns false for a degenerate/absent bound so the caller keeps the sphere — a small round
+    // object is genuinely a sphere and the old path is correct for it.
+    bool ObjectSegmentU(RE::TESObjectREFR* refr, float aOutU[3], float bOutU[3], float* rOutU)
+    {
+        if (!refr) return false;
+        auto* d3 = refr->Get3D();
+        if (!d3) return false;
+        auto* base = refr->GetBaseObject();
+        auto* bo   = base ? base->As<RE::TESBoundObject>() : nullptr;
+        if (!bo) return false;
+
+        const auto& bd = bo->boundData;
+        float mn[3] = { (float)bd.boundMin.x, (float)bd.boundMin.y, (float)bd.boundMin.z };
+        float mx[3] = { (float)bd.boundMax.x, (float)bd.boundMax.y, (float)bd.boundMax.z };
+        float ext[3], ctr[3];
+        for (int i = 0; i < 3; ++i) { ext[i] = (mx[i] - mn[i]) * 0.5f; ctr[i] = (mx[i] + mn[i]) * 0.5f; }
+        int ax = 0;
+        if (ext[1] > ext[ax]) ax = 1;
+        if (ext[2] > ext[ax]) ax = 2;
+
+        // Degenerate or near-isotropic bound -> the sphere probe is the honest description.
+        // 2.0u mirrors WeaponSegmentU's floor; the aspect test keeps cubes/balls on the old path.
+        float second = 0.f;
+        for (int i = 0; i < 3; ++i) if (i != ax && ext[i] > second) second = ext[i];
+        if (ext[ax] < 2.f) return false;
+        if (second > 0.f && ext[ax] / second < 1.5f) return false;
+
+        // model -> world through the object's OWN 3D transform. `world * point` is the idiom
+        // CapFix.cpp:2346 already uses for landmark markers (rotate * scale + translate).
+        const RE::NiPoint3 ea{ ax == 0 ? ctr[0] - ext[0] : ctr[0],
+                               ax == 1 ? ctr[1] - ext[1] : ctr[1],
+                               ax == 2 ? ctr[2] - ext[2] : ctr[2] };
+        const RE::NiPoint3 eb{ ax == 0 ? ctr[0] + ext[0] : ctr[0],
+                               ax == 1 ? ctr[1] + ext[1] : ctr[1],
+                               ax == 2 ? ctr[2] + ext[2] : ctr[2] };
+        const RE::NiPoint3 wa = d3->world * ea;
+        const RE::NiPoint3 wb = d3->world * eb;
+        aOutU[0] = wa.x; aOutU[1] = wa.y; aOutU[2] = wa.z;
+        bOutU[0] = wb.x; bOutU[1] = wb.y; bOutU[2] = wb.z;
+
+        // Radius = the second extent, SCALED like the endpoints, then capped. The cap is the same
+        // reasoning as the blade-radius cap: a wide flat item's second extent is its breadth, not
+        // its thickness, and an uncapped barrel reads "deep" from well off-axis.
+        const float sc = d3->world.scale > 0.f ? d3->world.scale : 1.f;
+        float r = second * sc;
+        const float rCap = ObjectHold::ApiObjectRMaxU();
+        if (rCap > 0.f && r > rCap) r = rCap;
+        if (rOutU) *rOutU = r > 0.25f ? r : 0.25f;
+        return true;
+    }
+
     bool ReadCapsuleWorldUSide(RE::Actor* actor, int slot, bool left, int child,
                                float aOut[3], float bOut[3], float* rOut)
     {
@@ -3171,7 +3613,13 @@ namespace GrabDiag {
         // cap* knobs into his capsules, PivScaleCorrect rewrites his 17 pivots off the female
         // kBaseArc 48.045, and ReShape feeds both from kUvLandmarks — CBBE/3BA FEMALE atlas UVs.
         // That is the 2026-07-15 "males re-scaled + capsules shrunk" regression, re-armed.
-        // Refuse until the user has a male neutral + male landmarks and flips maleGeometry.
+        // ★ 2026-08-18: `MaleGeometryOn()` is true for mode 1 (FULL) AND mode 2 (SCULPT), so a
+        // baked male is ADMITTED in both — the capsule knobs and ReScale run on him (correct:
+        // ReScale + the pivot bake seat his joints on the universal XP32 nodes, and dialling the
+        // capsules at scale 1 is the whole point of sculpt mode). The one female-specific piece,
+        // ReShape's UV landmarks, is handled at BodyScaleLatch (2026-08-21): modes 0/2 latch an
+        // EMPTY record (ReShape inert, no scan), mode 1 measures with the MALE landmark table.
+        // maleGeometry 0 still refuses everything (the pre-sculpt safe default).
         if (!ObjectHold::MaleGeometryOn()) {
             auto* base = actor->GetActorBase();
             if (base && !base->IsFemale()) {
@@ -3456,6 +3904,10 @@ namespace GrabDiag {
         // ══ UV LANDMARK RESOLVE (2026-07-22) — the ReShape reference measurement ══════════════
         // For each landmark: find the vertex nearest its UV, then express it BONE-LOCAL. That is a
         // straight line from the anatomy to the Havok joint that owns it. Nothing is inferred.
+        // ★ SEX ROUTE (2026-08-21): males resolve against kUvLandmarksMale + the MALE bind
+        // frames. Only mode-1 males ever reach this code (modes 0/2 latch empty upstream), so
+        // no mode check is repeated here.
+        const bool male = IsMaleShape(actor);
         {
             int uvOff2 = -1;
             for (int off = 4; off + 4 <= stride && uvOff2 < 0; off += 2) {
@@ -3474,9 +3926,18 @@ namespace GrabDiag {
             }
             if (uvOff2 >= 0) {
                 for (int m = 0; m < kNumUvLandmarks; ++m) {
-                    const auto& Ldef = kUvLandmarks[m];
+                    // FEMALE keeps the live lmNip*/lmChest*/... UV knobs (byte-identical to
+                    // before); MALE reads the derived constant table — no male UV knobs until
+                    // the user's eye-verification says the addresses need dialling.
+                    const auto& Ldef = male ? kUvLandmarksMale[m] : kUvLandmarks[m];
                     struct { const char* name; float u, v; int bone; } L{
-                        Ldef.name, ObjectHold::LmUV(m, 0), ObjectHold::LmUV(m, 1), Ldef.bone };
+                        Ldef.name,
+                        male ? Ldef.u : ObjectHold::LmUV(m, 0),
+                        male ? Ldef.v : ObjectHold::LmUV(m, 1),
+                        Ldef.bone };
+                    // u < 0 = STRUCTURALLY ABSENT on this sex's table (male breasts): no
+                    // lookup, no lmOk, no log — the channel simply does not exist for him.
+                    if (L.u < 0.f) continue;
                     int bi = -1; float bd = 1e9f;
                     for (int i = 0; i < bm.n; ++i) {
                         const std::uint8_t* q = bm.data + static_cast<std::size_t>(i) * stride + uvOff2;
@@ -3495,10 +3956,17 @@ namespace GrabDiag {
                                      id, mname, L.name, err);
                         continue;
                     }
-                    float fz = kSpine2FrameZ, fy = kSpine2BindY, fx = 0.f;
+                    // Bind frames route by sex where the skeletons DIFFER (spine2/spine1);
+                    // COM + limb frames were derivation-verified identical between the male
+                    // and female PPB skeletons, so those constants are genuinely shared.
+                    float fz = male ? kSpine2FrameZM : kSpine2FrameZ;
+                    float fy = male ? kSpine2BindYM  : kSpine2BindY;
+                    float fx = 0.f;
                     if      (L.bone == 1) { fz = kComFrameZ;    fy = kComBindY; }
-                    else if (L.bone == 2) { fz = kSpine1FrameZ; fy = kSpine1BindY; }
-                    else if (L.bone == 3) { fz = kSpine0FrameZ; fy = kSpine0BindY; }
+                    else if (L.bone == 2) { fz = male ? kSpine1FrameZM : kSpine1FrameZ;
+                                            fy = male ? kSpine1BindYM  : kSpine1BindY; }
+                    else if (L.bone == 3) { fz = male ? kSpine0FrameZM : kSpine0FrameZ;
+                                            fy = male ? kSpine0BindYM  : kSpine0BindY; }
                     // LIMBS are the first OFF-CENTRE frames: unlike every spine bone, their bind
                     // X is non-zero, so the landmark must be de-biased on all THREE axes.
                     else if (L.bone == 4) { fz = kRThighFrameZ; fy = kRThighBindY; fx = kRThighBindX; }
@@ -3594,6 +4062,18 @@ namespace GrabDiag {
                          "belly={:.2f} waist={:.2f} buttOut={:.2f}",
                          id, mname, size, thick, sag,
                          out.lmPos[kLmChest][1], bellyR, waistR, buttR);
+        } else if (male && out.lmOk[kLmChest]) {
+            // MALE receipt (2026-08-21): there is no nipple channel to gate on, so the female
+            // UVMEAS line above can never print for him — this line is his measurement proof.
+            // Gated on `male` so a FEMALE with a failed nipple landmark logs exactly what she
+            // always logged (zero-regression rule).
+            float bellyR = 0.f, waistR = 0.f, buttR = 0.f;
+            if (out.lmOk[kLmBelly]) bellyR = out.lmPos[kLmBelly][1];
+            if (out.lmOk[kLmWaist]) waistR = out.lmPos[kLmWaist][1];
+            if (out.lmOk[kLmButt])  buttR  = -out.lmPos[kLmButt][1];   // rear is -Y; report positive
+            logger::info("UVMEAS-M {:08X} '{}' chest={:.2f} belly={:.2f} waist={:.2f} buttOut={:.2f} "
+                         "(male table — no breast channels by design)",
+                         id, mname, out.lmPos[kLmChest][1], bellyR, waistR, buttR);
         }
 
         // ══ NIPPLE-UV SCAN (2026-07-21) ═══════════════════════════════════════════════════════
@@ -3915,6 +4395,11 @@ namespace GrabDiag {
         // (3D mid-load) returns false without caching, so we simply retry next tick.
         if (!ActorCarriesBake(actor)) return;
 
+        // Runs EVERY driven frame, BEFORE the rebuild/latch early-return below — the scene gate is
+        // a live state that has to track excitement rising and decaying, not a one-shot dressing
+        // step. It self-throttles to ~2 Hz internally.
+        SceneCollisionGate(actor, actor->GetFormID());
+
         // The 6 mirror-targeted L twins ride the identity probe too (indices 12..17), so an
         // AI-warp/teleport ragdoll rebuild re-applies the LEFT side with everything else.
         static constexpr const char* kProbeNodeL[6] = {
@@ -4115,6 +4600,29 @@ namespace GrabDiag {
                     s_lastBSDump = bsDump; s_lastMeshDump = mDump; s_lastBoneTest = bTest;
                     s_regionRatio.clear();      // everyone re-latches (and re-SAMPLES in mesh mode)
                 }
+                // ── MALE-GEOMETRY MODE EDGE (2026-08-21 review fix): maleGeometry IS a snap
+                // knob, but a snap change only bumps the generation, and a gen bump only
+                // re-APPLIES geometry — the latch caller below runs solely while !rr.latched,
+                // so a mode flip never re-MEASURED anyone. Both stale directions are real:
+                // 1->2 kept a measured male record reshaping him during sculpt (capsules !=
+                // knob x es); 2->1 kept the empty record, leaving FULL mode silently inert.
+                // Erase MALE-stamped records only: females never see this edge (zero-regression
+                // requirement), and erased males re-latch below + freshLatch re-dresses them,
+                // same as the OBody drain.
+                static float s_lastMaleGeo = -1.f;
+                const float mgNow = (float)ObjectHold::MaleGeometryMode();
+                if (s_lastMaleGeo < 0.f) s_lastMaleGeo = mgNow;         // first sweep: arm only
+                else if (mgNow != s_lastMaleGeo) {
+                    s_lastMaleGeo = mgNow;
+                    std::size_t nErased = 0;
+                    for (auto it = s_regionRatio.begin(); it != s_regionRatio.end();) {
+                        if (it->second.male) { it = s_regionRatio.erase(it); ++nErased; }
+                        else                 { ++it; }
+                    }
+                    // never a silent transition (ledger rule): one receipt line per flip
+                    logger::info("MALEGEO mode -> {} : erased {} male BodyScale record(s) -> re-latch under the new mode",
+                                 (int)mgNow, nErased);
+                }
             }
             {   // OBody push events (2026-07-18): drain per-NPC invalidations queued from the VM
                 // thread (Obody_ApplyMorph sink in main.cpp) — erased actors re-latch below and
@@ -4272,6 +4780,39 @@ namespace GrabDiag {
             logger::debug("CapFix {:08X} APPLIED {} A=[{:.1f} {:.1f} {:.1f}] B=[{:.1f} {:.1f} {:.1f}] r={:.1f}",
                          id, kSlotName[slot], a[0], a[1], a[2], b[0], b[1], b[2], r);
             MirrorSlotToLeft(actor, id, slot, a, b, r, false);
+        }
+
+        // ── ★ THE 19th BODY: CharacterBumper (2026-08-23) ────────────────────────────────────
+        // The skeleton carries NINETEEN collision bodies. kSlotNode covers TWELVE (+6 left twins)
+        // = 18, and for the whole life of the sound fix the 19th was never touched — the string
+        // "CharacterBumper" did not appear anywhere in this codebase. It is the loudest one:
+        //   * a 20u-radius x 76u capsule wrapping the entire actor, so it is what actually meets
+        //     the ground when a body drops, and what meets OTHER ACTORS constantly (pushing
+        //     characters apart is its whole job — two NPCs animating together in a scene are in
+        //     permanent bumper contact);
+        //   * it sits on layer 30 (CharController), NOT Biped/BipedNoCC/DeadBip — so PLANCK's
+        //     ragdollSoundVel mute, which requires a biped on BOTH sides, has never covered it
+        //     either. It fell through both silencing mechanisms at once.
+        // That is why every npcBodyMat mode read as "no change": we were quieting 18 bodies and
+        // leaving the loud one carrying its NIF material (0x5DD8A028).
+        // It is a plain bhkCapsuleShape, so StampBodyMaterial applies unchanged.
+        {
+            int bumpType = -1;
+            auto* bump = GetNodeCapsule(actor, "CharacterBumper", &bumpType);
+            if (bump) {
+                StampBodyMaterial(bump);
+                // RECEIPT, once per actor. The absence of one is exactly why this took a field
+                // report and three sessions to find: every part of the sound path was silent.
+                static std::unordered_set<std::uint32_t> s_bumpLogged;
+                if (s_bumpLogged.size() > 512) s_bumpLogged.clear();
+                if (s_bumpLogged.insert(id).second)
+                    logger::info("CapFix {:08X} CharacterBumper stamped (mode {}) — the 19th body, "
+                                 "layer 30 (outside PLANCK's biped-pair mute)",
+                                 id, (int)(ObjectHold::NpcBodyMat() + 0.5f));
+            } else if (bumpType >= 0) {
+                logger::info("CapFix {:08X} CharacterBumper: shape type {} is not a capsule — not stamped",
+                             id, bumpType);
+            }
         }
     }
 
