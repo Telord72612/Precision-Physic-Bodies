@@ -387,6 +387,20 @@ If you built a workaround for missing raw contacts, you can retire it.
 
 ---
 
+## 6b. `durationS` counts from FIRST CONTACT (pinned 2026-08-23)
+
+`durationS` is measured from the moment PPB first *detected* the contact — not from the moment it
+was first *emitted* to you. The two differ by the dwell gate: a contact is tracked at full rate and
+only reported once it has lingered (§7), so the first event you receive already carries a non-zero
+`durationS` equal to roughly the dwell.
+
+This matters if you rebase your own timing off it — e.g. `max(myDelay - durationS, 0)`. That
+computation is correct against this definition. At the shipped 0.25 s gates the offset is small, but
+a user who raises `apiDwellComS` to 2.0 makes it a two-second error, so the epoch is contractual:
+**`startMs` is stamped when the contact record is created, before qualification.**
+
+---
+
 ## 7. Dwell — why you may see nothing
 
 Tracking is always full-rate. **Emission** is gated: a contact must linger before it is reported
