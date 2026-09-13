@@ -53,4 +53,16 @@ namespace GenitalProbe {
     // Main thread only. Cached per actor with a short TTL: GetWornArmor deep-copies the whole
     // worn inventory into a std::map, which is fine at the probe's ~1 Hz and NOT fine per frame.
     bool IsExposed(RE::Actor* actor);
+
+    // ── ★★ THE FUTA GATE (2026-09-12) — for FEMALES, where IsExposed() is measured useless ──
+    // True only when VISIBLE geometry is parented under the Gen chain. A biped slot is a claim;
+    // this is evidence of the mesh itself, so a vanilla naked female, and a female wearing an
+    // unrelated slot-52 item, both answer FALSE by construction rather than by threshold.
+    // A hidden (kHidden) schlong — trousers on — also answers false, which is the dress test
+    // for free on a sex where the slot-52 state half does not discriminate.
+    // Optional out-params report what it saw, so a receipt can say WHY it refused.
+    // Main thread only; cached per actor behind a 500 ms TTL, called at the rig probe's ~2 s.
+    bool HasVisibleGenGeometry(RE::Actor* actor, int* outVisible = nullptr,
+                               int* outHidden = nullptr, char* outName = nullptr,
+                               int nameCap = 0);
 }

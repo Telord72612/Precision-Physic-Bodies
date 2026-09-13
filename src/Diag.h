@@ -39,6 +39,29 @@ namespace Diag {
     void PublishWeaponBodies(void* rightBody, void* leftBody);
     int  DrainWeaponContacts(WeaponContact* out, int max);
 
+    // ── ENGINE-TRUTH HAND CONTACTS (2026-09-07, user design — report 33 §8.3) ──────────────
+    // "When my hand touch her havok capsule, ANY capsule, the engine react. It detect a contact.
+    //  That's our trigger." The same listener that records weapon contacts stamps every contact
+    // between a PLAYER-side collider (HIGGS hand or weapon body: layer 56 + bit 15 + part 3 = R /
+    // 5 = L; a PPB finger box: part 4) and an NPC ragdoll body (bit 15 on a biped layer 8/32/33).
+    // Pure integer work on the collision thread. The main thread (PpbApi::CollectEngineHandTouches,
+    // EVERY frame — not apiHz) resolves the NPC body to (actor, slot, side) exactly as the weapon
+    // path does and the player body to a hand; PushStep anchors hand travel on it.
+    struct HandContact {
+        void*         npcBody;     // the NPC ragdoll body (resolve to actor+slot+side by pointer)
+        void*         playerBody;  // the player-side body (part 4 -> HandBox::HandOfBody)
+        std::uint32_t child;       // the NPC list-child shape key = the exact capsule
+        int           part;        // filter part of the player body: 3 R, 5 L (hand or weapon), 4 PPB box
+        int           src;         // 0 HIGGS hand, 1 HIGGS weapon (pointer-matched), 2 PPB finger box
+    };
+    int  DrainHandContacts(HandContact* out, int max);
+    // v11.1b: the ring size — pass a buffer THIS big to DrainHandContacts, or the NEWEST stamps are the ones dropped.
+    constexpr int kHandContactRing = 128;
+    // v11.1b census (integer-only on the collision thread): layer-56-vs-other contact events seen, the LAST such pair's
+    // two filter words, and hand stamps written. The main thread prints them — the first build's classifier required
+    // bit 15 on HIGGS's hand (it has none: hand.cpp:576) and produced a whole session of `anchor api` with no error line.
+    void HandStampCensus(std::uint32_t& pairs, std::uint32_t& lastA56, std::uint32_t& lastB, std::uint32_t& stamps);
+
 
     // ── physics-step timing (called from Hooks::StepChainHook @0xDFB722) ──
     void OnPhysicsStep(double stepMs);   // accumulates only while armed

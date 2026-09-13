@@ -663,6 +663,42 @@ namespace {
     };
     WandRig g_wand;
 
+    // ── PLAYER HEAD BOX state (2026-09-03) — declared beside the wand for the same reason:
+    //    AnythingActive and PlayerSpaceWarp both read it and both precede the machinery.
+    //    ONE keyframed box riding the VRIK-posed 3rd-person head node. See Tuning.h for the
+    //    full rationale (why it cannot stop the player, and the H2 velocity risk).
+    constexpr const char* kHeadNode = "NPC Head [Head]";
+    // rad/s. A head turn is a few rad/s; anything past this is a tracking glitch or a load
+    // spike, and on a box this size the corner speed (w x r) is what reaches an NPC bone.
+    constexpr float kHeadMaxAngVel = 12.f;
+
+    struct HeadSnap {
+        bool  valid = false;
+        float pos[3]{};                      // head node world translate, game units
+        float rot[9]{};                       // row-major; COLUMNS are the axes (BoxWorldPose idiom)
+        float scale = 1.f;                    // node world scale (RaceMenu / race / VRIK)
+        bool  hmdValid = false;               // is the headset node resolvable this frame?
+        float hmdPos[3]{};
+        bool  rodeHmd  = false;               // this snapshot's pose IS the headset, not the bone
+        // ★ KISS (2026-09-12): the FULL-ROTATION headset (+0x570) sampled in this same pass, so the
+        // mouth probe can pitch and roll with the player's head while the box keeps its rider.
+        bool  fullRotValid = false;           // +0x570 resolved AND passed the position sanity check
+        float fullRot[9]{};                   // row-major, columns are the axes (same idiom as rot)
+        float fwdZUpright = 0.f;              // forward.z of +0x580 — diagnostic: ~0 always if yaw-only
+        float fwdZFull    = 0.f;              // forward.z of +0x570 — goes negative when looking down
+    };
+    HeadSnap g_headSnap;
+
+    struct HeadRig {
+        bool   live = false;
+        void*  bodyMem = nullptr;
+        void*  bhkWorld = nullptr;           // compare-only
+        RE::NiPointer<RE::bhkWorld> heldWorld;   // STRONG — same orphan-vs-UAF fix as HandRig
+        std::uint32_t lastWord = 0;
+        std::chrono::steady_clock::time_point createdAt{};
+    };
+    HeadRig g_head;
+
 
 
     bool g_registered = false;
@@ -677,6 +713,8 @@ namespace {
     std::atomic<std::uint32_t> g_playerGroup{ 0 };
     std::atomic<std::uint32_t> g_wandPart{ 9 };
     std::atomic<bool>          g_wandLive{ false };
+    std::atomic<std::uint32_t> g_headPart{ 10 };
+    std::atomic<bool>          g_headLive{ false };
     std::atomic<std::uint32_t> g_boxPart{ 4 };     // our sub-layer (handBoxSubLayer, sanitized)
     std::atomic<bool>          g_logFirstIgnore{ false };
 
@@ -713,8 +751,9 @@ namespace {
     }
 
     bool AnythingActive() {
-        if (g_rig[0].live || g_rig[1].live || g_wand.live) return true;
+        if (g_rig[0].live || g_rig[1].live || g_wand.live || g_head.live) return true;
         if (ObjectHold::PlayerWandOn()) return true;
+        if (ObjectHold::HeadBoxOn()) return true;
         if (ObjectHold::HandBoxEnabled()) return true;
         if (ObjectHold::HiggsSlabHalfX() >= 0.f || ObjectHold::HiggsSlabHalfY() >= 0.f ||
             ObjectHold::HiggsSlabHalfZ() >= 0.f) return true;
@@ -1358,7 +1397,22 @@ namespace {
     // path in KeyframeAll recovers those cleanly with a zero-velocity snap.
     void PlayerSpaceWarp(void* authWorld, RE::PlayerCharacter* player)
     {
-        if (!ObjectHold::HandBoxWarpOn()) { g_prevPlayerPosValid = false; return; }
+        // ⛔ handBoxWarp is a HAND-jitter instrument knob that this file's own header calls
+        // "phased wrong" and invites the user to set to 0 — but for the HEAD box the warp is the
+        // FIRST line of anti-launch defence (without it the player's locomotion becomes the
+        // box's keyframe velocity and walking into an NPC hands her bone that speed: mechanism
+        // H2). The two must not share a switch. When the knob is off we still warp the head, and
+        // say so once, rather than silently dropping a defence the head box's design depends on.
+        const bool warpHands = ObjectHold::HandBoxWarpOn();
+        if (!warpHands && !g_head.live) { g_prevPlayerPosValid = false; return; }
+        if (!warpHands) {
+            static bool s_said = false;
+            if (!s_said) {
+                s_said = true;
+                logger::info("HEADBOX: handBoxWarp is 0 — warping the HEAD box anyway (it is the "
+                             "head's anti-launch defence; the knob only governs the hand boxes)");
+            }
+        }
         if (!player) { g_prevPlayerPosValid = false; return; }
         const RE::NiPoint3 pp = player->GetPosition();
         const float cur[3] = { pp.x, pp.y, pp.z };
@@ -1371,11 +1425,11 @@ namespace {
         if (!hadPrev) return;
         const float d2 = delta[0] * delta[0] + delta[1] * delta[1] + delta[2] * delta[2];
         if (d2 < 1e-6f || d2 > 50.f * 50.f) return;          // idle / teleport-class jump
-        if (!g_rig[0].live && !g_rig[1].live && !g_wand.live) return;
+        if (!g_rig[0].live && !g_rig[1].live && !g_wand.live && !g_head.live) return;
         hkVector4 dH;
         dH.set(delta[0] * kSkyrimToHavok, delta[1] * kSkyrimToHavok, delta[2] * kSkyrimToHavok, 0.f);
         WorldWriteLock lock(authWorld);                      // ONE lock for all 8 warps
-        for (int hand = 0; hand < 2; ++hand) {
+        for (int hand = 0; hand < 2 && warpHands; ++hand) {
             auto& rig = g_rig[hand];
             if (!rig.live) continue;
             for (int b = 0; b < 4; ++b) {
@@ -1387,10 +1441,23 @@ namespace {
                 fn_setPosition()(static_cast<hkpEntity*>(hk), np);
             }
         }
-        if (g_wand.live) {
+        if (g_wand.live && warpHands) {
             for (void* mem : g_wand.bodyMem) {
                 hkpRigidBody* hk = HkOf(mem);
                 if (!hk) continue;
+                const hkVector4& p = hk->getPosition();
+                hkVector4 np;
+                np.set(p(0) + dH(0), p(1) + dH(1), p(2) + dH(2), 0.f);
+                fn_setPosition()(static_cast<hkpEntity*>(hk), np);
+            }
+        }
+        // ★ THE HEAD BOX MUST BE IN THIS LOOP. Without it, walking forward makes the whole
+        // locomotion delta the box's keyframe VELOCITY, and an infinite-mass body hands that
+        // velocity straight to her dynamic bone through the contact's velocity constraint —
+        // mechanism H2 in Report/Ragdoll Research Module/02, i.e. a run-in would LAUNCH her
+        // instead of pushing her. headBoxMaxVel is the second line of defence, not the first.
+        if (g_head.live) {
+            if (hkpRigidBody* hk = HkOf(g_head.bodyMem)) {
                 const hkVector4& p = hk->getPosition();
                 hkVector4 np;
                 np.set(p(0) + dH(0), p(1) + dH(1), p(2) + dH(2), 0.f);
@@ -1929,6 +1996,395 @@ namespace {
         }
     }
 
+    // ═════════════════════════════════════════════════════════════════════════════════════════
+    //  PLAYER HEAD BOX (2026-09-03) — one keyframed box riding the VRIK-posed head node.
+    //  A wand clone by construction: same body factory, same word composition, same once-per-
+    //  frame keyframe + clamp, same strong-heldWorld teardown, same null-userData treatment.
+    //  Only the rider and the belts differ. USER SPEC: "i don't want my head to be stopped, i
+    //  want the NPC's body to move when my head contact with it and push the NPC with it, like
+    //  the hand does. which will make me not get inside their body anymore."
+    //  Rider = the THIRD-PERSON "NPC Head [Head]" node (Get3D(false)) — i.e. VRIK's output, the
+    //  head the player actually sees, with every VRIK offset and scale already folded in. That
+    //  is the same deliberate divergence from HIGGS the finger boxes make (doc 09 §5).
+    void HeadSnapshot()
+    {
+        g_headSnap.valid = false;
+        g_headSnap.hmdValid = false;
+        g_headSnap.rodeHmd = false;
+        g_headSnap.fullRotValid = false;   // ★ kiss: never let last frame's headset pose survive a miss
+        if (!ObjectHold::HeadBoxOn() && !g_head.live) return;
+        auto* player = RE::PlayerCharacter::GetSingleton();
+        auto* root   = player ? player->Get3D(false) : nullptr;   // 3rd person: VRIK poses this
+        if (!root) return;
+        static RE::BSFixedString s_name;
+        static bool s_interned = false;
+        if (!s_interned) { s_name = kHeadNode; s_interned = true; }
+        RE::NiAVObject* n = root->GetObjectByName(s_name);
+        if (!n) {
+            static bool s_warned = false;
+            if (!s_warned) {
+                s_warned = true;
+                logger::info("HEADBOX: '{}' not found on the player's 3rd-person skeleton — "
+                             "head box stays down.", kHeadNode);
+            }
+            return;
+        }
+        const RE::NiPoint3&  t = n->world.translate;
+        const RE::NiMatrix3& R = n->world.rotate;
+        g_headSnap.pos[0] = t.x; g_headSnap.pos[1] = t.y; g_headSnap.pos[2] = t.z;
+        for (int r = 0; r < 3; ++r)
+            for (int c = 0; c < 3; ++c)
+                g_headSnap.rot[r * 3 + c] = R.entry[r][c];
+        g_headSnap.scale = (n->world.scale > 0.01f) ? n->world.scale : 1.f;
+        g_headSnap.valid = true;
+        // ── DIAGNOSTIC ONLY (never a driver): is the node we ride actually where the player's
+        // face is? If VRIK's head node does NOT track the HMD, this one number says so and we
+        // change riders.
+        // ⛔ THE RAW OFFSET WAS WRONG AND WOULD HAVE LIED CONFIDENTLY. This first read
+        // PlayerCharacter+0x570 as "HmdNode" on the strength of a sibling module's note
+        // (Report/Follower Bump Guard Module/01 §B5) — but the CommonLibVR this plugin actually
+        // compiles against names 0x570 `GamepadNode` (PlayerCharacter.h:146), with LastSyncPos
+        // at 0x578 and `UprightHmdNode` at 0x580. A dial session steered by a gamepad-node
+        // distance is worse than no diagnostic at all. Use the TYPED accessor — GetVRNodeData()
+        // at +0x3F0 — so the field is resolved by name and a CommonLib update cannot silently
+        // re-point it. The name is printed with the number so the log says what it measured.
+        // ⚠ CORRECTION (2026-09-12, research — this note is appended, not a rewrite): the warning
+        // above was right to demand the typed accessor and WRONG about what +0x570 is. CommonLibVR
+        // 4.14.0 mislabels it `GamepadNode`; it IS the HMD node. VRIK's own PDB enum lists
+        // kNode_HmdNode = 48 (0x3F0 + 48*8 = 0x570), HIGGS computes its mouth zone from it, VRIK
+        // and PLANCK read the headset there, and CommonLibSSE-NG 6.3.2 has since renamed the field
+        // `HmdNode`. +0x580 (UprightHmdNode) is a DIFFERENT node, assumed yaw-only. The box keeps
+        // riding +0x580; the KISS mouth probe now poses on +0x570 (see MouthProbeSegment).
+        if (auto* vr = player->GetVRNodeData()) {
+            // ★ KISS (2026-09-12): the full-rotation headset. Typed field, then a POSITION sanity
+            // check before trusting it — a node that resolves but sits nowhere near the player is
+            // worse than no node, because the probe would confidently sense the wrong place.
+            if (auto* full = vr->GamepadNode.get()) {   // CommonLibVR's name for +0x570 = HmdNode
+                const RE::NiPoint3& fp = full->world.translate;
+                const RE::NiPoint3  pp = player->GetPosition();
+                const float dx = fp.x - pp.x, dy = fp.y - pp.y, dz = fp.z - pp.z;
+                // ★ HEADING check (round-2 review): position alone cannot prove this node is the headset — tracking
+                // loss or a not-yet-initialised node can sit in the right place with the wrong rotation. Its
+                // HORIZONTAL forward must agree with the upright headset's within 45 deg. Skipped when looking
+                // nearly straight up/down, where a horizontal heading is undefined (and the upright node's is kept).
+                bool headingOk = true;
+                float headingDot = 1.f;
+                if (auto* upr = vr->UprightHmdNode.get()) {
+                    const RE::NiMatrix3& FRh = full->world.rotate;
+                    const RE::NiMatrix3& URh = upr->world.rotate;
+                    const float fx0 = FRh.entry[0][1], fy0 = FRh.entry[1][1];
+                    const float ux0 = URh.entry[0][1], uy0 = URh.entry[1][1];
+                    const float fl = std::sqrt(fx0 * fx0 + fy0 * fy0), ul = std::sqrt(ux0 * ux0 + uy0 * uy0);
+                    if (fl > 0.31f && ul > 0.31f) {                     // |forward.z| < ~0.95 on both
+                        headingDot = (fx0 * ux0 + fy0 * uy0) / (fl * ul);
+                        headingOk  = headingDot > 0.7071f;              // cos 45
+                    }
+                }
+                if (dx * dx + dy * dy < 300.f * 300.f && dz > -50.f && dz < 250.f && headingOk) {
+                    const RE::NiMatrix3& FR = full->world.rotate;
+                    for (int r = 0; r < 3; ++r)
+                        for (int c = 0; c < 3; ++c)
+                            g_headSnap.fullRot[r * 3 + c] = FR.entry[r][c];
+                    g_headSnap.fwdZFull     = FR.entry[2][1];   // column 1 = forward; row 2 = world z
+                    g_headSnap.fullRotValid = true;
+                } else if (!headingOk) {
+                    static std::chrono::steady_clock::time_point s_hdgAt{};
+                    const auto nowH = std::chrono::steady_clock::now();
+                    if (s_hdgAt.time_since_epoch().count() == 0 || nowH - s_hdgAt > std::chrono::seconds(60)) {
+                        s_hdgAt = nowH;
+                        logger::info("HEADBOX: +0x570 headset REJECTED on heading - its horizontal forward is {:.0f} deg "
+                                     "from the upright headset's (want < 45) - the kiss probe uses the old pose this frame",
+                                     std::acos(std::clamp(headingDot, -1.f, 1.f)) * 57.29578f);
+                    }
+                } else {
+                    // ⛔ every exit speaks: a rejected headset silently drops the kiss probe back to the old pose,
+                    // which would read in VR as "the fix did nothing". Say so, rate-limited to once a minute.
+                    static std::chrono::steady_clock::time_point s_rejAt{};
+                    const auto nowR = std::chrono::steady_clock::now();
+                    if (s_rejAt.time_since_epoch().count() == 0 || nowR - s_rejAt > std::chrono::seconds(60)) {
+                        s_rejAt = nowR;
+                        logger::info("HEADBOX: +0x570 headset FAILED its sanity check (dxy {:.0f}u, dz {:+.0f}u from the "
+                                     "player's feet; want <300 / -50..250) - the kiss probe is using the old pose this frame",
+                                     std::sqrt(dx * dx + dy * dy), dz);
+                    }
+                }
+            }
+            if (auto* hmd = vr->UprightHmdNode.get()) {
+                g_headSnap.fwdZUpright = hmd->world.rotate.entry[2][1];
+                const RE::NiPoint3& h = hmd->world.translate;
+                g_headSnap.hmdPos[0] = h.x; g_headSnap.hmdPos[1] = h.y; g_headSnap.hmdPos[2] = h.z;
+                g_headSnap.hmdValid = true;
+                // ★★ THE RIDER SWAP (2026-09-03). Everything above resolved the VRIK head BONE;
+                // if we are riding the HEADSET, that was only the diagnostic and the headset now
+                // becomes the pose outright. Deliberately done HERE, after the bone resolved, so
+                // that a missing/!hmdValid headset degrades to the bone instead of dropping the
+                // box — a fallback that fails CLOSED (the box keeps existing) rather than open.
+                //   Scale is NOT taken from the HMD node: it is a VR tracking node with no
+                // relation to the character's render scale, and the box's size must keep scaling
+                // with the body. The bone's scale, already read above, stays.
+                if (ObjectHold::HeadBoxRideHmd()) {
+                    g_headSnap.pos[0] = h.x; g_headSnap.pos[1] = h.y; g_headSnap.pos[2] = h.z;
+                    const RE::NiMatrix3& HR = hmd->world.rotate;
+                    for (int r = 0; r < 3; ++r)
+                        for (int c = 0; c < 3; ++c)
+                            g_headSnap.rot[r * 3 + c] = HR.entry[r][c];
+                    g_headSnap.rodeHmd = true;
+                }
+            }
+        }
+        // Riding was ASKED FOR but the headset did not resolve — say so once, because a silent
+        // fall back to the bone reproduces the exact posture bug the rider exists to fix.
+        if (ObjectHold::HeadBoxRideHmd() && !g_headSnap.hmdValid) {
+            static bool s_hmdWarned = false;
+            if (!s_hmdWarned) {
+                s_hmdWarned = true;
+                logger::info("HEADBOX: headBoxRider 1 but UprightHmdNode did not resolve — "
+                             "falling back to the VRIK head bone (the box will sit at chin level "
+                             "when you stand). GetVRNodeData() null or the node is not built yet.");
+            }
+        }
+        static bool s_resolvedOnce = false;
+        if (!s_resolvedOnce) {
+            s_resolvedOnce = true;
+            logger::info("HEADBOX: rider resolved '{}' scale={:.3f}", kHeadNode, g_headSnap.scale);
+        }
+    }
+
+    // VRIK's own head-hide distance, read through its interface (slot 1 getSettingDouble) and
+    // cached — VRIK re-reads its ini on its own schedule, so we refresh at ~1 Hz rather than
+    // per frame. Returns 0 when VRIK is absent or the key is unknown, which degrades to "no
+    // compensation" and leaves headBoxOffYU doing the whole job, exactly as before.
+    float VrikHeadHideU()
+    {
+        if (!ObjectHold::HeadBoxVrikCompOn()) return 0.f;
+        // ⛔ INERT WHILE RIDING THE HEADSET. The hide is a displacement VRIK applies to the 3P
+        // head BONE; the headset was never moved, so adding it back would push the box a further
+        // 12u out in front of the player's face. Keyed on what the snapshot ACTUALLY rode this
+        // frame, not on the knob, so the fallback path (rider asked for, headset unresolved)
+        // still gets its compensation.
+        if (g_headSnap.rodeHmd) return 0.f;
+        static float s_cached = 0.f;
+        static std::chrono::steady_clock::time_point s_last{};
+        const auto now = std::chrono::steady_clock::now();
+        if (s_last.time_since_epoch().count() == 0 || now - s_last > std::chrono::milliseconds(1000)) {
+            s_last = now;
+            float v = 0.f;
+            if (auto* vr = Interop::GetVrik()) v = (float)vr->getSettingDouble("hidePlayerHeadDistance");
+            // sane band: the setting's own documented range is 0..20. A wild value means we
+            // read the wrong key or VRIK changed its schema — compensate nothing rather than
+            // fling the box across the room.
+            s_cached = (v > 0.f && v < 40.f) ? v : 0.f;
+            static bool s_said = false;
+            if (!s_said && s_cached > 0.f) {
+                s_said = true;
+                logger::info("HEADBOX: VRIK hidePlayerHeadDistance = {:.2f}u — compensating "
+                             "forward (VRIK pushes the 3P head node BACK to hide your face; the "
+                             "box rode that hide and registered late)", s_cached);
+            }
+        }
+        return s_cached;
+    }
+
+    // Box pose from the snapshot: centre = node + R * (offset * scale); axes = the node's own.
+    void HeadPose(float posU[3], QuatW& rot, float halfM[3])
+    {
+        const float s = g_headSnap.scale;
+        // +Y is the head's FORWARD (anterior) axis, so undoing VRIK's backward hide is a
+        // straight addition on Y. headBoxOffYU is then the residual dial to the NOSE.
+        const float fwd = ObjectHold::HeadBoxOffYU() + VrikHeadHideU();
+        const float off[3] = { ObjectHold::HeadBoxOffXU() * s,
+                               fwd * s,
+                               ObjectHold::HeadBoxOffZU() * s };
+        const float* rr = g_headSnap.rot;
+        for (int r = 0; r < 3; ++r)
+            posU[r] = g_headSnap.pos[r] +
+                      rr[r * 3 + 0] * off[0] + rr[r * 3 + 1] * off[1] + rr[r * 3 + 2] * off[2];
+        rot = Mat3ToQuat(rr);
+        halfM[0] = (std::max)(ObjectHold::HeadBoxHalfXU() * s * kSkyrimToHavok, 0.010f);
+        halfM[1] = (std::max)(ObjectHold::HeadBoxHalfYU() * s * kSkyrimToHavok, 0.010f);
+        halfM[2] = (std::max)(ObjectHold::HeadBoxHalfZU() * s * kSkyrimToHavok, 0.010f);
+    }
+
+    void DestroyHead(void* liveWorld, const char* reason)
+    {
+        if (!g_head.live) return;
+        void* owner = g_head.heldWorld ? static_cast<void*>(g_head.heldWorld.get()) : liveWorld;
+        if (owner && g_head.bodyMem) RemoveBody(g_head.bodyMem, owner);
+        logger::info("HEADBOX DESTROY reason={}", reason);
+        g_head = HeadRig{};
+        g_headLive.store(false, std::memory_order_relaxed);
+    }
+
+    // Same two deliberate divergences from FilterRefresh the wand makes: the inherited bit 14 is
+    // MASKED OUT (HIGGS disabling its HAND while holding a sword must not switch off your head),
+    // and there is no IsHoldingObject/IsTwoHanding OR.
+    std::uint32_t HeadComposeWord(bool creating)
+    {
+        auto* h = Interop::GetHiggs();
+        hkpRigidBody* handBody = h ? HkOfValidated(h->GetHandRigidBody(false)) : nullptr;
+        if (!handBody && h) handBody = HkOfValidated(h->GetHandRigidBody(true));
+        if (!handBody) return 0;
+        const std::uint32_t base  = handBody->getCollidable()->getCollisionFilterInfo();
+        const std::uint32_t pgrpW = base >> 16;
+        const std::uint32_t egrpW = EffectiveGroup(pgrpW, HiggsHoldingAnything());
+        g_playerGroup.store(pgrpW, std::memory_order_relaxed);
+        // the head box may be the ONLY live rig — publish the group here too or isOurs() reads a
+        // stale/zero group and matches nothing (the wand's own lesson, same comment).
+        g_boxGroup.store(egrpW, std::memory_order_relaxed);
+        g_headPart.store(ObjectHold::HeadBoxPart(), std::memory_order_relaxed);
+        std::uint32_t w = ((base & ~(0x00001F00u | kBit14)) & 0x0000FFFFu)
+                        | (ObjectHold::HeadBoxPart() << 8) | (egrpW << 16);
+        if (creating ||
+            std::chrono::steady_clock::now() - g_head.createdAt < std::chrono::milliseconds(kEnableDelayMs))
+            w |= kBit14;
+        return w;
+    }
+
+    void HeadLifecycle(void* authWorld, bool beast)
+    {
+        // Scene gate: same reason as the wand's — a real collider in the middle of an
+        // OStim/SexLab animation shoves the partner the animation is placing. ⚠ but honour
+        // sceneSuspendHands like the hand rigs do rather than dropping unconditionally: mode 0
+        // means "the user does not want scene suspension", and PPB's scene flag is a global
+        // COUNT of any scene anywhere, so an unconditional drop kills the head box for two NPCs
+        // in another room. (Mode 2, third-person-only, is a hand-rig heuristic that does not
+        // apply to a head collider, so anything non-zero suspends here.)
+        const bool sceneOff = g_sceneSuspend.load(std::memory_order_relaxed) &&
+                              ObjectHold::SceneSuspendHandsMode() != 0;
+        // Beast forms (werewolf / vampire lord) have a head node in a wholly different place and
+        // proportion; the dialled offsets would be wrong. Reuse the boxes' own beast gate rather
+        // than adding a second knob for a rare state.
+        const bool beastOff = beast && !ObjectHold::HandBoxBeast();
+        const bool want = ObjectHold::HeadBoxOn() && g_headSnap.valid && !sceneOff && !beastOff;
+        if (g_head.live) {
+            if (g_head.bhkWorld != authWorld) DestroyHead(authWorld, "worldChange");
+            else if (!want)                   DestroyHead(authWorld, "off");
+        }
+        if (g_head.live || !want) return;
+        const std::uint32_t word = HeadComposeWord(true);
+        if (!word) { LogSkip("noHiggsHand"); return; }
+        float posU[3]; QuatW rot; float halfM[3];
+        HeadPose(posU, rot, halfM);
+        g_head.bodyMem = CreateBoxBody(authWorld, posU, rot, halfM, word);
+        if (!g_head.bodyMem) { LogSkip("allocFail"); return; }
+        g_head.live      = true;
+        g_headLive.store(true, std::memory_order_relaxed);
+        g_head.bhkWorld  = authWorld;
+        g_head.heldWorld.reset(static_cast<RE::bhkWorld*>(authWorld));
+        g_head.lastWord  = word;
+        g_head.createdAt = std::chrono::steady_clock::now();
+        logger::info("HEADBOX CREATE word=0x{:08X} part={} half=({:.2f},{:.2f},{:.2f})u "
+                     "off=({:.2f},{:.2f},{:.2f})u (bit14 ON, {} ms delay)",
+                     word, ObjectHold::HeadBoxPart(),
+                     ObjectHold::HeadBoxHalfXU(), ObjectHold::HeadBoxHalfYU(),
+                     ObjectHold::HeadBoxHalfZU(), ObjectHold::HeadBoxOffXU(),
+                     ObjectHold::HeadBoxOffYU(), ObjectHold::HeadBoxOffZU(), kEnableDelayMs);
+    }
+
+    void HeadFilterRefresh(void* authWorld)
+    {
+        if (!g_head.live) return;
+        const std::uint32_t w = HeadComposeWord(false);
+        if (!w || w == g_head.lastWord) return;
+        void* hkpW = GetHkpWorld(authWorld);
+        if (!IsLikelyPointer(hkpW)) return;
+        {
+            WorldWriteLock lock(authWorld);
+            hkpRigidBody* hk = HkOf(g_head.bodyMem);
+            if (hk) {
+                hk->getCollidableRw()->setCollisionFilterInfo(w);
+                fn_UpdateFilter()(hkpW, static_cast<hkpEntity*>(hk),
+                                  HK_UPDATE_FILTER_ON_ENTITY_FULL_CHECK,
+                                  HK_UPDATE_COLLECTION_FILTER_PROCESS_SHAPE_COLLECTIONS);
+            }
+        }
+        logger::info("HEADBOX filter: 0x{:08X} -> 0x{:08X} (bit14={})",
+                     g_head.lastWord, w, (w & kBit14) != 0);
+        g_head.lastWord = w;
+    }
+
+    void HeadKeyframe(void* authWorld)
+    {
+        if (!g_head.live || !g_headSnap.valid) return;
+        // ⚠ NOT HandBoxMaxVel. See Tuning.h: this clamp is the anti-launch defence, and it is
+        // deliberately tight enough that a run-in teleports instead of delivering an impulse.
+        const float maxVel = ObjectHold::HeadBoxMaxVel();
+        WorldWriteLock lock(authWorld);
+        hkpRigidBody* hk = HkOf(g_head.bodyMem);
+        if (!hk) return;
+        float posU[3]; QuatW rot; float halfM[3];
+        HeadPose(posU, rot, halfM);
+        // live half-extent write, the same idempotent idiom the wand and the slab dial use: the
+        // knobs are hot, so the shape follows a dial without a rebuild. Only ever on a change.
+        const hkpShape* shape = hk->getCollidable()->getShape();
+        auto* box = reinterpret_cast<PortHkpBoxShape*>(const_cast<hkpShape*>(shape));
+        if (box && box->type == HK_SHAPE_BOX) {
+            const float dx = std::fabs(box->halfExtents[0] - halfM[0]) +
+                             std::fabs(box->halfExtents[1] - halfM[1]) +
+                             std::fabs(box->halfExtents[2] - halfM[2]);
+            if (dx > 1e-4f) {
+                box->halfExtents[0] = halfM[0]; box->halfExtents[1] = halfM[1];
+                box->halfExtents[2] = halfM[2];
+            }
+        }
+        hkVector4 pos;
+        pos.set(posU[0] * kSkyrimToHavok, posU[1] * kSkyrimToHavok, posU[2] * kSkyrimToHavok, 0.f);
+        hkQuaternion q;
+        q.set(rot.x, rot.y, rot.z, rot.w);
+        fn_applyHardKeyFrame()(pos, q, g_snap.invDt, hk);
+        // ⚠ BOTH velocities, and BOTH parts of the pose on recovery. The clamp exists to stop
+        // this body handing an NPC bone an impulse, and H2's blade term is w x r — an unbounded
+        // ANGULAR velocity on a head-sized box delivers exactly that at the corners. Snapping
+        // position alone also leaves the spun orientation live, so the re-key computes its
+        // angular velocity from a stale rotation and the spike survives the guard.
+        const hkVector4& lv = hk->getLinearVelocity();
+        const hkVector4& av = hk->getAngularVelocity();
+        const bool linSpike = lv(0)*lv(0) + lv(1)*lv(1) + lv(2)*lv(2) > maxVel * maxVel;
+        const bool angSpike = av(0)*av(0) + av(1)*av(1) + av(2)*av(2) > kHeadMaxAngVel * kHeadMaxAngVel;
+        if (linSpike || angSpike) {
+            fn_setPosition()(static_cast<hkpEntity*>(hk), pos);        // spike: snap BOTH, then
+            fn_setRotation()(static_cast<hkpEntity*>(hk), q);
+            fn_applyHardKeyFrame()(pos, q, g_snap.invDt, hk);          // re-key -> ~0 residual
+        }
+    }
+
+    void HeadLog()
+    {
+        if (!g_head.live || !ObjectHold::HeadBoxLogOn()) return;
+        static std::chrono::steady_clock::time_point s_last{};
+        const auto now = std::chrono::steady_clock::now();
+        if (s_last.time_since_epoch().count() != 0 && now - s_last < std::chrono::milliseconds(1000)) return;
+        s_last = now;
+        float posU[3]; QuatW rot; float halfM[3];
+        HeadPose(posU, rot, halfM);
+        // ★ THE DIAL READOUT. A scalar distance says "you are 9u off" but not WHICH WAY, so it
+        // cannot be typed into a knob. Resolve the box->HMD delta into the head node's own axes
+        // — the same frame headBoxOff*U live in — and the correction becomes readable: add
+        // these three numbers to the current offsets and the box lands on the headset.
+        float hmdD = -1.f, dl[3] = { 0.f, 0.f, 0.f };
+        if (g_headSnap.hmdValid) {
+            const float d[3] = { g_headSnap.hmdPos[0] - posU[0],
+                                 g_headSnap.hmdPos[1] - posU[1],
+                                 g_headSnap.hmdPos[2] - posU[2] };
+            hmdD = std::sqrt(d[0]*d[0] + d[1]*d[1] + d[2]*d[2]);
+            const float* rr = g_headSnap.rot;          // columns are the axes -> transpose to invert
+            for (int c = 0; c < 3; ++c)
+                dl[c] = rr[0*3 + c] * d[0] + rr[1*3 + c] * d[1] + rr[2*3 + c] * d[2];
+            if (g_headSnap.scale > 0.01f)
+                for (float& v : dl) v /= g_headSnap.scale;
+        }
+        logger::info("HEADBOX rider={} centre=({:.1f},{:.1f},{:.1f}) node=({:.1f},{:.1f},{:.1f}) "
+                     "half=({:.2f},{:.2f},{:.2f})u scale={:.3f} word=0x{:08X} vrikHide={:.1f}u "
+                     "uprightHmdDist={:.1f}u  TO-HMD-LOCAL=({:+.2f},{:+.2f},{:+.2f})u "
+                     "<- add to headBoxOffX/Y/ZU to sit ON the headset",
+                     g_headSnap.rodeHmd ? "HMD" : "bone",
+                     posU[0], posU[1], posU[2],
+                     g_headSnap.pos[0], g_headSnap.pos[1], g_headSnap.pos[2],
+                     halfM[0] * kHavokToSkyrim, halfM[1] * kHavokToSkyrim,
+                     halfM[2] * kHavokToSkyrim, g_headSnap.scale, g_head.lastWord,
+                     VrikHeadHideU(), hmdD, dl[0], dl[1], dl[2]);
+    }
+
     void WandLog()
     {
         if (!g_wand.live || !ObjectHold::PlayerWandLogOn()) return;
@@ -2006,6 +2462,13 @@ namespace {
         if (g_wand.live)
             for (int i = 0; i < kWandSegs; ++i)
                 NullUserDataOne(g_wand.bodyMem[i], authWorld, "wand", i);
+        // ★ The head box needs this MORE than the boxes do: a headbutt is exactly the contact
+        // PLANCK's hit classifier would dramatise into a strike (and IWP-VR into a stab). Nulled,
+        // PLANCK early-returns before Character_HitTarget; because we are plain KEYFRAMED (never
+        // KEYFRAMED_REPORTING) the CONTACT_IS_DISABLED branch is skipped too, so the head still
+        // TOUCHES and still PUSHES — it just never registers as a weapon hit.
+        if (g_head.live)
+            NullUserDataOne(g_head.bodyMem, authWorld, "head", 0);
     }
 
         void OnPrePhysicsStep(void* worldArg)
@@ -2030,20 +2493,25 @@ namespace {
         // fresh hand pose for this frame's keyframes (see TakeBoneSnapshot).
         TakeBoneSnapshot();
         WandSnapshot();                   // player SOS chain pose (wand rider)
+        HeadSnapshot();                   // player head node pose (head box rider)
         UpdateEffFrames();                // mode 2: HIGGS-anchored effective hand frames
 
         const bool beast = IsPlayerBeast(player);
         SlabWrite(beast);                 // Phase 0 (Track A)
         RigLifecycle(authWorld, beast);   // create/destroy/recreate (N14: only here)
         WandLifecycle(authWorld);         // player genital wand (same N14 discipline)
+        HeadLifecycle(authWorld, beast);  // player head box (same N14 discipline)
         ResolveGeometryLive();            // Track B: per-snapshot re-solve + live half-extents (before keyframing)
         FilterRefresh(authWorld);         // on-change word write + UpdateCollisionFilterOnEntity
         WandFilterRefresh(authWorld);     // wand word (bit14 deliberately NOT inherited)
+        HeadFilterRefresh(authWorld);     // head word (same divergences as the wand)
         PlayerSpaceWarp(authWorld, player);  // 2026-07-12: locomotion delta moved POSITIONALLY (HIGGS parity)
         KeyframeAll(authWorld);           // 8× applyHardKeyFrame + clamp (consumes the re-solved def)
         WandKeyframe(authWorld);          // +2 wand segments, same servo
-        NullUserDataTick(authWorld);      // PLANCK-hit fix (self-verifying; boxes + wand)
+        HeadKeyframe(authWorld);          // +1 head box, tighter clamp (anti-launch)
+        NullUserDataTick(authWorld);      // PLANCK-hit fix (self-verifying; boxes + wand + head)
         WandLog();                        // ~1 Hz when playerWandLog
+        HeadLog();                        // ~1 Hz when headBoxLog
         PhaseLog();                       // HBOXPH jitter diagnostic (no-op unless handBoxPhaseLog)
         DumpIfRequested(authWorld);
         BoxDumpIfRequested();             // per-box readback (edge on handBoxDumpNow)
@@ -2099,6 +2567,19 @@ namespace HandBox {
         return true;
     }
 
+    // 2026-09-07 (report 33 §8.3): pointer -> hand for the engine-contact stamp. See HandBox.h.
+    int HandOfBody(const void* hkpBody)
+    {
+        if (!hkpBody) return -1;
+        for (int hand = 0; hand < 2; ++hand) {
+            if (!g_rig[hand].live) continue;
+            for (int b = 0; b < 4; ++b)
+                if (static_cast<const void*>(HkOf(g_rig[hand].bodyMem[b])) == hkpBody) return hand;
+        }
+        return -1;
+    }
+    std::uint32_t BoxPartLive() { return g_boxPart.load(std::memory_order_relaxed); }   // v11.1b, see HandBox.h
+
     // ── 2026-08-23: publish the wand for the PROBE EXPORT. See HandBox.h.
     // Deliberately re-derives the endpoints the same way WandSegPose does — INCLUDING the
     // kWandTipPadU extension on the last segment — rather than reading the snapshot raw, so
@@ -2109,6 +2590,149 @@ namespace HandBox {
     // main-thread stepDeltaTime site (:1577) — not the filter callback's physics thread. Reads
     // floats and a bool only, never a Havok pointer, so even a mis-sequenced call can be stale,
     // never unsafe.
+    // ── HEAD BOX probe export (2026-09-03) — the same discipline as WandProbeSegments: publish
+    // the SAME geometry the body occupies, gated on the BODY being live, so the geometric touch
+    // view and the Havok collider can never disagree. A probe must never claim reach the collider
+    // does not have.
+    //   The box is modelled to the touch scan as a SEGMENT + RADIUS (the weapon-blade idiom): the
+    // segment runs along the box's local +Y — anterior, i.e. back-of-skull -> face — so the
+    // NEAREST point of the head is what gets measured, and the segment's far end is the face
+    // itself. Radius is the mean of the two lateral half-extents, which inscribes the box.
+    bool HeadProbeSegment(float aOutU[3], float bOutU[3], float* rOutU)
+    {
+        if (!aOutU || !bOutU || !rOutU) return false;
+        if (!g_head.live || !g_headSnap.valid) return false;
+        float posU[3]; QuatW rot; float halfM[3];
+        HeadPose(posU, rot, halfM);
+        const float halfU[3] = { halfM[0] * kHavokToSkyrim,
+                                 halfM[1] * kHavokToSkyrim,
+                                 halfM[2] * kHavokToSkyrim };
+        const float* rr = g_headSnap.rot;                    // columns are the axes
+        const float yAxis[3] = { rr[1], rr[4], rr[7] };      // local +Y in world
+        // ⛔ THE CAPSULE MUST BE INSCRIBED IN THE BOX, not circumscribed around it. The first
+        // version ran the segment the box's FULL half-depth and then added a radius on top, so
+        // the published capsule reached ~4u past the face at ship defaults — the touch scan
+        // would have reported contact from outside the collider, breaking this file's own law
+        // that "a probe must never claim reach the collider does not have". Inscribed radius =
+        // the SMALLER lateral half-extent (a mean can still exceed the thinner axis), and the
+        // segment is shortened by that radius so the caps land ON the box faces, not past them.
+        const float r = (std::min)(halfU[0], halfU[2]);
+        const float halfLen = (std::max)(0.f, halfU[1] - r);
+        for (int c = 0; c < 3; ++c) {
+            aOutU[c] = posU[c] - yAxis[c] * halfLen;         // back of the skull
+            bOutU[c] = posU[c] + yAxis[c] * halfLen;         // the face
+        }
+        *rOutU = r;
+        return true;
+    }
+
+    // ★ MOUTH PROBE (2026-09-06, user in VR: "a smaller collision box at the bottom front of the head
+    // collider … simulating that the player's mouth is colliding with the NPC"). Built as a PROBE on the
+    // head box (the box is the collider): a short segment across the front face, mouthProbeOffZU below
+    // the box centre (eye level under the rider), mouthProbeOutU proud of the face, radius mouthProbeR.
+    // The touch scan names a mouth-led contact "mouth" (against "face" / "head"). Same gate as the head
+    // probe: the head BODY must be live.
+    bool MouthProbeSegment(float aOutU[3], float bOutU[3], float* rOutU)
+    {
+        if (!aOutU || !bOutU || !rOutU) return false;
+        if (!ObjectHold::MouthProbeOn()) return false;
+        if (!g_head.live || !g_headSnap.valid) return false;
+        float posU[3]; QuatW rot; float halfM[3];
+        HeadPose(posU, rot, halfM);
+        const float halfXU = halfM[0] * kHavokToSkyrim;
+        const float halfYU = halfM[1] * kHavokToSkyrim;
+        const float halfZU = halfM[2] * kHavokToSkyrim;
+        // The COLLIDER's axes. HeadPose poses the body on exactly g_headSnap.rot (no extra tilt), so
+        // these columns ARE the box — its front face is the plane local y = +halfYU.
+        const float* br = g_headSnap.rot;
+        const float bx[3] = { br[0], br[3], br[6] };
+        const float by[3] = { br[1], br[4], br[7] };
+        const float bz[3] = { br[2], br[5], br[8] };
+        const bool  full = ObjectHold::MouthProbeSource() == 1 && g_headSnap.fullRotValid;
+        if (!full) {
+            // mouthProbeSource 0, or +0x570 rejected this frame: the original 2026-09-06 pose, unchanged.
+            const float s   = g_headSnap.scale;
+            const float fwd = halfYU + ObjectHold::MouthProbeOutU() * s;
+            const float up  = ObjectHold::MouthProbeOffZU() * s;
+            const float lat = ObjectHold::MouthProbeOffXU() * s;
+            const float hw  = ObjectHold::MouthProbeHalfWU() * s;
+            for (int c = 0; c < 3; ++c) {
+                const float m = posU[c] + by[c] * fwd + bz[c] * up + bx[c] * lat;
+                aOutU[c] = m - bx[c] * hw;
+                bOutU[c] = m + bx[c] * hw;
+            }
+            *rOutU = ObjectHold::MouthProbeR() * s;
+            return true;
+        }
+        // ★★ KISS (2026-09-12) — mouthProbeSource 1: the headset STEERS the mouth, the COLLIDER owns the face.
+        // ⛔ The first version of this (reviewed 2026-09-12, a MAJOR finding) pushed the probe out along the
+        //    headset's PITCHED forward while the box it rides stays upright. The probe then left the
+        //    collider: fully inside the box from ~15 deg of downward gaze, past the 2.2u kiss gate from ~33 deg
+        //    (a kiss on a shorter NPC never fired), and 2.4-2.7u PROUD of the face at 20-30 deg of upward gaze
+        //    (LIPS fired before any contact). A probe must never claim reach the collider does not have, and
+        //    must never hide where the collider cannot reach.
+        // So: build the anatomical mouth point on the full-rotation headset (+0x570), express it in the BOX's
+        // axes, then pin it ONTO the box's front face and clamp it inside that face. The headset still
+        // decides WHERE on the face the mouth is — looking down lowers it toward the chin edge, looking up
+        // raises it, rolling your head slides it sideways and tilts the lip segment — but the probe can never
+        // leave the surface that actually meets her. Verified numerically (scratch kiss_projection_sim.py):
+        // centre on the face plane, the WHOLE capsule (end caps + radius) inside the face, segment in-plane,
+        // for pitch -60..90 x roll -45..45; the old pose's numbers reproduce the reviewer's to 0.01u.
+        // Offsets are REAL headset distances (no 3rd-person bone scale — it reads 1.000 on this rig anyway).
+        // ⚠ Why this probe had never been seen firing is still UNPROVEN: the yaw-only rider is the leading
+        // suspect, not an established cause. mouthProbeLog 1 at level / looking down / looking up, A/B'd
+        // against mouthProbeSource 0, is what settles it.
+        const float* fr = g_headSnap.fullRot;
+        const float fx[3] = { fr[0], fr[3], fr[6] };
+        const float fy[3] = { fr[1], fr[4], fr[7] };
+        const float fz[3] = { fr[2], fr[5], fr[8] };
+        const float out   = ObjectHold::MouthProbeOutU();
+        const float hw    = ObjectHold::MouthProbeHalfWU();
+        const float r     = ObjectHold::MouthProbeR();
+        const float offZ  = ObjectHold::MouthProbeOffZU();
+        const float offX  = ObjectHold::MouthProbeOffXU();
+        const float lever = ObjectHold::MouthProbeLeverU();
+        // ★ THE LEVER (round-2 review). The steering arm is ANATOMY — how far the mouth sits in FRONT of the eyes
+        // (~2u: 2-3 cm at this rig's 76.5 u/m) — NOT the box's half-depth. Using halfYU (6u) as the arm raised the
+        // probe to eye level by 30 deg of upward gaze, so a kiss on a TALLER NPC could miss. At level gaze the arm
+        // contributes nothing (forward has no vertical part), so the user's dialled mouthProbeOffZU is unchanged.
+        float d[3];                                              // anatomical mouth, relative to the box centre
+        for (int c = 0; c < 3; ++c)
+            d[c] = fy[c] * lever + fz[c] * offZ + fx[c] * offX;
+        // lip segment direction FIRST: the clamps below need its spread. Headset lateral flattened into the face plane.
+        const float fxDotBy = fx[0] * by[0] + fx[1] * by[1] + fx[2] * by[2];
+        float sx[3] = { fx[0] - by[0] * fxDotBy, fx[1] - by[1] * fxDotBy, fx[2] - by[2] * fxDotBy };
+        const float sn = std::sqrt(sx[0] * sx[0] + sx[1] * sx[1] + sx[2] * sx[2]);
+        if (sn > 1e-4f) { sx[0] /= sn; sx[1] /= sn; sx[2] /= sn; }
+        else            { sx[0] = bx[0]; sx[1] = bx[1]; sx[2] = bx[2]; }   // headset lateral ~ face normal
+        float       lx = d[0] * bx[0] + d[1] * bx[1] + d[2] * bx[2];   // in the collider's frame...
+        float       lz = d[0] * bz[0] + d[1] * bz[1] + d[2] * bz[2];
+        const float ly = halfYU + out;                                 // ...pinned ONTO its front face
+        // ⛔ round-2 review: the first clamp bounded only the CENTRE, so under roll the segment's END CAPS overhung the
+        // box edge by ~1u. Bound the whole capsule: centre + half-width spread along that axis + the radius.
+        const float sxZ = std::fabs(sx[0] * bz[0] + sx[1] * bz[1] + sx[2] * bz[2]);
+        const float sxX = std::fabs(sx[0] * bx[0] + sx[1] * bx[1] + sx[2] * bx[2]);
+        const float zLim = (std::max)(halfZU - r - hw * sxZ, 0.f);
+        const float xLim = (std::max)(halfXU - r - hw * sxX, 0.f);
+        lz = lz < -zLim ? -zLim : (lz > zLim ? zLim : lz);
+        lx = lx < -xLim ? -xLim : (lx > xLim ? xLim : lx);
+        for (int c = 0; c < 3; ++c) {
+            const float m = posU[c] + bx[c] * lx + by[c] * ly + bz[c] * lz;
+            aOutU[c] = m - sx[c] * hw;
+            bOutU[c] = m + sx[c] * hw;
+        }
+        *rOutU = r;
+        return true;
+    }
+
+    bool HeadForwardZ(float* uprightFwdZ, float* fullFwdZ, bool* posedOnFull)
+    {
+        if (uprightFwdZ) *uprightFwdZ = g_headSnap.fwdZUpright;
+        if (fullFwdZ)    *fullFwdZ    = g_headSnap.fwdZFull;
+        if (posedOnFull) *posedOnFull = ObjectHold::MouthProbeSource() == 1 && g_headSnap.fullRotValid;
+        return g_headSnap.valid;
+    }
+
     int WandProbeSegments(float aOutU[2][3], float bOutU[2][3], float* rOutU)
     {
         if (!aOutU || !bOutU || !rOutU) return 0;
@@ -2290,11 +2914,13 @@ namespace HandBox {
         // gated on relaxed atomics — idle cost is a couple of loads + compares
         const bool boxLive  = g_boxLive.load(std::memory_order_relaxed);
         const bool wandLive = g_wandLive.load(std::memory_order_relaxed);
-        if (!boxLive && !wandLive) return 0;
+        const bool headLive = g_headLive.load(std::memory_order_relaxed);
+        if (!boxLive && !wandLive && !headLive) return 0;
         const std::uint32_t grp  = g_boxGroup.load(std::memory_order_relaxed);     // OUR group
         const std::uint32_t pgrp = g_playerGroup.load(std::memory_order_relaxed);  // player's real group
         const unsigned      part = g_boxPart.load(std::memory_order_relaxed);
         const unsigned      wpart = g_wandPart.load(std::memory_order_relaxed);
+        const unsigned      hpart = g_headPart.load(std::memory_order_relaxed);
 
         // "ours" = layer 56 + bit15 + OUR group. Under a private group this no longer overlaps
         // HIGGS's hands, which is exactly the point.
@@ -2303,12 +2929,38 @@ namespace HandBox {
         };
         const auto isBox  = [&](std::uint32_t f) { return isOurs(f) && ((f >> 8) & 0x1Fu) == part; };
         const auto isWand = [&](std::uint32_t f) { return isOurs(f) && ((f >> 8) & 0x1Fu) == wpart; };
+        const auto isHead = [&](std::uint32_t f) { return isOurs(f) && ((f >> 8) & 0x1Fu) == hpart; };
 
         const bool bA = isBox(infoA),  bB = isBox(infoB);
         const bool wA = isWand(infoA), wB = isWand(infoB);
-        if (!bA && !bB && !wA && !wB) return 0;           // existing PerfSys rules run unchanged
+        const bool hA = isHead(infoA), hB = isHead(infoB);
+        if (!bA && !bB && !wA && !wB && !hA && !hB) return 0;   // existing PerfSys rules unchanged
         if (bA && bB) return 2;                           // box x box: never useful
         if (wA && wB) return 2;                           // wand seg x wand seg: adjacent segments
+
+        // ── BELT 0 (head): every OTHER player-attached body. Unlike the wand, the head box has
+        // NO useful self-contact: touching your own face with your own hand is two keyframed
+        // (infinite-mass) bodies producing zero impulse, so the pair can only waste contact
+        // points and muddy attribution. Adjacency covers |head 10 - wand 9| == 1 for free, but
+        // ONLY while we share the player's group — under handBoxPrivGroup it is gone, so state
+        // every exclusion explicitly. HIGGS's own hands/weapons are parts 2/3/5/6.
+        if (hA != hB) {
+            const std::uint32_t oh = hA ? infoB : infoA;
+            if (isBox(oh) || isWand(oh)) return 2;        // our boxes / our wand
+            const unsigned ohl = oh & 0x7Fu;
+            const unsigned ohp = (oh >> 8) & 0x1Fu;
+            if (ohl == kHiggsLayer && (oh & kBit15) && (oh >> 16) == pgrp &&
+                (ohp == 2u || ohp == 3u || ohp == 5u || ohp == 6u))
+                return 2;                                 // HIGGS's own hand / weapon clone
+            if ((ohl == 8u || ohl == 32u || ohl == 33u) && (oh >> 16) == pgrp)
+                return 2;                                 // the player's OWN ragdoll — never
+            // Everything else falls through to Continue -> the vanilla layer-56 row, which
+            // COLLIDES with Biped(8)/BipedNoCC(33)/DeadBip(32). That pair IS the feature: an
+            // infinite-mass head box against her PLANCK-driven dynamic bones = she yields.
+            // CharController(30) is absent from layer 56's bitfield, so neither her capsule nor
+            // the player's can ever be touched here — by construction, not by a rule.
+        }
+        if (hA && hB) return 2;                           // (single body today; future-proof)
 
         // ── BELT 1 (wand): the player's OWN ragdoll. Adjacency used to do this for free
         // (|wandPart 9 - Lthigh 8| == 1 -> skip). Under a private group the pair becomes a plain
@@ -2409,7 +3061,9 @@ namespace HandBox {
         DestroyHand(0, fresh, "load");
         DestroyHand(1, fresh, "load");
         DestroyWand(fresh, "load");
+        DestroyHead(fresh, "load");
         g_wandSnap = WandSnap{};
+        g_headSnap = HeadSnap{};
         g_slabBase[0] = SlabBase{};    // HIGGS rebuilds its bodies across a load —
         g_slabBase[1] = SlabBase{};    // baselines recaptured on first sight of the new ones
         g_snap = Snapshot{};

@@ -1,6 +1,9 @@
 #include "PCH.h"
 #include "Hooks.h"
 #include "PPBHook.h"
+#include "PushStep.h"
+#include "RagFrame.h"
+#include "Tuning.h"     // v7.1: the movement-params override values are knobs
 #include "DismemberGuard.h"
 #include "PivFix.h"     // PivGuard flag bracket (2026-07-29 v2)  // PlanckSetSetting — the loosen-scope restore (2026-07-29)
 #include "Diag.h"
@@ -86,6 +89,13 @@ namespace Hooks {
         // poseLocalSpace is the proven pattern here (PLANCK's own inner hook mutates it the same way).
         ArmIK::ApplyPoseConform(poseLocalSpace, worldFromModel);
 
+        // ReDrive v2: set the per-bone weights the outer hook parked, exactly where Havok's own
+        // setBoneWeights doc prescribes ("before calling driveToPose ... then HK_NULL again").
+        // arg0 is the hkaRagdollRigidBodyController (PLANCK's typedef for this same site).
+        // Restore runs on EVERY return path below; Apply is a no-op when nothing is armed.
+        ArmIK::ReDriveInnerApply(controller);
+
+        bool ret = false;
         const float dz = ArmIK::GetHeelDriveBias();          // set per-driver by ApplyHeelFix (0 = no bias)
         if (dz != 0.f && worldFromModel && s_chainedInnerDrive) {
             alignas(16) RE::hkQsTransform biased = *worldFromModel;
@@ -95,13 +105,160 @@ namespace Hooks {
             biased.translation.quad = _mm_load_ps(t);
             if (!s_innerDriveFirstBias.exchange(true, std::memory_order_relaxed))
                 logger::info("INNER-DRIVE first biased call: worldFromModel z {:.4f} -> {:.4f} (havok m)", t[2] - dz, t[2]);
-            return s_chainedInnerDrive(controller, deltaTime, poseLocalSpace, &biased, stressOut);
+            ret = s_chainedInnerDrive(controller, deltaTime, poseLocalSpace, &biased, stressOut);
+        } else {
+            ret = s_chainedInnerDrive ? s_chainedInnerDrive(controller, deltaTime, poseLocalSpace, worldFromModel, stressOut)
+                                      : false;
         }
-        return s_chainedInnerDrive ? s_chainedInnerDrive(controller, deltaTime, poseLocalSpace, worldFromModel, stressOut)
-                                   : false;
+        ArmIK::ReDriveInnerRestore(controller);
+        return ret;
     }
 
-    // Resolve a code address to the file name of the module that owns it
+    // ═══════════════════════════════════════════════════════════════════════════════════
+    //  PUSHWALK HOOK — the CALL site into Actor::CheckAndHandleMotionOrAnimationDrivenChange,
+    //  VR 0x5E0885. PLANCK Write5Calls this exact site (activeragdoll main.cpp:6424) and, for
+    //  its grabbed actors, replaces the engine's re-evaluation with its drag-walk ritual. PPB
+    //  chains the same site at kDataLoaded (chain head; PLANCK installed at SKSEPlugin_Load, so
+    //  our tail call reaches its hook) and does the identical thing for PRESSURE-pushed actors.
+    //  Skipping the chain for an actor we drive is the load-bearing part: the original clears
+    //  planner-direct-control every frame.
+    // ═══════════════════════════════════════════════════════════════════════════════════
+    static std::string ResolveModuleName(std::uintptr_t addr);   // defined below
+
+    using MotionCheckFn = void (*)(RE::Actor*);
+    static MotionCheckFn s_chainedMotionCheck = nullptr;
+
+    static void MotionCheckChainHook(RE::Actor* actor)
+    {
+        bool handled = false;
+        try {
+            handled = PushStep::OnMotionDrivenCheck(actor);
+        } catch (...) {
+            static std::atomic<bool> warned{ false };
+            if (!warned.exchange(true, std::memory_order_relaxed))
+                logger::error("PushStep::OnMotionDrivenCheck threw; suppressing future throws.");
+        }
+        if (!handled && s_chainedMotionCheck)
+            s_chainedMotionCheck(actor);
+    }
+
+    void InstallPushWalkHook()
+    {
+        constexpr std::uintptr_t kVROffset = 0x5E0885;
+        const auto site = REL::Offset(kVROffset).address();
+        const auto* p = reinterpret_cast<const std::uint8_t*>(site);
+        if (p[0] != 0xE8) {
+            logger::warn("PushWalk hook NOT installed: byte at 0x5E0885 is 0x{:02X}, not E8 — "
+                         "site shape unexpected, refusing to patch", p[0]);
+            return;
+        }
+        SKSE::AllocTrampoline(14);   // every installer funds its own write_call<5> (the missing
+                                     // line here asserted Trampoline.cpp(117) on startup, 2026-08-29)
+        auto& tr = SKSE::GetTrampoline();
+        const auto prev = tr.write_call<5>(site, reinterpret_cast<std::uintptr_t>(&MotionCheckChainHook));
+        s_chainedMotionCheck = reinterpret_cast<MotionCheckFn>(prev);
+        logger::info("PushWalk hook installed at 0x5E0885 (chained; prev target = {})",
+                     ResolveModuleName(prev));
+    }
+
+    // ═══ MOVEMENT-PARAMS OVERRIDE (v7, 2026-08-30) — PLANCK's OverwriteMovementParameters
+    // replica. THE 08:27 DATA: the fade commanded 26→0 u/s while she ran ~150 u/s (321u in
+    // 1.85s) — the MovementPlannerArbiter maps our target speed onto the ACTOR'S OWN
+    // gait/acceleration parameters, so without overriding them the command is a suggestion.
+    // PLANCK hooks the two CALL sites where the arbiter computes speeds (planck_080
+    // main.cpp:6763-6822) and substitutes a stack IMovementParameters clone — accel/decel/
+    // rotation replaced with its config values, walkRunPercent + type KEPT from the actor.
+    // We chain the SAME two sites (PLANCK installed first → our tail call reaches its hook;
+    // an actor is never both ours and grabbed — the grab stand-down enforces it).
+    // Values are PLANCK's shipped ini: accel 10 / decel 10 / rotation 2.5 / angleAccel 10.
+    struct IMoveParamsMirror {   // vtable contract proven by PLANCK handing its clone to the engine
+        virtual ~IMoveParamsMirror() = default;              // 0
+        virtual float GetWalkRunPercent() = 0;               // 1
+        virtual float GetAcceleration() = 0;                 // 2
+        virtual float GetDeceleration() = 0;                 // 3
+        virtual float GetAngleAcceleration() = 0;            // 4
+        virtual float GetRotationPercent() = 0;              // 5
+        virtual std::uint32_t GetType() = 0;                 // 6
+        virtual void Write(void*) = 0;                       // 7
+        virtual void Read(void*) = 0;                        // 8
+    };
+    struct PushMoveParams final : IMoveParamsMirror {
+        float walkRun, accel, decel, angAccel, rotPct; std::uint32_t type;
+        // v7.1: all five values are live knobs (defaults = PLANCK's shipped ini). walkRunPercent
+        // keeps the ACTOR'S own value unless pushStepWalkRun >= 0 overrides it (the gait dial).
+        explicit PushMoveParams(IMoveParamsMirror* src)
+            : walkRun(ObjectHold::PushStepWalkRun() >= 0.f ? ObjectHold::PushStepWalkRun()
+                                                           : src->GetWalkRunPercent()),
+              accel(ObjectHold::PushStepAccel()), decel(ObjectHold::PushStepDecel()),
+              angAccel(ObjectHold::PushStepAngAccel()), rotPct(ObjectHold::PushStepRotPct()),
+              type(src->GetType()) {}
+        float GetWalkRunPercent() override { return walkRun; }
+        float GetAcceleration() override { return accel; }
+        float GetDeceleration() override { return decel; }
+        float GetAngleAcceleration() override { return angAccel; }
+        float GetRotationPercent() override { return rotPct; }
+        std::uint32_t GetType() override { return type; }
+        void Write(void*) override {}
+        void Read(void*) override {}
+    };
+    using CalcSpeedsFn = void (*)(void*, void*, void*, void*, float*, float*, float*);
+    using CalcRotFn    = void (*)(void*, void*, void*, void*, float*, float*);
+    static CalcSpeedsFn s_chainedCalcSpeeds = nullptr;
+    static CalcRotFn    s_chainedCalcRot    = nullptr;
+
+    static bool PushDriven(void* actorState)
+    {
+        // ActorState sits at Actor+0xB8 (PLANCK main.cpp:6797, same arithmetic).
+        auto* actor = reinterpret_cast<RE::Actor*>(
+            reinterpret_cast<std::uintptr_t>(actorState) - 0xB8);
+        return actor && PushStep::IsDrivingActor(actor->GetFormID());
+    }
+    static void CalcSpeedsChainHook(void* st, void* params, void* qs, void* mv,
+                                    float* a, float* b, float* c)
+    {
+        if (!s_chainedCalcSpeeds) return;
+        if (PushDriven(st)) {
+            PushMoveParams o(reinterpret_cast<IMoveParamsMirror*>(params));
+            s_chainedCalcSpeeds(st, &o, qs, mv, a, b, c);
+        } else {
+            s_chainedCalcSpeeds(st, params, qs, mv, a, b, c);
+        }
+    }
+    static void CalcRotChainHook(void* st, void* params, void* qs, void* mv, float* a, float* b)
+    {
+        if (!s_chainedCalcRot) return;
+        if (PushDriven(st)) {
+            PushMoveParams o(reinterpret_cast<IMoveParamsMirror*>(params));
+            s_chainedCalcRot(st, &o, qs, mv, a, b);
+        } else {
+            s_chainedCalcRot(st, params, qs, mv, a, b);
+        }
+    }
+    void InstallMoveParamsHooks()
+    {
+        constexpr std::uintptr_t kSpeeds = 0x116D362;   // ActorState_CalculateSpeedsWithAcceleration CALL
+        constexpr std::uintptr_t kRot    = 0x116D39D;   // ActorState_CalculateRotSpeeds CALL
+        const auto sSite = REL::Offset(kSpeeds).address();
+        const auto rSite = REL::Offset(kRot).address();
+        if (*reinterpret_cast<const std::uint8_t*>(sSite) != 0xE8 ||
+            *reinterpret_cast<const std::uint8_t*>(rSite) != 0xE8) {
+            logger::warn("MoveParams hooks NOT installed: site bytes 0x{:02X}/0x{:02X} not E8 — "
+                         "refusing to patch (pushed actors will keep gait-speed, not commanded)",
+                         *reinterpret_cast<const std::uint8_t*>(sSite),
+                         *reinterpret_cast<const std::uint8_t*>(rSite));
+            return;
+        }
+        SKSE::AllocTrampoline(28);   // two write_call<5>, funded here (the 2026-08-29 lesson)
+        auto& tr = SKSE::GetTrampoline();
+        const auto prevS = tr.write_call<5>(sSite, reinterpret_cast<std::uintptr_t>(&CalcSpeedsChainHook));
+        const auto prevR = tr.write_call<5>(rSite, reinterpret_cast<std::uintptr_t>(&CalcRotChainHook));
+        s_chainedCalcSpeeds = reinterpret_cast<CalcSpeedsFn>(prevS);
+        s_chainedCalcRot    = reinterpret_cast<CalcRotFn>(prevR);
+        logger::info("MoveParams hooks installed at 0x116D362/0x116D39D (chained; prev = {} / {})",
+                     ResolveModuleName(prevS), ResolveModuleName(prevR));
+    }
+
+    // Resolve a code address to the file name of the module that owns it    // Resolve a code address to the file name of the module that owns it
     // (e.g. "activeragdoll.dll" for PLANCK, "SkyrimVR.exe" for the game's own
     // driveToPose). Makes the chain-over verdict self-evident in the log
     // instead of printing a bare address you'd have to resolve by hand.
@@ -173,17 +330,43 @@ namespace Hooks {
         //
         // Any failure must not propagate: wrap in try/catch so a bad pose
         // resolve can't break the chain.
-        try {
-            ArmIK::ApplyToPoseTrack(driver, deltaTime, generatorOutput);
-        } catch (...) {
-            static std::atomic<bool> ikWarned{ false };
-            if (!ikWarned.exchange(true, std::memory_order_relaxed)) {
-                logger::error("ArmIK::ApplyToPoseTrack threw; suppressing future throws.");
+        // ★ 2.2.0: every exit speaks. The old catch printed one bare line and went silent, so the 2026-09-12 20:56:35
+        // throw (a dying summoned Frost Atronach) could not be attributed. Now: what threw, on which NPC, at which step
+        // of the spine (ArmIK::SpineBreadcrumb), and how many times — the first 5 in full, then every 100th with the count.
+        // Still contained exactly as before: the chained driveToPose below always runs.
+        {
+            // The message is COPIED inside the catch: e.what() points into the exception object, which is destroyed
+            // the moment the catch block ends — logging it afterwards would read freed memory.
+            char what[192] = {};
+            bool threw = false;
+            try {
+                ArmIK::ApplyToPoseTrack(driver, deltaTime, generatorOutput);
+            } catch (const std::exception& e) {
+                threw = true;
+                std::snprintf(what, sizeof what, "%s", e.what() ? e.what() : "std::exception (no message)");
+            } catch (...) {
+                threw = true;
+                std::snprintf(what, sizeof what, "%s", "non-standard exception");
+            }
+            if (threw) {
+                static std::atomic<std::uint32_t> s_spineThrows{ 0 };
+                const std::uint32_t n = s_spineThrows.fetch_add(1, std::memory_order_relaxed) + 1;
+                if (n <= 5 || (n % 100) == 0) {
+                    const char* stage = "?"; std::uint32_t who = 0;
+                    ArmIK::SpineBreadcrumb(stage, who);
+                    logger::error("ArmIK::ApplyToPoseTrack threw #{}: '{}' | actor {:08X} | step: {} "
+                                  "(contained — this NPC skips PPB's per-actor work for this frame only; the drive still runs)",
+                                  n, what, who, stage ? stage : "?");
+                }
             }
         }
 
         if (s_chainedDriveToPose) {
             s_chainedDriveToPose(driver, deltaTime, context, generatorOutput);
+            // ReDrive leak guard: if PLANCK's DriveToPoseHook early-returned (dead actor, no
+            // g_activeRagdolls entry), the inner site never fired and the armed weights would
+            // survive into the NEXT actor's drive on this thread. Consume-or-disarm, always.
+            ArmIK::ReDriveDisarm();
             // PivGuard flag bracket: the pre-drive set PLANCK's pivot-collapse flag to 0 for a
             // PPB-skeleton actor; PLANCK consumed it inside the chained call. Restore the saved
             // global NOW so every other actor sees stock behaviour.
@@ -338,6 +521,8 @@ namespace Hooks {
         // Unconditional, ahead of the Diag gate: this is the ONLY place PPB can see the real
         // integration delta, and the hand-jitter diagnostic needs it even when Diag is disarmed.
         HandBox::NotePhysicsStepDt(dt);
+        RagFrame::NoteStep();          // step counter for the RAGFRAME receipt
+                                       // (relaxed atomic only — physics thread, T4)
         if (!Diag::Armed() || !s_chainedStep)
             return s_chainedStep ? s_chainedStep(world, dt) : 0;
 

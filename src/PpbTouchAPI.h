@@ -81,6 +81,69 @@
 //   want to be bulletproof against exotic OBJECT names.)
 // ═══════════════════════════════════════════════════════════════════════════════════════
 
+// ═══════════════════════════════════════════════════════════════════════════════════════
+//  THE GESTURE EVENT BUS  (added 2026-08-27 with the gesture layer's move into PPB)
+// ═══════════════════════════════════════════════════════════════════════════════════════
+//  The touch API above answers "what is touching what, right now". These SKSE mod events
+//  answer a different question: "a hand just DID something to a worn item." They are part
+//  of the same published contract and change under the same rules.
+//
+//  All are SKSE ModCallbackEvents. sender = the ACTOR the gesture happened to (never the
+//  player's hand, even when the player's hands did it). Fields are '|'-separated.
+//  Consumers must tolerate EXTRA trailing fields: this bus appends, it does not renumber.
+//
+//  ── OUTBOUND, the five PPB emits ─────────────────────────────────────────────────────
+//   PPB_GestureUndressArm      "<capsule>"
+//        Both hands have taken the same worn piece and a pull is armed. A consumer that
+//        narrates touches should SUPPRESS grab narration on this actor until End.
+//
+//   PPB_GestureUndressEnd      "<name>|<slotMask>|<done>|<isDD>|<capsule>|<class>"
+//        The pull resolved. ⚠ FIRES ON CANCEL TOO (done=0): a hand let go, the actor
+//        changed, the piece stopped being worn. The Arm/End PAIR is load-bearing — a
+//        consumer that only handles done=1 will silence that actor for the session.
+//
+//   PPB_GesturePlug            "<in|out>|<name>|<class>|<siteMask>|<leftHand>"
+//        THE PLUG GESTURE, both edges, and only the gesture:
+//          "in"  a plug was worked into an orifice by hand and equipped
+//          "out" a fingertip worked a plug loose (fires just BEFORE the removal)
+//        PLUGS ONLY, across every device family. A device qualifies when its DD class is
+//        one of the three plug rows (…DeviousPlug / …DeviousPlugVaginal / …DeviousPlugAnal),
+//        OR when it carries no DD class at all but its site lands on an orifice — that second
+//        arm is what covers ZaZ, Diary of Mine and zRavenous plugs, which have no DD keyword.
+//        A gag or a vaginal piercing sits at an orifice SITE but is not a plug and does NOT
+//        appear here; use PPB_GestureDeviceEquipped's siteMask for those.
+//        <class> is the empty string for a non-DD plug — it genuinely has no class name.
+//        <siteMask> is always real: both edges resolve it from the same source the gesture
+//        used to find the plug in the first place.
+//        A plug leaving by menu, key, or another mod's script does NOT appear here — by
+//        design. This event means a HAND did it.
+//        ⚠ "out" is emitted just before the removal, and Devious Devices can still refuse it
+//        after that point for two reasons PPB cannot see without zadlibs (no class keyword in
+//        zadDeviceTypes; GetWornDevice returning None). The common refusal — a quest or
+//        block-generic device — is caught in PPB and emits nothing. So a rare "out" with no
+//        removal behind it is possible; pair it against the removal, do not assume it.
+//
+//   PPB_GestureDeviceEquipped  "<name>|<class>|<locked>|<quest>|<siteMask>|<slotMask>"
+//        A DD/ZaZ device was put on by the equip gesture.
+//
+//   PPB_GestureGearEquipped    "<name>|<slotMask>"
+//        Plain (non-DD) armor was put on by the equip gesture.
+//
+//   PPB_GestureClaim           "<actor FormID>"
+//        Bookkeeping: the removal a consumer is about to see on TESEquipEvent was OUR
+//        gesture, not a menu. Sent immediately before the unequip.
+//
+//  ── INBOUND, the one event PPB listens for ───────────────────────────────────────────
+//   PPB_GestureSetPaused       numArg 1/0
+//        Stand the gesture layer down (a scripted scene placing hands must not read as a
+//        grab). Equivalent to the Papyrus native PPB_Native.SetGesturePaused(bool), which
+//        new callers should prefer.
+//
+//  ⚠ NOT a gesture event, but it travels this bus: PPB_GestureUnlocked, sent by
+//    PPB_DeviceEquip.psc back to PPB with the freed device's FormID. It is an internal
+//    round trip. Do not consume it and do not send it.
+// ═══════════════════════════════════════════════════════════════════════════════════════
+
 namespace PPBAPI {
 
     // Source classification for a contact. Values are frozen; new kinds append.
@@ -96,6 +159,33 @@ namespace PPBAPI {
         // `wand` is meaningless here and reads 0 (not a hand); `sourceName` is empty. Only
         // live while he is actually exposed (TNG slot 52), so trousers stop these contacts.
         kSourceGenital = 7,
+        // ── appended 2026-09-03: the player's HEAD ────────────────────────────────────────
+        // The player's own head/face as a toucher: one keyframed box riding the VRIK-posed
+        // head node, published here the moment it touches any capsule. This is what makes
+        // leaning your face against her a first-class event — a kiss on the lips (head C1),
+        // a cheek, a forehead to her shoulder, a nuzzle into her neck.
+        //   `wand` is MEANINGLESS here and reads 0 (the head is not a hand).
+        //   `sourceName` is "face" when the FRONT of the head made the contact and "head"
+        //   otherwise, so a consumer can tell a kiss from a headbutt without geometry.
+        //   ★ Since 2026-09-06 it can also be "mouth": a small probe on the lower front of the
+        //   face won the contact. Build >= 20103 (2026-09-12) guarantees all three names reach
+        //   the DIGEST stream too (they were dropped there before), a HEAD contact never
+        //   reports an interior sub-region (depth >= Inside), and the vaginal / anal OPENING
+        //   capsules can be reached by the "mouth" only, never the whole head.
+        //   ★ A kiss on her upper lip also raises the mouth gate's LIPS stage:
+        //   PPB_MouthLips strArg "R|LIPS|HEAD" — a third field APPENDED to the usual
+        //   "WAND|STAGE" (split on '|' and tolerate extra fields). A kiss is LIPS only: it
+        //   never raises ENTER or THROAT.
+        //   Host knob `headBox` gates it; it is DESTROYED during an OStim/SexLab scene (the
+        //   same rule the genital wand follows), so do not expect these inside a scene.
+        //   Like every other source it is pure geometry — no Havok listener is consulted.
+        //   Requires GetBuildNumber() >= 20102 — gate on that if you branch on this kind.
+        kSourceHead = 8,
+        // ⛔ EVERY per-source array in the engine MUST be sized by this, never by a literal.
+        // kSourceHead was appended as 8 into a `float srcSecs[8]` and the resulting `sk < 8`
+        // guard silently published every head contact as kSourceFinger. Append a source =
+        // bump this.
+        kSourceCount = 9,
     };
 
     // GARMENT pseudo-slots (2026-07-30): garment contacts report through the same contact

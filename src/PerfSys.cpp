@@ -7,7 +7,11 @@
 #include "NpcFingerTest.h" // NpcFinger::FilterDecision/OnFrame — spliced into FilterCB + the frame lambda
 #include "HandBox.h"
 #include "FsmpLink.h"
-#include "PpbApi.h"       // HandBox::FilterDecision/OnFrame/RegisterHiggs — same splice points
+#include "PpbApi.h"
+#include "DeviceGesture.h"
+#include "HoldPool.h"
+#include "HandStop.h"
+#include "PushStep.h"       // HandBox::FilterDecision/OnFrame/RegisterHiggs — same splice points
 #include "Orifice.h"      // Orifice::Sweep — the gate-independent teardown (see the lambda below)
 #include "RayTel.h"       // RayTel::OnFrame — raycast/query telemetry arm + 1 Hz report (knob-gated, ships OFF)
 
@@ -266,6 +270,15 @@ namespace PerfSys {
                                     // stopped reaching the drive seam (dismembered, left the driven
                                     // set). Self-throttled; instant no-op while nothing is held.
             PpbApi::OnFrame();      // touch API tick: scan, contact table, events, snapshot
+            DeviceGesture::OnFrame();
+            HoldPool::OnFrame();         // 1 Hz: release held actors who died or left the world
+            // (DeviceGesture = hand-gesture device layer: equip / eject / undress /
+                                        // plug. AFTER PpbApi::OnFrame so it reads THIS frame's
+                                        // contact snapshot, which is the whole input it needs.
+            HandStop::OnFrame();
+            PushStep::OnFrame();        // trunk pressure -> engine bump-walk (knob pushStep)        // hand-vs-NPC penetration probe (stage 1 of the
+                                        // PCVR-style hand clamp). After PpbApi::OnFrame: it
+                                        // reads this frame's contact snapshot, nothing else.
             HandBox::OnFrame();     // frame counter + deferred telemetry (2026-07-10 lag fix: the
                                     // pose snapshot moved into HandBox's first PrePhysicsStep fire)
             RayTel::OnFrame();      // 2026-08-22 raycast/query telemetry: arm/disarm on the `rayTel`
@@ -314,6 +327,54 @@ namespace PerfSys {
             }
         }
 
+        // ── LIVE PLANCK DRIVE GAINS (2026-09-09) ─────────────────────────────────────────
+        // Same mechanism as the loosen A/B above: PLANCK registers these by name and re-stamps
+        // them into the live controller data every frame, so a write takes effect next frame.
+        // ★ The FIRST pass always READS AND LOGS, even with every knob at -1 — PLANCK's ini is not
+        //   hot-reloaded and PLANCK logs no values, so this receipt is the ONLY way to see what it
+        //   actually loaded (e.g. whether an override mod's activeragdoll.ini won the conflict).
+        {
+            static bool  s_firstRead = false;
+            static float s_last[3] = { -999.f, -999.f, -999.f };
+            static const char* kName[3] = { "hierarchyGain", "velocityGain", "positionGain" };
+            const float want[3] = { ObjectHold::PlanckGainHier(),
+                                    ObjectHold::PlanckGainVel(),
+                                    ObjectHold::PlanckGainPos() };
+            if (!s_firstRead) {
+                s_firstRead = true;
+                double h = -1.0, v = -1.0, ps = -1.0;
+                const bool ok = DismemberGuard::PlanckGetSetting(kName[0], h) &&
+                                DismemberGuard::PlanckGetSetting(kName[1], v) &&
+                                DismemberGuard::PlanckGetSetting(kName[2], ps);
+                if (ok)
+                    logger::info("PPBGAIN startup read-back: PLANCK holds hierarchyGain={:.4f} "
+                                 "velocityGain={:.4f} positionGain={:.4f} "
+                                 "(Havok defaults 0.17 / - / -; PLANCK ships 0.6 / 0.6 / 0.05). "
+                                 "hierarchyGain 0 = model-space target (stiffest, most stable), "
+                                 "1 = parent-relative (error compounds root->leaf: EXTREMITIES ring).", h, v, ps);
+                else
+                    logger::warn("PPBGAIN startup read-back FAILED — PLANCK absent or its settings "
+                                 "vtable moved (Get/SetSettingDouble at slots 13/14).");
+            }
+            for (int gi = 0; gi < 3; ++gi) {
+                if (want[gi] == s_last[gi]) continue;
+                s_last[gi] = want[gi];
+                if (want[gi] < -0.5f) {
+                    logger::info("PPBGAIN: releasing override on {} — PLANCK keeps whatever it holds.", kName[gi]);
+                    continue;
+                }
+                double before = -1.0, after = -1.0;
+                const bool gotOk = DismemberGuard::PlanckGetSetting(kName[gi], before);
+                const bool setOk = DismemberGuard::PlanckSetSetting(kName[gi], (double)want[gi]);
+                DismemberGuard::PlanckGetSetting(kName[gi], after);
+                if (gotOk && setOk)
+                    logger::info("PPBGAIN: {} {:.4f} -> {:.4f} (requested {:.4f}, READ BACK {:.4f})",
+                                 kName[gi], before, after, want[gi], after);
+                else
+                    logger::warn("PPBGAIN: could not set {} (getOk={} setOk={})",
+                                 kName[gi], gotOk ? 1 : 0, setOk ? 1 : 0);
+            }
+        }
         // refresh the callback's hot caches from the tuning file (1 Hz reload)
         g_cbSelfThigh.store(ObjectHold::PerfFilterSelfThigh(), std::memory_order_relaxed);
         g_cbCrossPelvis.store(ObjectHold::PerfFilterCrossPelvis(), std::memory_order_relaxed);

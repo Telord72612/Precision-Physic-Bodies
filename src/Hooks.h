@@ -34,4 +34,6 @@ namespace Hooks {
     // its hkpStepResult return. Diagnostic-only (feeds Diag::OnPhysicsStep while `perf` is armed).
     // Self-aborts via the p[0]!=0xE8 runtime guard: .text is DRM-encrypted so this is the ONLY proof.
     void InstallPhysicsStepHook();
+    void InstallPushWalkHook();   // 0x5E0885 — the PushWalk motion-check chain (2026-08-29)
+    void InstallMoveParamsHooks();// 0x116D362/9D — movement-params override so commanded speed IS actual speed (v7)
 }

@@ -33,8 +33,16 @@ add_library(PPB SHARED
     src/CapFix.cpp      # 12-slot live capsule editor (RE:: types only)
     src/PivFix.cpp      # joint-pivot re-seat + clavicle-follow (Havok SDK, scoped below)
     src/Tuning.cpp      # PPB_tuning.txt: tune struct, parser, 1 Hz poll, heel-fix flag
+    src/Ini.cpp         # PPB.ini: the general sectioned settings file (hot, mtime-polled)
     src/Natives.cpp     # PPB_Native.SetStatuePose / SetHeelFix / ToggleHeelFix
     src/Interop.cpp     # HIGGS interface handshake + IsActorGrabbedByPlayer (PivFix grab gate)
+    src/DeviceGesture.cpp  # hand-gesture device layer: equip / eject / undress / plug (moved from the DD-ZaZ add-on 2026-08-26)
+    src/HandStop.cpp
+    src/PushStep.cpp
+    src/RagFrame.cpp    # 2026-09-03 ragdoll-onset receipt (RAGFRAME): read-only, writes nothing
+    src/OutfitTag.cpp   # 2026-09-06 option A: tag gesture-equipped gear as the NPC's outfit item (engine's own inventory tag)
+    src/HoldPool.cpp    # 2026-09-06 alias pool: hold a generic NPC in PPB_HoldPoolQuest so a cell respawn cannot reset her
+    src/OutfitGuard.cpp # 2026-09-06 Actor::HasOutfitItems guard: a hold-pool NPC stripped naked is never re-issued her outfit
     src/PpbApi.cpp      # public touch API: contact engine + messaging interface + PPB_Touch natives
     src/DismemberGuard.cpp # 2026-07-26 DF/NGD ↔ PLANCK guard: death-grace ignore + head-clone exclusion
     src/GenitalProbe.cpp   # 2026-08-02 research instrument: which signal tracks schlong exposure (genProbe)

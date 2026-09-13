@@ -17,6 +17,7 @@ namespace GrabDiag {
     // Call each hook fire per driven actor — gated internally by the generation.
     void CapFixApply(RE::Actor* actor);
     void InvalidateBodyScale(std::uint32_t formId);  // OBody Obody_ApplyMorph push (any thread)
+    void InvalidateBodyScaleAt(std::uint32_t formId, float delayS);  // deferred (equip sink trailing edge)
 
     // ── ReTouch exports (2026-07-24): live capsule geometry for the ghost-zone / touch layer.
     // World-space, Skyrim units, computed from the LIVE rigid bodies — so everything the
@@ -36,6 +37,22 @@ namespace GrabDiag {
     // The held object's bound-box SEGMENT (longest axis + radius, world game units). false =
     // no readable/anisotropic bound, caller keeps the worldBound sphere. 2026-08-19.
     bool ObjectSegmentU(RE::TESObjectREFR* refr, float aOutU[3], float bOutU[3], float* rOutU);
+
+    // The held object's REAL Havok collision box, world-placed. All lengths in game units.
+    // R is row-major; its ROWS are the world axes of the box frame (the same convention
+    // ReadCapsuleWorldUSide builds). false = no held body / unreadable / implausible shape —
+    // the caller keeps the legacy segment-or-sphere path.
+    struct ObjBoxU {
+        float c[3];    // world centre of the collision box
+        float R[9];    // row-major world rotation of the box frame
+        float h[3];    // half extents along R's rows
+    };
+    bool ObjectBoxU(bool left, ObjBoxU& out);
+    // ★ THE PALM (2026-09-06, user in VR): "HIGGS's box IS the palm, it always has been; all our
+    // fingers are just extensions of it." HIGGS's own hand body (interface slot 24) as a world-placed
+    // box, same shape as ObjectBoxU. It is the collider that physically pushes her when the hand is
+    // open or fisted. false = HIGGS absent / body unreadable this frame. Read-only, same-frame use.
+    bool HandSlabBoxU(bool left, ObjBoxU& out);
     bool SlotBodyPoseU(RE::Actor* a, int slot, float posOutU[3], float rotOut[9]);
 
     // The raw hkpRigidBody backing a slot (void* keeps SDK types out of this header).
@@ -44,8 +61,17 @@ namespace GrabDiag {
     // geometric reconstruction at all — but the event only gives POINTERS, and the main thread
     // must map them back to (actor, slot, side). This is that map's source.
     void* SlotBodyRaw(RE::Actor* a, int slot, bool left);
+    // v9.7: cap every ragdoll body's speed (game u/s) — the knockdown-launch fix. Returns how
+    // many bodies were over the cap.
+    int   ClampRagdollSpeed(RE::Actor* a, float maxU);
     const char* SlotLabel(int slot);                 // "hand","forearm",... "com" (12 slots)
     int  SlotLiveChildren(RE::Actor* a, int slot);   // list child count; 0 = single capsule/none
+
+    // The actor's measured breast CUP (|brUp - brDn|, base-mesh units); 0 = not measured.
+    // Consumed by the touch engine's capsule-side breast pad: the radius model saturates at
+    // lmBrCupSat while the flesh does not, so above the clamp the capsule under-reaches the
+    // skin by a growing amount and the contact test has to compensate for it.
+    float BreastCupOf(std::uint32_t actorId);
     // Console entry: apply=false prints the current R-hand capsule into `out`; apply=true writes
     // the args NOW + calls ObjectHold::CapFixSet so every other driven NPC follows.
     void CapFixConsole(RE::Actor* actor, bool apply,
@@ -63,4 +89,14 @@ namespace GrabDiag {
     // The latched measured TRUE scale (0 = unlatched -> leave the joints alone). Consumed by PivFix's
     // Phase-2 joint re-scale. The reference actor (Lydia) returns her GetScale so she is centered too.
     float MeasuredScaleOf(RE::Actor* actor);
+
+    // PushWalk v3 (2026-08-29): the displaced-most trunk bone's horizontal displacement — the
+    // MEASURED push direction (body world pos minus XP32 node world pos). False when all trunk
+    // bones sit within minMagU of home (pinned by the Brace, or untouched).
+    bool GetPushDisplacement(std::uint32_t actorId, float minMagU,
+                             float& dxOut, float& dyOut, float& magOut, int& slotOut);
+    // v4.1: the CONTACTED slot's displacement only (the displaced-most vote let the pelvis
+    // counter-lean send her walking INTO the push -- measured 2026-08-29).
+    bool GetSlotPushDisplacement(std::uint32_t actorId, int slot, float minMagU,
+                                 float& dxOut, float& dyOut, float& magOut);
 }

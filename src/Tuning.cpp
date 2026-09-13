@@ -1,5 +1,6 @@
 #include "PCH.h"
 #include "Tuning.h"
+#include "Ini.h"    // [Features] bPushShove — the FOMOD ship switch ANDed into the push master
 
 #include <array>
 #include <atomic>
@@ -119,14 +120,14 @@ namespace ObjectHold {
                     // 2026-07-13 MULTI-RIG (NpcFingerTest.cpp): global push multiplier +
                     // the always-on garment-rig master switch — read live per frame.
                     PK_NOSNAP(fsmpPushMult), PK_NOSNAP(npcFollower), PK_NOSNAP(fsmpFlexCompat),
-                    PK_NOSNAP(npcGenCap), PK(npcGenMassKg), PK(npcGenR), PK(npcGenAlpha),
+                    PK_NOSNAP(npcGenCap), PK_NOSNAP(npcGenCapFemale), PK(npcGenMassKg), PK(npcGenR), PK(npcGenAlpha),
                     PK_NOSNAP(genBend), PK_NOSNAP(genBendPlayer), PK_NOSNAP(genBendMax),
                     PK_NOSNAP(genBendUpMs), PK_NOSNAP(genBendHoldSec), PK_NOSNAP(genBendDecaySec),
                     PK_NOSNAP(genBendArousal), PK_NOSNAP(genBendTouchU),
                     PK_NOSNAP(npcRigRangeU), PK_NOSNAP(npcRigRangeHystU), PK_NOSNAP(npcRigMaxActors),
                     PK_NOSNAP(apiTouch), PK_NOSNAP(apiHz), PK_NOSNAP(apiTouchU), PK_NOSNAP(apiExitPadU),
                     PK_NOSNAP(apiMaxActors), PK_NOSNAP(apiRangeU), PK_NOSNAP(apiFistTipPalmU),
-                    PK_NOSNAP(apiEvents), PK_NOSNAP(apiLog), PK_NOSNAP(apiHairTarget),
+                    PK_NOSNAP(apiEvents), PK_NOSNAP(apiLog), PK_NOSNAP(apiHairTarget), PK_NOSNAP(apiBreastPadU), PK_NOSNAP(apiBreastPadSlope),
                     PK_NOSNAP(apiRawEvents), PK_NOSNAP(apiWeaponRMaxU), PK_NOSNAP(apiObjectRMaxU),
                     PK_NOSNAP(apiSubRegionInEvent),
                     PK_NOSNAP(apiSuppressHeldHand),
@@ -227,7 +228,15 @@ namespace ObjectHold {
                     PK_NOSNAP(dgDeferDf), PK_NOSNAP(dgHeadTrack),
                     PK_NOSNAP(dgDeathCut), PK_NOSNAP(dgDeathCutDelayS), PK_NOSNAP(dgDeathNodeTries),
                     PK_NOSNAP(dgHitLocated), PK_NOSNAP(dgHitMaxDistU),
-                    PK_NOSNAP(dgHeadSkel), PK_NOSNAP(dgHeadSkelHoldS), PK_NOSNAP(dgHeadPark), PK_NOSNAP(dgHeadStripHair), PK_NOSNAP(dgHeadGrabFix), PK_NOSNAP(dgHeadPlanck), PK_NOSNAP(dgVictimPlanck), PK_NOSNAP(genProbe), PK(maleGeometry), PK_NOSNAP(handBoxRelAlpha), PK_NOSNAP(handBoxPhaseLog), PK_NOSNAP(handBoxStepDt), PK_NOSNAP(handBoxTrack), PK_NOSNAP(handBoxWarp), PK_NOSNAP(playerWand), PK_NOSNAP(playerWandR), PK_NOSNAP(playerWandPart), PK_NOSNAP(playerWandLog), PK_NOSNAP(handBoxPrivGroup), PK_NOSNAP(handBoxPrivGroupId), PK_NOSNAP(handBoxNullUserData), PK_NOSNAP(sceneSuspendHands), PK_NOSNAP(sceneFirstDistU), PK_NOSNAP(apiWeaponDrawnOnly), PK_NOSNAP(weaponSheathedColOff), PK_NOSNAP(pivGuardCombatLoose), PK_NOSNAP(bumperSceneOff), PK_NOSNAP(bumperSceneExcite), PK_NOSNAP(planckLoosenOurs), PK_NOSNAP(planckLoosenGlobal), PK_NOSNAP(touchProbeHud), PK_NOSNAP(touchProbeHudU),
+                    PK_NOSNAP(dgHeadSkel), PK_NOSNAP(dgHeadSkelHoldS), PK_NOSNAP(dgHeadPark), PK_NOSNAP(dgHeadStripHair), PK_NOSNAP(dgHeadGrabFix), PK_NOSNAP(dgHeadPlanck), PK_NOSNAP(dgVictimPlanck), PK_NOSNAP(genProbe), PK(maleGeometry), PK_NOSNAP(handBoxRelAlpha), PK_NOSNAP(handBoxPhaseLog), PK_NOSNAP(handBoxStepDt), PK_NOSNAP(handBoxTrack), PK_NOSNAP(handBoxWarp), PK_NOSNAP(playerWand), PK_NOSNAP(playerWandR), PK_NOSNAP(playerWandPart), PK_NOSNAP(playerWandLog), PK_NOSNAP(headBox), PK_NOSNAP(headBoxHalfXU), PK_NOSNAP(headBoxHalfYU), PK_NOSNAP(headBoxHalfZU), PK_NOSNAP(headBoxOffXU), PK_NOSNAP(headBoxOffYU), PK_NOSNAP(headBoxOffZU), PK_NOSNAP(headBoxPart), PK_NOSNAP(headBoxMaxVel), PK_NOSNAP(headBoxLog), PK_NOSNAP(headBoxVrikComp), PK_NOSNAP(headBoxRider), PK_NOSNAP(pushStepFallRag), PK_NOSNAP(pushStepFallFrames), PK_NOSNAP(pushStepFallGraceS), PK_NOSNAP(ragFrame), PK_NOSNAP(ragFramePost), PK_NOSNAP(pushStepOnset), PK_NOSNAP(handBoxPrivGroup), PK_NOSNAP(handBoxPrivGroupId), PK_NOSNAP(handBoxNullUserData), PK_NOSNAP(sceneSuspendHands), PK_NOSNAP(sceneFirstDistU), PK_NOSNAP(apiWeaponDrawnOnly), PK_NOSNAP(weaponSheathedColOff), PK_NOSNAP(pivGuardCombatLoose), PK_NOSNAP(handStop), PK_NOSNAP(pushStep), PK_NOSNAP(pushStepRepeatS), PK_NOSNAP(pushStepStopS), PK_NOSNAP(pushStepWalkU), PK_NOSNAP(pushStepSpeedU), PK_NOSNAP(pushStepWeapon), PK_NOSNAP(pushStepDispU), PK_NOSNAP(pushStepDispGain), PK_NOSNAP(pushStepSensor), PK_NOSNAP(pushStepSettleS), PK_NOSNAP(pushStepRefracS), PK_NOSNAP(pushStepSpeedRefU), PK_NOSNAP(pushStepSpeedMinU), PK_NOSNAP(pushStepSpeedMaxU), PK_NOSNAP(pushStepRampInS), PK_NOSNAP(pushStepRampOutS), PK_NOSNAP(pushStepExtendMul), PK_NOSNAP(pushStepStopU), PK_NOSNAP(pushStepMulChest), PK_NOSNAP(pushStepMulBelly), PK_NOSNAP(pushStepMulWaist), PK_NOSNAP(pushStepMulCom), PK_NOSNAP(pushStepMulThigh), PK_NOSNAP(pushStepRampFloor), PK_NOSNAP(pushStepResumeS), PK_NOSNAP(pushStepExitSpeedU), PK_NOSNAP(pushStepNearU), PK_NOSNAP(pushStepDirOffDeg), PK_NOSNAP(pushStepAccel), PK_NOSNAP(pushStepDecel), PK_NOSNAP(pushStepRotPct), PK_NOSNAP(pushStepAngAccel), PK_NOSNAP(pushStepWalkRun), PK_NOSNAP(pushStepVelGainS), PK_NOSNAP(pushStepLeverF), PK_NOSNAP(pushStepChain), PK_NOSNAP(pushStepHemiDot), PK_NOSNAP(pushStepLeverGateU), PK_NOSNAP(pushStepBreastMul), PK_NOSNAP(pushStepRampMinFrac), PK_NOSNAP(pushStepRateVetoU), PK_NOSNAP(pushStepSideGain), PK_NOSNAP(pushStepMulHead), PK_NOSNAP(pushStepMulNeck), PK_NOSNAP(pushStepHeadTrig), PK_NOSNAP(pushStepPressU), PK_NOSNAP(pushStepIdleProbe), PK_NOSNAP(pushStepPeakWindowS), PK_NOSNAP(pushStepBaseAlpha), PK_NOSNAP(objectPadMaxU), PK_NOSNAP(apiObjectBox), PK_NOSNAP(objectBoxMaxU), PK_NOSNAP(pushStepDispSlowU), PK_NOSNAP(pushStepDispFastU), PK_NOSNAP(pushStepRateFastU), PK_NOSNAP(pushStepFacePush), PK_NOSNAP(pushStepReaction), PK_NOSNAP(pushStepStaggerU), PK_NOSNAP(pushStepStaggerRate), PK_NOSNAP(pushStepRagdollU), PK_NOSNAP(pushStepReactCoolS), PK_NOSNAP(pushStepRagSettleS), PK_NOSNAP(pushStepRagMaxVelU), PK_NOSNAP(pushStepEscalate), PK_NOSNAP(pushStepLatTrig), PK_NOSNAP(pushStepRateWinS), PK_NOSNAP(pushStepSpeedTrack), PK_NOSNAP(pushStepSpeedUpU), PK_NOSNAP(pushStepSpeedDownU), PK_NOSNAP(apiPalmProbe), PK_NOSNAP(pushStepReactGraceS), PK_NOSNAP(pushStepStaggerFace), PK_NOSNAP(pushStepStaggerFaceDeg), PK_NOSNAP(pushStepStaggerMagMin), PK_NOSNAP(pushStepSpeedExp), PK_NOSNAP(pushStepEngageWinRate), PK_NOSNAP(pushStepStaggerDirFlip), PK_NOSNAP(pushStepLiftRag), PK_NOSNAP(pushStepLiftFeetU), PK_NOSNAP(pushStepLiftSettleS), PK_NOSNAP(pushStepStaggerFaceSrc), PK_NOSNAP(pushStepStaggerTurnMode), PK_NOSNAP(pushStepBarU), PK_NOSNAP(pushStepBarHeadU), PK_NOSNAP(pushStepObjectPush), PK_NOSNAP(pushStepObjectBarMul), PK_NOSNAP(pushStepLiftRestU), PK_NOSNAP(pushStepLiftLogHz), PK_NOSNAP(pushStepWalkFaceSplit), PK_NOSNAP(pushSenseTriad), PK_NOSNAP(pushSenseZ), PK_NOSNAP(pushSenseBaseFreezeU), PK_NOSNAP(pushSenseBaseHoldS), PK_NOSNAP(pushSenseStandDownS), PK_NOSNAP(pushStepTierChain), PK_NOSNAP(pushStepTierHoldS), PK_NOSNAP(pushStepHandTravelU), PK_NOSNAP(pushStepHandTravelSideU), PK_NOSNAP(pushStepBarMidU), PK_NOSNAP(pushStepStaggerMidU), PK_NOSNAP(pushStepRagdollMidU), PK_NOSNAP(pushStepBarHighU), PK_NOSNAP(pushStepStaggerHighU), PK_NOSNAP(pushStepRagdollHighU), PK_NOSNAP(pushStepKnockSrcU), PK_NOSNAP(pushStepAnchorSrc), PK_NOSNAP(pushStepAnchorTrunkOnly), PK_NOSNAP(pushStepLiftGait), PK_NOSNAP(pushStepTravelMode), PK_NOSNAP(pushStepTravelWalkU), PK_NOSNAP(pushStepTravelStumbleU), PK_NOSNAP(pushStepTravelRagdollU), PK_NOSNAP(pushStepOriginHoldS), PK_NOSNAP(pushStepSoftExclude), PK_NOSNAP(pushStepSelfMoveGate), PK_NOSNAP(pushStepVoteN), PK_NOSNAP(pushStepLever), PK_NOSNAP(pushStepCrossRefU), PK_NOSNAP(pushStepCrossExp), PK_NOSNAP(pushStepCrossMinFrac), PK_NOSNAP(pushStepCrossFloorU), PK_NOSNAP(pushStepOffCom), PK_NOSNAP(pushStepOffSpine0), PK_NOSNAP(pushStepOffSpine1), PK_NOSNAP(pushStepOffSpine2), PK_NOSNAP(pushStepOffNeck), PK_NOSNAP(pushStepOffHead),
+                    PK_NOSNAP(pushStepBarStumbleCom), PK_NOSNAP(pushStepBarStumbleSpine0),
+                    PK_NOSNAP(pushStepBarStumbleSpine1), PK_NOSNAP(pushStepBarStumbleSpine2),
+                    PK_NOSNAP(pushStepBarStumbleNeck), PK_NOSNAP(pushStepBarStumbleHead),
+                    PK_NOSNAP(pushStepBarRagCom), PK_NOSNAP(pushStepBarRagSpine0),
+                    PK_NOSNAP(pushStepBarRagSpine1), PK_NOSNAP(pushStepBarRagSpine2),
+                    PK_NOSNAP(pushStepBarRagNeck), PK_NOSNAP(pushStepBarRagHead),
+                    PK_NOSNAP(pushStepEquipSettleS), PK_NOSNAP(pushStepWalkReCapS), PK_NOSNAP(pushStepOffWalkAdd), PK_NOSNAP(pushStepDirTrack), PK_NOSNAP(pushStepDirTrackDeg), PK_NOSNAP(pushStepDirTrackMinU), PK_NOSNAP(pushStepNoDistCap), PK_NOSNAP(pushStepRagEscalate), PK_NOSNAP(pushStepRagEscalateMinS), PK_NOSNAP(pushStepWalkOffCom), PK_NOSNAP(pushStepWalkOffSpine0), PK_NOSNAP(pushStepWalkOffSpine1), PK_NOSNAP(pushStepWalkOffSpine2), PK_NOSNAP(pushStepWalkOffNeck), PK_NOSNAP(pushStepWalkOffHead), PK_NOSNAP(pushStepStopFrac), PK_NOSNAP(pushStepStopMinU), PK_NOSNAP(pushStepStopMaxA), PK_NOSNAP(pushStepLiftSymU), PK_NOSNAP(pushStepLiftRiseU), PK_NOSNAP(pushStepLiftRestSpreadU), PK_NOSNAP(pushStepLiftZoneRule), PK_NOSNAP(pushStepLiftThighSplit), PK_NOSNAP(pushStepLiftRiseFromContact), PK_NOSNAP(pushStepLiftEngineAttr), PK_NOSNAP(pushStepLiftThighMask), PK_NOSNAP(pushStepLiftOneLegU), PK_NOSNAP(pushStepLiftWalkVerdict), PK_NOSNAP(pushStepLiftWalkFrames), PK_NOSNAP(pushStepLiftGroundU), PK_NOSNAP(pushStepLiftGroundS), PK_NOSNAP(pushStepLiftSitGuard), PK_NOSNAP(pushStepFurnSitState), PK_NOSNAP(pushStepFurnLean), PK_NOSNAP(pushStepLiftComU),
+                    PK_NOSNAP(pushStepLiftGroundMaxS), PK_NOSNAP(pushStepCombatGate), PK_NOSNAP(pushStepKillMoveGate), PK_NOSNAP(mouthProbe), PK_NOSNAP(mouthProbeOffXU), PK_NOSNAP(mouthProbeOffZU), PK_NOSNAP(mouthProbeOutU), PK_NOSNAP(mouthProbeHalfWU), PK_NOSNAP(mouthProbeR), PK_NOSNAP(mouthProbeSource), PK_NOSNAP(mouthProbeLeverU), PK_NOSNAP(mouthKissLips), PK_NOSNAP(mouthKissLipU), PK_NOSNAP(mouthKissExitU), PK_NOSNAP(mouthProbeLog), PK_NOSNAP(furnProbe), PK_NOSNAP(outfitGuard), PK_NOSNAP(brace), PK_NOSNAP(braceNearU), PK_NOSNAP(braceHoldS), PK_NOSNAP(reDrive), PK_NOSNAP(reDriveCom), PK_NOSNAP(reDriveSpine0), PK_NOSNAP(reDriveSpine1), PK_NOSNAP(reDriveSpine2), PK_NOSNAP(reDriveNeck), PK_NOSNAP(reDriveHead), PK_NOSNAP(reDriveUpperArmR), PK_NOSNAP(reDriveForearmR), PK_NOSNAP(reDriveHandR), PK_NOSNAP(reDriveUpperArmL), PK_NOSNAP(reDriveForearmL), PK_NOSNAP(reDriveHandL), PK_NOSNAP(reDriveThighR), PK_NOSNAP(reDriveCalfR), PK_NOSNAP(reDriveFootR), PK_NOSNAP(reDriveThighL), PK_NOSNAP(reDriveCalfL), PK_NOSNAP(reDriveFootL), PK_NOSNAP(divProbe), PK_NOSNAP(divProbeEveryN), PK_NOSNAP(divProbeGapU), PK_NOSNAP(divProbeAlpha), PK_NOSNAP(divProbeHoldN), PK_NOSNAP(divProbePlayerU), PK_NOSNAP(divProbeReportS), PK_NOSNAP(sceneMode), PK_NOSNAP(bumperSceneOff), PK_NOSNAP(bumperSceneExcite), PK_NOSNAP(planckLoosenOurs), PK_NOSNAP(planckLoosenGlobal), PK_NOSNAP(planckGainHier), PK_NOSNAP(planckGainVel), PK_NOSNAP(planckGainPos), PK_NOSNAP(armProbe), PK_NOSNAP(legProbe), PK_NOSNAP(driveDamping), PK_NOSNAP(forceKeyframe), PK_NOSNAP(touchProbeHud), PK_NOSNAP(touchProbeHudU),
                     PK_NOSNAP(lmBrAYc), PK_NOSNAP(lmBrAYm), PK_NOSNAP(lmBrBYc), PK_NOSNAP(lmBrBYm),
                     PK_NOSNAP(lmBrAZc), PK_NOSNAP(lmBrAZm), PK_NOSNAP(lmBrBZc), PK_NOSNAP(lmBrBZm),
                     PK_NOSNAP(lmBrRc),  PK_NOSNAP(lmBrRm),  PK_NOSNAP(lmBrAX),
@@ -784,6 +793,7 @@ namespace ObjectHold {
     float FsmpPushMult()        { return g_tune.fsmpPushMult < 0.f ? 0.f : (g_tune.fsmpPushMult > 10.f ? 10.f : g_tune.fsmpPushMult); }
     bool  NpcFollowerEnabled()  { return g_tune.npcFollower > 0.5f; }
     bool  NpcGenCapEnabled()    { return g_tune.npcGenCap > 0.5f; }
+    bool  NpcGenCapFemaleEnabled() { return g_tune.npcGenCapFemale > 0.5f; }   // ★ futa, ships 1 (2.2.0)
     float NpcGenMassKg()        { return g_tune.npcGenMassKg < 0.01f ? 0.01f : g_tune.npcGenMassKg; }
     float NpcGenR()             { return g_tune.npcGenR < 0.1f ? 0.1f : g_tune.npcGenR; }
     float NpcGenAlpha()         { float a = g_tune.npcGenAlpha; return a < 0.05f ? 0.05f : (a > 1.f ? 1.f : a); }
@@ -822,6 +832,11 @@ namespace ObjectHold {
     bool  ApiSubRegionInEvent() { return g_tune.apiSubRegionInEvent > 0.5f; }
     bool  ApiSuppressHeldHand() { return g_tune.apiSuppressHeldHand > 0.5f; }
     bool  ApiSuppressHeldHandStrict() { return g_tune.apiSuppressHeldHand > 1.5f; }
+    // clamped, not floored at 0: a NEGATIVE pad would SHRINK reach below the capsule surface and
+    // silently make breast touch even later than the defect this fixes. 8u is well past any
+    // plausible skin gap and stops a typo inflating the chest into a barrel.
+    float ApiBreastPadU()       { return std::clamp(g_tune.apiBreastPadU, 0.f, 8.f); }
+    float ApiBreastPadSlope()   { return std::clamp(g_tune.apiBreastPadSlope, 0.f, 2.f); }
     bool  ApiHairTarget()       { return g_tune.apiHairTarget > 0.5f; }
     float NpcRigRangeU()        { return g_tune.npcRigRangeU     < 0.f ? 0.f : g_tune.npcRigRangeU; }
     float NpcRigRangeHystU()    { return g_tune.npcRigRangeHystU < 0.f ? 0.f : g_tune.npcRigRangeHystU; }
@@ -945,6 +960,40 @@ namespace ObjectHold {
         return (unsigned)v;
     }
     bool  PlayerWandLogOn()     { return g_tune.playerWandLog > 0.5f; }
+    bool  HeadBoxOn()           { return g_tune.headBox > 0.5f; }
+    // half-extents: floored at 0.3u so a zeroed knob can never build a degenerate (and therefore
+    // NaN-prone) box; ceiling 20u keeps a typo from wrapping the whole torso in an infinite mass.
+    float HeadBoxHalfXU()       { return std::clamp(g_tune.headBoxHalfXU, 0.3f, 20.f); }
+    float HeadBoxHalfYU()       { return std::clamp(g_tune.headBoxHalfYU, 0.3f, 20.f); }
+    float HeadBoxHalfZU()       { return std::clamp(g_tune.headBoxHalfZU, 0.3f, 20.f); }
+    float HeadBoxOffXU()        { return std::clamp(g_tune.headBoxOffXU, -40.f, 40.f); }
+    float HeadBoxOffYU()        { return std::clamp(g_tune.headBoxOffYU, -40.f, 40.f); }
+    float HeadBoxOffZU()        { return std::clamp(g_tune.headBoxOffZU, -40.f, 40.f); }
+    unsigned HeadBoxPart()      {
+        int v = (int)(g_tune.headBoxPart + 0.5f);
+        // forbidden: 0 (non-part), 2 (PerfSys cross-pelvis), 3/5 (HIGGS hands), 4 (our boxes),
+        // 6 (HIGGS declared), 8/14 (PerfSys self-thigh pair), 9 (the wand), 29 (markers),
+        // 30 (rig signature). Every remaining exclusion is an explicit FilterDecision belt.
+        if (v < 1 || v > 28 || v == 2 || v == 3 || v == 4 || v == 5 || v == 6 || v == 8 ||
+            v == 9 || v == 14)
+            v = 10;
+        return (unsigned)v;
+    }
+    // ⚠ NOT HandBoxMaxVel's 25 m/s. This is the anti-launch clamp (Ragdoll Research 02, H2):
+    // above it the body teleports and re-keys to ~0 residual velocity, so a fast approach
+    // resolves by depenetration (capped near 1 m/s) instead of handing her bone an impulse.
+    float HeadBoxMaxVel()       { return (std::max)(0.25f, g_tune.headBoxMaxVel); }
+    bool  HeadBoxLogOn()        { return g_tune.headBoxLog > 0.5f; }
+    bool  HeadBoxVrikCompOn()   { return g_tune.headBoxVrikComp > 0.5f; }
+    bool  HeadBoxRideHmd()      { return g_tune.headBoxRider > 0.5f; }
+    // ★ 2026-09-12 both feet-ragdoll paths answer to [Features] bFeetLift as well (ANDed, the dial stays).
+    bool  PushStepFallRagOn()   { return g_tune.pushStepFallRag > 0.5f && Ini::FeatureFeetLift(); }
+    float PushStepFallFrames()  { return std::clamp(g_tune.pushStepFallFrames, 1.f, 120.f); }
+    float PushStepFallGraceS()  { return std::clamp(g_tune.pushStepFallGraceS, 0.05f, 10.f); }
+    bool  RagFrameOn()          { return g_tune.ragFrame > 0.5f; }
+    float RagFramePost()        { return std::clamp(g_tune.ragFramePost, 1.f, 120.f); }
+    float PushStepOnset()       { const int v = (int)(g_tune.pushStepOnset + 0.5f);
+                                  return (v < 0 || v > 2) ? 0.f : (float)v; }
     int   HandBoxPrivGroupMode() {
         int v = (int)(g_tune.handBoxPrivGroup + 0.5f);
         return (v < 0 || v > 2) ? 0 : v;
@@ -962,10 +1011,281 @@ namespace ObjectHold {
     bool  ApiWeaponDrawnOnly()     { return g_tune.apiWeaponDrawnOnly > 0.5f; }
     bool  WeaponSheathedColOff()   { return g_tune.weaponSheathedColOff > 0.5f; }
     bool  PivGuardCombatLooseOn()  { return g_tune.pivGuardCombatLoose > 0.5f; }
+    float HandStopMode()        { return g_tune.handStop; }
+    // ★ 2026-09-11 THE FEATURE MASTER. Layered, not replacing: the ini says whether push/shove
+    // SHIPPED (a FOMOD choice, one file), the knob stays the dial. Either one off = off.
+    // Consumers: PushStep::OnFrame (the whole scan/walk/tier/lift), PPBHook's sensor prep (so the
+    // measurement cost goes too), CapFix, and OnMotionDrivenCheck's release path.
+    bool  PushStepEnabled()     { return g_tune.pushStep > 0.5f && Ini::FeaturePushShove(); }
+    float PushStepRepeatS()     { return g_tune.pushStepRepeatS; }
+    float PushStepStopS()       { return g_tune.pushStepStopS; }
+    float PushStepWalkU()       { return g_tune.pushStepWalkU; }
+    float PushStepSpeedU()      { return g_tune.pushStepSpeedU; }
+    float PushStepDispU()       { return g_tune.pushStepDispU; }
+    float PushStepDispGain()    { return g_tune.pushStepDispGain; }
+    float PushStepSensor()      { return g_tune.pushStepSensor; }
+    float PushStepSettleS()     { return g_tune.pushStepSettleS; }
+    float PushStepRefracS()     { return g_tune.pushStepRefracS; }
+    float PushStepSpeedRefU()   { return g_tune.pushStepSpeedRefU; }
+    float PushStepSpeedMinU()   { return g_tune.pushStepSpeedMinU; }
+    float PushStepSpeedMaxU()   { return g_tune.pushStepSpeedMaxU; }
+    float PushStepRampInS()     { return g_tune.pushStepRampInS; }
+    float PushStepRampOutS()    { return g_tune.pushStepRampOutS; }
+    float PushStepExtendMul()   { return g_tune.pushStepExtendMul; }
+    float PushStepStopU()       { return g_tune.pushStepStopU; }
+    float PushStepMulChest()    { return g_tune.pushStepMulChest; }
+    float PushStepMulBelly()    { return g_tune.pushStepMulBelly; }
+    float PushStepMulWaist()    { return g_tune.pushStepMulWaist; }
+    float PushStepMulCom()      { return g_tune.pushStepMulCom; }
+    float PushStepMulThigh()    { return g_tune.pushStepMulThigh; }
+    float PushStepRampFloor()   { return g_tune.pushStepRampFloor; }
+    float PushStepResumeS()     { return g_tune.pushStepResumeS; }
+    float PushStepExitSpeedU()  { return g_tune.pushStepExitSpeedU; }
+    float PushStepNearU()       { return g_tune.pushStepNearU; }
+    float PushStepDirOffDeg()   { return g_tune.pushStepDirOffDeg; }
+    float PushStepAccel()       { return g_tune.pushStepAccel; }
+    float PushStepDecel()       { return g_tune.pushStepDecel; }
+    float PushStepRotPct()      { return g_tune.pushStepRotPct; }
+    float PushStepAngAccel()    { return g_tune.pushStepAngAccel; }
+    float PushStepWalkRun()     { return g_tune.pushStepWalkRun; }
+    float PushStepVelGainS()    { return g_tune.pushStepVelGainS; }
+    float PushStepLeverF()      { return g_tune.pushStepLeverF; }
+    float PushStepChain()       { return g_tune.pushStepChain; }
+    float PushStepHemiDot()     { return g_tune.pushStepHemiDot; }
+    float PushStepLeverGateU()  { return g_tune.pushStepLeverGateU; }
+    float PushStepBreastMul()   { return g_tune.pushStepBreastMul; }
+    float PushStepRampMinFrac() { return g_tune.pushStepRampMinFrac; }
+    float PushStepRateVetoU()   { return g_tune.pushStepRateVetoU; }
+    float PushStepSideGain()    { return g_tune.pushStepSideGain; }
+    float PushStepMulHead()     { return g_tune.pushStepMulHead; }
+    float PushStepMulNeck()     { return g_tune.pushStepMulNeck; }
+    float PushStepHeadTrig()    { return g_tune.pushStepHeadTrig; }
+    float PushStepPressU()      { return g_tune.pushStepPressU; }
+    float PushStepIdleProbe()   { return g_tune.pushStepIdleProbe; }
+    float PushStepPeakWindowS() { return g_tune.pushStepPeakWindowS; }
+    float PushStepBaseAlpha()   { return g_tune.pushStepBaseAlpha; }
+    float ObjectPadMaxU()       { return g_tune.objectPadMaxU; }
+    bool  ApiObjectBoxOn()      { return g_tune.apiObjectBox > 0.5f; }
+    float ObjectBoxMaxU()       { return std::clamp(g_tune.objectBoxMaxU, 0.f, 1000.f); }
+    float PushStepDispSlowU()   { return g_tune.pushStepDispSlowU; }
+    float PushStepDispFastU()   { return g_tune.pushStepDispFastU; }
+    float PushStepRateFastU()   { return g_tune.pushStepRateFastU; }
+    float PushStepFacePush()    { return g_tune.pushStepFacePush; }
+    float PushStepReaction()    { return g_tune.pushStepReaction; }
+    float PushStepStaggerU()    { return g_tune.pushStepStaggerU; }
+    float PushStepStaggerRate() { return g_tune.pushStepStaggerRate; }
+    float PushStepRagdollU()    { return g_tune.pushStepRagdollU; }
+    float PushStepReactCoolS()  { return g_tune.pushStepReactCoolS; }
+    float PushStepRagSettleS()  { return g_tune.pushStepRagSettleS; }
+    float PushStepRagMaxVelU()  { return g_tune.pushStepRagMaxVelU; }
+    float PushStepEscalate()    { return g_tune.pushStepEscalate; }
+    float PushStepLatTrig()     { return g_tune.pushStepLatTrig; }
+    float PushStepRateWinS()    { return g_tune.pushStepRateWinS > 0.02f ? g_tune.pushStepRateWinS : 0.02f; }
+    float PushStepSpeedTrack()  { return g_tune.pushStepSpeedTrack; }
+    float PushStepSpeedUpU()    { return g_tune.pushStepSpeedUpU   > 1.f ? g_tune.pushStepSpeedUpU   : 1.f; }   // NaN-safe floor
+    float PushStepSpeedDownU()  { return g_tune.pushStepSpeedDownU > 1.f ? g_tune.pushStepSpeedDownU : 1.f; }
+    bool  ApiPalmProbeOn()      { return g_tune.apiPalmProbe > 0.5f; }
+    float PushStepReactGraceS()  { return g_tune.pushStepReactGraceS > 0.f ? g_tune.pushStepReactGraceS : 0.f; }        // NaN-safe
+    float PushStepStaggerFace()  { return g_tune.pushStepStaggerFace; }
+    float PushStepStaggerFaceDeg(){ const float v = g_tune.pushStepStaggerFaceDeg; return !(v > 0.f) ? 0.f : (v > 180.f ? 180.f : v); }
+    float PushStepStaggerMagMin(){ const float v = g_tune.pushStepStaggerMagMin;  return !(v > 0.f) ? 0.f : (v > 1.f ? 1.f : v); }
+    float PushStepSpeedExp()     { return g_tune.pushStepSpeedExp > 0.1f ? g_tune.pushStepSpeedExp : 0.1f; }
+    float PushStepEngageWinRate(){ return g_tune.pushStepEngageWinRate; }
+    float PushStepStaggerDirFlip(){ return g_tune.pushStepStaggerDirFlip; }
+    bool  PushStepLiftRagOn()    { return g_tune.pushStepLiftRag > 0.5f && Ini::FeatureFeetLift(); }   // ★ + bFeetLift
+    // v22: 1 = armed (measures AND fires) · 2 = WATCH-ONLY (measures + logs, never ragdolls).
+    // A gate can only be designed against the situations it must NOT fire in, so the sensor has to be
+    // able to run and speak without knocking her over while we collect them.
+    bool  PushStepLiftRagFires() { return g_tune.pushStepLiftRag > 0.5f && g_tune.pushStepLiftRag < 1.5f; }
+    float PushStepLiftFeetU()    { return g_tune.pushStepLiftFeetU > 1.f ? g_tune.pushStepLiftFeetU : 1.f; }   // NaN-safe floor
+    float PushStepLiftSettleS()  { return g_tune.pushStepLiftSettleS > 0.f ? g_tune.pushStepLiftSettleS : 0.f; }
+    float PushStepStaggerFaceSrc(){ return g_tune.pushStepStaggerFaceSrc; }
+    float PushStepStaggerTurnMode(){ const float v = g_tune.pushStepStaggerTurnMode; return !(v > 0.f) ? 0.f : (v > 2.f ? 2.f : v); }
+    // ★ v11 (report 32 §1): the flat ladder + the rest-relative feet lift.
+    float PushStepBarU()          { const float v = g_tune.pushStepBarU;         return v > 0.05f ? v : 0.05f; }
+    float PushStepBarHeadU()      { const float v = g_tune.pushStepBarHeadU;     return v > 0.05f ? v : 0.05f; }
+    float PushStepObjectPush()    { return g_tune.pushStepObjectPush; }
+    float PushStepObjectBarMul()  { const float v = g_tune.pushStepObjectBarMul; return v > 1.f ? v : 1.f; }
+    // ⚠ floor 0.1 u, NOT the retired PushStepLiftFeetU's 1.0 u — that floor was written for the 12 u
+    // origin-relative scale and would silently clamp a by-eye rest-relative dial below 1 u.
+    float PushStepLiftRestU()     { const float v = g_tune.pushStepLiftRestU;    return v > 0.1f ? v : 0.1f; }
+    float PushStepLiftLogHz()     { const float v = g_tune.pushStepLiftLogHz;    return v > 0.f ? v : 0.f; }
+    float PushStepWalkFaceSplit() { return g_tune.pushStepWalkFaceSplit; }
+    float PushSenseTriad()        { return g_tune.pushSenseTriad; }
+    float PushSenseZ()            { return g_tune.pushSenseZ; }
+    float PushSenseBaseFreezeU()  { const float v = g_tune.pushSenseBaseFreezeU; return v > 0.1f ? v : 0.1f; }
+    float PushSenseBaseHoldS()    { const float v = g_tune.pushSenseBaseHoldS;   return v > 0.f ? v : 0.f; }
+    float PushSenseStandDownS()   { const float v = g_tune.pushSenseStandDownS;  return v > 0.f ? v : 0.f; }
+    float PushStepTierChain()     { return g_tune.pushStepTierChain; }
+    float PushStepTierHoldS()     { const float v = g_tune.pushStepTierHoldS; return v > 0.f ? v : 0.f; }
+    float PushStepHandTravelU()     { const float v = g_tune.pushStepHandTravelU;     return v > 0.f ? v : 0.f; }
+    float PushStepHandTravelSideU() { const float v = g_tune.pushStepHandTravelSideU; return v > 0.f ? v : 0.f; }
+    float PushStepBarMidU()       { const float v = g_tune.pushStepBarMidU;      return v > 0.05f ? v : 0.05f; }
+    float PushStepStaggerMidU()   { const float v = g_tune.pushStepStaggerMidU;  return v > 0.1f  ? v : 0.1f; }
+    float PushStepRagdollMidU()   { const float v = g_tune.pushStepRagdollMidU;  return v > 0.1f  ? v : 0.1f; }
+    float PushStepBarHighU()      { const float v = g_tune.pushStepBarHighU;     return v > 0.05f ? v : 0.05f; }
+    float PushStepStaggerHighU()  { const float v = g_tune.pushStepStaggerHighU; return v > 0.1f  ? v : 0.1f; }
+    float PushStepRagdollHighU()  { const float v = g_tune.pushStepRagdollHighU; return v > 0.1f  ? v : 0.1f; }
+    float PushStepKnockSrcU()     { const float v = g_tune.pushStepKnockSrcU;    return v > 1.f   ? v : 1.f; }
+    // v11.1 (2026-09-07): engine-contact anchor + lift gait gate. Plain switches — 0/1 semantics, no clamp needed.
+    float PushStepAnchorSrc()       { return g_tune.pushStepAnchorSrc; }
+    float PushStepAnchorTrunkOnly() { return g_tune.pushStepAnchorTrunkOnly; }
+    float PushStepLiftGait()        { return g_tune.pushStepLiftGait; }
+    // ★ v12 travel sensor — plain switches and three distances in game units.
+    float PushStepTravelMode()      { return g_tune.pushStepTravelMode; }
+    float PushStepTravelWalkU()     { const float v = g_tune.pushStepTravelWalkU;    return v > 0.05f ? v : 0.05f; }
+    float PushStepTravelStumbleU()  { const float v = g_tune.pushStepTravelStumbleU; return v > 0.1f  ? v : 0.1f; }
+    float PushStepTravelRagdollU()  { const float v = g_tune.pushStepTravelRagdollU; return v > 0.1f  ? v : 0.1f; }
+    float PushStepOriginHoldS()     { const float v = g_tune.pushStepOriginHoldS;    return v > 0.f   ? v : 0.f; }
+    float PushStepSoftExclude()     { return g_tune.pushStepSoftExclude; }
+    float PushStepSelfMoveGate()    { return g_tune.pushStepSelfMoveGate; }   // v12a
+    float PushStepVoteN()           { const float v = g_tune.pushStepVoteN; return v < 1.f ? 1.f : (v > 6.f ? 6.f : v); }   // v13a
+    // v14 THE LEVER
+    float PushStepLever()           { return g_tune.pushStepLever; }
+    float PushStepCrossRefU()       { const float v = g_tune.pushStepCrossRefU;    return v < 1.f    ? 1.f    : (v > 500.f ? 500.f : v); }
+    float PushStepCrossExp()        { const float v = g_tune.pushStepCrossExp;     return v < 0.05f  ? 0.05f  : (v > 8.f   ? 8.f   : v); }
+    float PushStepCrossMinFrac()    { const float v = g_tune.pushStepCrossMinFrac; return v < 0.05f  ? 0.05f  : (v > 1.f   ? 1.f   : v); }
+    float PushStepCrossFloorU()     { const float v = g_tune.pushStepCrossFloorU;  return v < 0.f    ? 0.f    : (v > 5.f   ? 5.f   : v); }
+    // v14d per-node bar offsets (clamped so a knob can never invert the ladder)
+    static inline float ClampOff(float v)  { return v < -20.f ? -20.f : (v > 100.f ? 100.f : v); }
+    float PushStepOffCom()          { return ClampOff(g_tune.pushStepOffCom);    }
+    float PushStepOffSpine0()       { return ClampOff(g_tune.pushStepOffSpine0); }
+    float PushStepOffSpine1()       { return ClampOff(g_tune.pushStepOffSpine1); }
+    float PushStepOffSpine2()       { return ClampOff(g_tune.pushStepOffSpine2); }
+    float PushStepOffNeck()         { return ClampOff(g_tune.pushStepOffNeck);   }
+    float PushStepOffHead()         { return ClampOff(g_tune.pushStepOffHead);   }
+    // v29c per-node ABSOLUTE stumble / ragdoll bars; 0 = the shared rung + that node's ClampOff offset
+    static inline float ClampBar(float v)  { return v <= 0.f ? 0.f : (v > 500.f ? 500.f : v); }
+    float PushStepBarStumbleCom()    { return ClampBar(g_tune.pushStepBarStumbleCom);    }
+    float PushStepBarStumbleSpine0() { return ClampBar(g_tune.pushStepBarStumbleSpine0); }
+    float PushStepBarStumbleSpine1() { return ClampBar(g_tune.pushStepBarStumbleSpine1); }
+    float PushStepBarStumbleSpine2() { return ClampBar(g_tune.pushStepBarStumbleSpine2); }
+    float PushStepBarStumbleNeck()   { return ClampBar(g_tune.pushStepBarStumbleNeck);   }
+    float PushStepBarStumbleHead()   { return ClampBar(g_tune.pushStepBarStumbleHead);   }
+    float PushStepBarRagCom()        { return ClampBar(g_tune.pushStepBarRagCom);        }
+    float PushStepBarRagSpine0()     { return ClampBar(g_tune.pushStepBarRagSpine0);     }
+    float PushStepBarRagSpine1()     { return ClampBar(g_tune.pushStepBarRagSpine1);     }
+    float PushStepBarRagSpine2()     { return ClampBar(g_tune.pushStepBarRagSpine2);     }
+    float PushStepBarRagNeck()       { return ClampBar(g_tune.pushStepBarRagNeck);       }
+    float PushStepBarRagHead()       { return ClampBar(g_tune.pushStepBarRagHead);       }
+    // v29d equip settle, seconds (0 = off)
+    float PushStepEquipSettleS()     { const float v = g_tune.pushStepEquipSettleS; return v <= 0.f ? 0.f : (v > 5.f ? 5.f : v); }
+    // v16
+    float PushStepWalkReCapS()      { const float v = g_tune.pushStepWalkReCapS; return v < 0.f ? 0.f : (v > 10.f ? 10.f : v); }
+    float PushStepOffWalkAdd()      { return ClampOff(g_tune.pushStepOffWalkAdd); }
+    // v17
+    float PushStepDirTrack()        { return g_tune.pushStepDirTrack; }
+    float PushStepDirTrackDeg()     { const float v = g_tune.pushStepDirTrackDeg;  return v < 5.f ? 5.f : (v > 720.f ? 720.f : v); }
+    float PushStepDirTrackMinU()    { const float v = g_tune.pushStepDirTrackMinU; return v < 0.1f ? 0.1f : (v > 20.f ? 20.f : v); }
+    float PushStepNoDistCap()       { return g_tune.pushStepNoDistCap; }   // v18
+    float PushStepRagEscalate()     { return g_tune.pushStepRagEscalate; }   // v19
+    float PushStepRagEscalateMinS() { const float v = g_tune.pushStepRagEscalateMinS; return v < 0.f ? 0.f : (v > 3.f ? 3.f : v); }
+    // v20 per-node WALK offsets (added to all three rungs while driving)
+    float PushStepWalkOffCom()      { return ClampOff(g_tune.pushStepWalkOffCom);    }
+    float PushStepWalkOffSpine0()   { return ClampOff(g_tune.pushStepWalkOffSpine0); }
+    float PushStepWalkOffSpine1()   { return ClampOff(g_tune.pushStepWalkOffSpine1); }
+    float PushStepWalkOffSpine2()   { return ClampOff(g_tune.pushStepWalkOffSpine2); }
+    float PushStepWalkOffNeck()     { return ClampOff(g_tune.pushStepWalkOffNeck);   }
+    float PushStepWalkOffHead()     { return ClampOff(g_tune.pushStepWalkOffHead);   }
+    // v21 the distance-solved stop
+    float PushStepStopFrac()        { const float v = g_tune.pushStepStopFrac; return v < 0.f ? 0.f : (v > 3.f ? 3.f : v); }
+    float PushStepStopMinU()        { const float v = g_tune.pushStepStopMinU; return v < 0.5f ? 0.5f : (v > 200.f ? 200.f : v); }
+    float PushStepStopMaxA()        { const float v = g_tune.pushStepStopMaxA; return v < 10.f ? 10.f : (v > 5000.f ? 5000.f : v); }
+    // v23 the lift gate
+    float PushStepLiftSymU()        { const float v = g_tune.pushStepLiftSymU;  return v < 0.5f ? 0.5f : (v > 100.f ? 100.f : v); }
+    float PushStepLiftRiseU()       { const float v = g_tune.pushStepLiftRiseU; return v < 0.f  ? 0.f  : (v > 100.f ? 100.f : v); }
+    float PushStepLiftRestSpreadU() { const float v = g_tune.pushStepLiftRestSpreadU; return v < 0.5f ? 0.5f : (v > 50.f ? 50.f : v); }
+    // v28 the lift zone + rise from contact (NaN-safe: a NaN compares false and lands on the safe side)
+    bool  PushStepLiftZoneRule()        { return g_tune.pushStepLiftZoneRule > 0.5f; }
+    float PushStepLiftThighSplit()      { const float v = g_tune.pushStepLiftThighSplit; return (v > 0.f) ? (v < 1.f ? v : 1.f) : 0.f; }
+    bool  PushStepLiftRiseFromContact() { return g_tune.pushStepLiftRiseFromContact > 0.5f; }
+    // v29 the collision capsule, one leg, the trip, the floor (NaN-safe: a NaN compares false and lands on the "off" side)
+    bool  PushStepLiftEngineAttr()  { return g_tune.pushStepLiftEngineAttr > 0.5f; }
+    float PushStepLiftThighMask()   { const float v = g_tune.pushStepLiftThighMask; return (v > 0.f) ? (v < 32767.f ? v : 32767.f) : 0.f; }
+    float PushStepLiftOneLegU()     { const float v = g_tune.pushStepLiftOneLegU;   return (v > 0.f) ? (v < 100.f ? v : 100.f) : 0.f; }
+    bool  PushStepLiftWalkVerdict() { return g_tune.pushStepLiftWalkVerdict > 0.5f; }
+    float PushStepLiftWalkFrames()  { const float v = g_tune.pushStepLiftWalkFrames; return (v > 1.f) ? (v < 120.f ? v : 120.f) : 1.f; }
+    float PushStepLiftGroundU()     { const float v = g_tune.pushStepLiftGroundU;   return (v > 0.f) ? (v < 20.f ? v : 20.f) : 0.f; }
+    float PushStepLiftGroundS()     { const float v = g_tune.pushStepLiftGroundS;   return (v > 0.f) ? (v < 5.f ? v : 5.f) : 0.f; }
+    bool  PushStepLiftSitGuard()    { return g_tune.pushStepLiftSitGuard > 0.5f; }
+    bool  PushStepFurnSitState()    { return g_tune.pushStepFurnSitState > 0.5f; }   // 2026-09-12 six-state rule (0 = legacy handle rule)
+    bool  PushStepFurnLean()        { return g_tune.pushStepFurnLean > 0.5f; }       // v36: 1+ = a lean is recognised (not BUSY; her legs can be swept)
+    bool  PushStepFurnLeanPush()    { return g_tune.pushStepFurnLean > 1.5f; }       // v36: 2 = a lean may ALSO be pushed (v35 behaviour)
+    float PushStepLiftGroundMaxS()  { const float v = g_tune.pushStepLiftGroundMaxS; return (v > 0.f) ? (v < 10.f ? v : 10.f) : 0.f; }   // v29e
+    float PushStepLiftComU()        { const float v = g_tune.pushStepLiftComU;      return (v > 0.f) ? (v < 100.f ? v : 100.f) : 0.f; }   // v29b
+    float PushStepCombatGate()      { return g_tune.pushStepCombatGate; }     // v24
+    float PushStepKillMoveGate()    { return g_tune.pushStepKillMoveGate; }   // v24
+    bool  MouthProbeOn()         { return g_tune.mouthProbe > 0.5f; }
+    float MouthProbeOffXU()      { const float v = g_tune.mouthProbeOffXU;  return !(v > -20.f) ? -20.f : (v > 20.f ? 20.f : v); }
+    float MouthProbeOffZU()      { const float v = g_tune.mouthProbeOffZU;  return !(v > -20.f) ? -20.f : (v > 20.f ? 20.f : v); }
+    float MouthProbeOutU()       { const float v = g_tune.mouthProbeOutU;   return !(v > -5.f)  ? -5.f  : (v > 5.f  ? 5.f  : v); }
+    float MouthProbeHalfWU()     { const float v = g_tune.mouthProbeHalfWU; return !(v > 0.1f)  ? 0.1f  : (v > 6.f  ? 6.f  : v); }
+    float MouthProbeR()          { const float v = g_tune.mouthProbeR;      return !(v > 0.2f)  ? 0.2f  : (v > 4.f  ? 4.f  : v); }
+    int   MouthProbeSource()     { return g_tune.mouthProbeSource > 0.5f ? 1 : 0; }          // ★ kiss: 1 = +0x570 full rotation
+    float MouthProbeLeverU()     { const float v = g_tune.mouthProbeLeverU; return !(v > 0.f)   ? 0.f   : (v > 10.f ? 10.f : v); }
+    bool  MouthKissLipsOn()      { return g_tune.mouthKissLips > 0.5f; }                      // ★ kiss drives LIPS only
+    float MouthKissLipU()        { const float v = g_tune.mouthKissLipU;    return !(v > 0.1f)  ? 0.1f  : (v > 8.f  ? 8.f  : v); }
+    // ★ kiss END gate — NaN-safe, never below the START gate (an inverted pair would end a kiss the frame it began)
+    float MouthKissExitU()       { const float lo = MouthKissLipU(); const float v = g_tune.mouthKissExitU;
+                                   return !(v > lo) ? lo : (v > 12.f ? 12.f : v); }
+    bool  MouthProbeLogOn()      { return g_tune.mouthProbeLog > 0.5f; }
+    bool  FurnProbeOn()          { return g_tune.furnProbe > 0.5f; }                          // read-only FURNPROBE lines
+    bool  OutfitGuardOn()       { return g_tune.outfitGuard > 0.5f; }
+    bool  PushStepWeapon()      { return g_tune.pushStepWeapon > 0.5f; }
+    bool  BraceEnabled()        { return g_tune.brace > 0.5f; }
+    float BraceNearU()          { return g_tune.braceNearU; }
+    float BraceHoldS()          { return g_tune.braceHoldS; }
+    bool  ReDriveEnabled()      { return g_tune.reDrive > 0.5f; }
+    // Node name -> per-bone multiplier. Table-driven so the 18 knobs and the 18 ragdoll
+    // bones cannot drift apart: a name that is not in this table returns 1.0 (stock),
+    // which is the safe answer for beast tails, seeds, or any future extra body.
+    float ReDriveFor(const char* nodeName)
+    {
+        if (!nodeName) return 1.f;
+        struct Row { const char* node; const float* knob; };
+        static const Row kRows[] = {
+            { "NPC COM [COM ]", &g_tune.reDriveCom },
+            { "NPC Spine [Spn0]", &g_tune.reDriveSpine0 },
+            { "NPC Spine1 [Spn1]", &g_tune.reDriveSpine1 },
+            { "NPC Spine2 [Spn2]", &g_tune.reDriveSpine2 },
+            { "NPC Neck [Neck]", &g_tune.reDriveNeck },
+            { "NPC Head [Head]", &g_tune.reDriveHead },
+            { "NPC R UpperArm [RUar]", &g_tune.reDriveUpperArmR },
+            { "NPC R Forearm [RLar]", &g_tune.reDriveForearmR },
+            { "NPC R Hand [RHnd]", &g_tune.reDriveHandR },
+            { "NPC L UpperArm [LUar]", &g_tune.reDriveUpperArmL },
+            { "NPC L Forearm [LLar]", &g_tune.reDriveForearmL },
+            { "NPC L Hand [LHnd]", &g_tune.reDriveHandL },
+            { "NPC R Thigh [RThg]", &g_tune.reDriveThighR },
+            { "NPC R Calf [RClf]", &g_tune.reDriveCalfR },
+            { "NPC R Foot [Rft ]", &g_tune.reDriveFootR },
+            { "NPC L Thigh [LThg]", &g_tune.reDriveThighL },
+            { "NPC L Calf [LClf]", &g_tune.reDriveCalfL },
+            { "NPC L Foot [Lft ]", &g_tune.reDriveFootL },
+        };
+        for (const Row& r : kRows)
+            if (std::strcmp(r.node, nodeName) == 0) return *r.knob;
+        return 1.f;
+    }
+    bool  DivProbeEnabled()     { return g_tune.divProbe > 0.5f; }
+    float DivProbeEveryN()      { return g_tune.divProbeEveryN; }
+    float DivProbeGapU()        { return g_tune.divProbeGapU; }
+    float DivProbeAlpha()       { return g_tune.divProbeAlpha; }
+    float DivProbeHoldN()       { return g_tune.divProbeHoldN; }
+    float DivProbePlayerU()     { return g_tune.divProbePlayerU; }
+    float DivProbeReportS()     { return g_tune.divProbeReportS; }
+    float SceneModeSel()        { return g_tune.sceneMode; }
     bool  BumperSceneOff()      { return g_tune.bumperSceneOff > 0.5f; }
     float BumperSceneExcite()   { return g_tune.bumperSceneExcite; }
     bool  PlanckLoosenOursOn()  { return g_tune.planckLoosenOurs > 0.5f; }
     float PlanckLoosenGlobal() { return g_tune.planckLoosenGlobal; }
+    float PlanckGainHier()      { return g_tune.planckGainHier; }
+    float PlanckGainVel()       { return g_tune.planckGainVel; }
+    float PlanckGainPos()       { return g_tune.planckGainPos; }
+    float ArmProbe()            { return g_tune.armProbe; }
+    float LegProbe()            { return g_tune.legProbe; }   // v25 the foot probe
+    float DriveDamping()        { return g_tune.driveDamping; }
+    float ForceKeyframe()       { return g_tune.forceKeyframe; }
     bool  TouchProbeHudOn()     { return g_tune.touchProbeHud > 0.5f; }
     float TouchProbeHudU()      { return g_tune.touchProbeHudU; }
     bool  DgHeadStripHairOn()   { return g_tune.dgHeadStripHair > 0.5f; }

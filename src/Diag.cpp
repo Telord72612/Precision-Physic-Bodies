@@ -4,6 +4,7 @@
 #include "Interop.h"      // Interop::GetHiggs (frame boundary)
 #include "PPBHook.h"      // ArmIK::GetPoseConformStats / ResetPoseConformStats — the conform cost line
 #include "HiggsInterface.h"
+#include "HandBox.h"       // HandBox::BoxPartLive — the finger boxes' live sub-layer part (one relaxed integer load; collision-thread safe)
 
 #include "RE/H/hkpWorld.h"
 #include "RE/H/hkpContactListener.h"
@@ -270,6 +271,77 @@ namespace {
         h.stamp.store(i + 1, std::memory_order_release);
     }
 
+    // ── ENGINE-TRUTH HAND CONTACTS (2026-09-07, user design — report 33 §8.3) ──────────────
+    // Same discipline as the weapon ring above: integer-only stores from the collision thread,
+    // one release-stamp per entry, the main thread drains. Two extra atomics DEDUPE a sustained
+    // touch: Havok can fire several points per pair per substep, so the identical (npc, player)
+    // pair is stamped once per drain — the main thread's cursor (g_handReadPub) tells the
+    // collision thread when the previous stamp has been consumed and a fresh one is wanted.
+    struct HandHit {
+        std::atomic<std::uintptr_t> npc{ 0 };
+        std::atomic<std::uintptr_t> player{ 0 };
+        std::atomic<std::uint32_t>  child{ 0 };
+        std::atomic<std::uint32_t>  part{ 0 };
+        std::atomic<std::uint32_t>  src{ 0 };
+        std::atomic<std::uint32_t>  stamp{ 0 };   // publish counter; 0 = empty
+    };
+    constexpr int kHandHits = Diag::kHandContactRing;
+    HandHit                     g_handHits[kHandHits];
+    std::atomic<std::uint32_t>  g_handWrite{ 0 };
+    std::atomic<std::uint32_t>  g_handReadPub{ 0 };     // drain cursor, published for the dedupe
+    std::atomic<std::uintptr_t> g_handLastKey{ 0 };     // last stamped (npc, player) pair key
+    std::atomic<std::uint32_t>  g_handLastIdx{ 0 };     // ...and its ring write index + 1
+    // v11.1b census — integer only. Counts every contact event where exactly one body is on layer 56 (a HIGGS hand /
+    // weapon / PPB box against anything else) and keeps that pair's two words; plus the stamps actually written.
+    std::atomic<std::uint32_t> g_l56Pairs{ 0 };
+    std::atomic<std::uint32_t> g_l56LastA{ 0 };     // the layer-56 side's word
+    std::atomic<std::uint32_t> g_l56LastB{ 0 };     // the other side's word
+    std::atomic<std::uint32_t> g_handStamps{ 0 };
+
+    inline void NoteHandContact(std::uintptr_t npc, std::uintptr_t player, std::uint32_t child,
+                                std::uint32_t part, std::uint32_t src)
+    {
+        const std::uintptr_t key = npc ^ (player << 1) ^ (player >> 3);
+        // dedupe: the same pair, still unconsumed by the main thread -> nothing new to say
+        if (g_handLastKey.load(std::memory_order_relaxed) == key) {
+            const std::uint32_t li = g_handLastIdx.load(std::memory_order_relaxed);
+            if (li && (li - 1) >= g_handReadPub.load(std::memory_order_relaxed)) return;
+        }
+        const std::uint32_t i = g_handWrite.fetch_add(1, std::memory_order_relaxed);
+        HandHit& h = g_handHits[i % kHandHits];
+        h.npc.store(npc, std::memory_order_relaxed);
+        h.player.store(player, std::memory_order_relaxed);
+        h.child.store(child, std::memory_order_relaxed);
+        h.part.store(part, std::memory_order_relaxed);
+        h.src.store(src, std::memory_order_relaxed);
+        h.stamp.store(i + 1, std::memory_order_release);
+        g_handLastKey.store(key, std::memory_order_relaxed);
+        g_handLastIdx.store(i + 1, std::memory_order_relaxed);
+        g_handStamps.fetch_add(1, std::memory_order_relaxed);
+    }
+    // filter-word classifiers for the hand stamp — integer only (Report 11 §5.2 bit layout:
+    // bits 0-6 layer, 8-12 part, 15 ragdoll-adjacency, 16-31 group)
+    inline bool FilterIsPlayerSide(std::uint32_t f) {
+        if ((f & 0x7Fu) != 56u) return false;                        // HIGGS layer 56
+        const std::uint32_t p = (f >> 8) & 0x1Fu;
+        // ★ v11.1b (2026-09-07 18:xx, the first VR session of v11.1): HIGGS's hand and weapon bodies carry NO bit 15 —
+        // hand.cpp:576-585 / :757-760 build (playerGroup << 16) | (part << 8) | 56 and nothing else (the master
+        // reference's "bit 15 set" on HIGGS bodies is wrong). The first build required it and never stamped a palm
+        // push: every 17:56 receipt read `anchor api`. Parts 3 (R) / 5 (L) are HIGGS's own constants (physics.h:217-219).
+        if (p == 3u || p == 5u) return true;                         // HIGGS R / L hand, or its weapon clone
+        // PPB's own finger boxes DO carry bit 15 (HBOX CREATE word=0x0009C438); their part is the handBoxSubLayer knob,
+        // published to the collision threads as an integer atomic — never a literal 4 (review 2026-09-07).
+        return (f & 0x8000u) != 0 && p == HandBox::BoxPartLive();
+    }
+    inline bool FilterIsNpcRagdoll(std::uint32_t f) {
+        // ★ v12 (census 18:32:28, the v11.1b session): the NPC's live ragdoll bodies read
+        // `layer 8 part 12 bit15 0` — they carry NO bit 15 either. Requiring it produced 721 layer-56
+        // contact events and ZERO stamps. The layer alone identifies a biped ragdoll body; a body that
+        // is not on the driven roster is dropped by name at the resolve, with a receipt.
+        const std::uint32_t l = f & 0x7Fu;
+        return l == 8u || l == 32u || l == 33u;                      // BIPED / DEADBIP / BIPED_NO_CC
+    }
+
     struct PpbContactCounter : RE::hkpContactListener {
         RE::hkpWorld* world = nullptr;
 
@@ -325,6 +397,43 @@ namespace {
                         if (e.contactPoint)
                             db = reinterpret_cast<const std::uint32_t*>(&e.contactPoint->separatingNormal)[3];
                         NoteWeaponContact(other, keys ? keys[0] : 0xFFFFFFFFu, wand, db);
+                    }
+                }
+            }
+
+            // ENGINE-TRUTH HAND CONTACT (2026-09-07, user design — report 33 §8.3). Runs UNGATED,
+            // like the weapon block. One side a PLAYER-side collider (layer 56: part 3/5 = HIGGS hand or
+            // weapon — NO bit 15 on those, hand.cpp:576 — or bit 15 + the finger-box part = one of ours),
+            // the other an NPC ragdoll body (bit 15 on layer 8/32/33): stamp the pair.
+            // Integer-only — filter words, pointer compares, atomics; no floats, no logging, no
+            // allocation. WHICH actor and WHICH hand are resolved on the main thread.
+            {
+                RE::hkpRigidBody* ba = e.bodies[0];
+                RE::hkpRigidBody* bb = e.bodies[1];
+                if (ba && bb) {
+                    const std::uint32_t fa = FilterOf(ba), fb = FilterOf(bb);
+                    {   // v11.1b census: exactly one side on layer 56 -> count it and keep the pair's words
+                        const bool l56a = (fa & 0x7Fu) == 56u, l56b = (fb & 0x7Fu) == 56u;
+                        if (l56a != l56b) {
+                            g_l56Pairs.fetch_add(1, std::memory_order_relaxed);
+                            g_l56LastA.store(l56a ? fa : fb, std::memory_order_relaxed);
+                            g_l56LastB.store(l56a ? fb : fa, std::memory_order_relaxed);
+                        }
+                    }
+                    int pIdx = -1;
+                    if      (FilterIsPlayerSide(fa) && FilterIsNpcRagdoll(fb)) pIdx = 0;
+                    else if (FilterIsPlayerSide(fb) && FilterIsNpcRagdoll(fa)) pIdx = 1;
+                    if (pIdx >= 0) {
+                        const std::uint32_t  pf   = pIdx == 0 ? fa : fb;
+                        const std::uintptr_t pp   = reinterpret_cast<std::uintptr_t>(e.bodies[pIdx]);
+                        const std::uintptr_t np   = reinterpret_cast<std::uintptr_t>(e.bodies[1 - pIdx]);
+                        const std::uint32_t  part = (pf >> 8) & 0x1Fu;
+                        const std::uintptr_t w0h  = g_wpnBody[0].load(std::memory_order_relaxed);
+                        const std::uintptr_t w1h  = g_wpnBody[1].load(std::memory_order_relaxed);
+                        const std::uint32_t  src  = (part != 3u && part != 5u) ? 2u   // not HIGGS's parts = one of our boxes
+                                                  : ((pp == w0h || pp == w1h) ? 1u : 0u);
+                        auto* nkeys = e.GetShapeKeys(1 - pIdx);
+                        NoteHandContact(np, pp, nkeys ? nkeys[0] : 0xFFFFFFFFu, part, src);
                     }
                 }
             }
@@ -887,6 +996,38 @@ namespace Diag {
         }
         s_read = w;
         return n;
+    }
+
+    // Drain the hand-contact ring (2026-09-07). Same shape as DrainWeaponContacts; additionally
+    // publishes its cursor so the collision thread's dedupe knows the last stamp was consumed.
+    int DrainHandContacts(HandContact* out, int max)
+    {
+        static std::uint32_t s_read = 0;
+        const std::uint32_t w = g_handWrite.load(std::memory_order_acquire);
+        if (w == s_read) return 0;
+        if (w - s_read > (std::uint32_t)kHandHits) s_read = w - (std::uint32_t)kHandHits;
+        int n = 0;
+        for (std::uint32_t i = s_read; i != w && n < max; ++i) {
+            const HandHit& h = g_handHits[i % kHandHits];
+            if (h.stamp.load(std::memory_order_acquire) != i + 1) continue;   // torn/overwritten
+            out[n].npcBody    = reinterpret_cast<void*>(h.npc.load(std::memory_order_relaxed));
+            out[n].playerBody = reinterpret_cast<void*>(h.player.load(std::memory_order_relaxed));
+            out[n].child      = h.child.load(std::memory_order_relaxed);
+            out[n].part       = (int)h.part.load(std::memory_order_relaxed);
+            out[n].src        = (int)h.src.load(std::memory_order_relaxed);
+            ++n;
+        }
+        s_read = w;
+        g_handReadPub.store(w, std::memory_order_release);   // the collision thread may stamp the pair again
+        return n;
+    }
+
+    void HandStampCensus(std::uint32_t& pairs, std::uint32_t& lastA56, std::uint32_t& lastB, std::uint32_t& stamps)
+    {
+        pairs   = g_l56Pairs.load(std::memory_order_relaxed);
+        lastA56 = g_l56LastA.load(std::memory_order_relaxed);
+        lastB   = g_l56LastB.load(std::memory_order_relaxed);
+        stamps  = g_handStamps.load(std::memory_order_relaxed);
     }
 
 

@@ -9,7 +9,7 @@ There are three ways in, and they are equivalent in what they report:
 | You are writing | Use | Effort |
 |---|---|---|
 | A Papyrus script | **Mod events** — `RegisterForModEvent("PPB_TouchStart", ...)` | 10 lines |
-| A Papyrus script that polls | **Natives** — script `PPB_Touch`, 12 global functions | 15 lines |
+| A Papyrus script that polls | **Natives** — script `PPB_Touch`, 16 global functions | 15 lines |
 | An SKSE (C++) plugin | **The native interface** — copy `src/PpbTouchAPI.h` | 30 lines |
 
 Start with the mod events. Move to the native interface only if you need callbacks at frame rate,
@@ -17,7 +17,28 @@ live capsule geometry, or to avoid the Papyrus VM.
 
 ---
 
-## What changed in 2.0.0 — read this if you already integrated
+## What changed in 2.2.0 — read this if you already integrated
+
+`GetBuildNumber()` now returns **20103**. `PpbTouchContact` is still the frozen 160-byte POD and the
+vtable is unchanged: nothing you already call moved.
+
+| build | change | what it means for you |
+|---|---|---|
+| 20102 | **New source: `kSourceHead = 8`** | The player's head is a toucher: a keyframed box riding the headset. `sourceName` is `"face"` (front of the head), `"head"`, or `"mouth"` (a probe on the lower front of the face). Packed strings read `HEAD:face` etc. `wand` is meaningless and reads 0. A HEAD contact never reports an interior sub-region, and only `mouth` can reach the vaginal/anal opening capsules. The head box is destroyed during OStim/SexLab scenes. |
+| 20102 | **`kSourceCount = 9`** | If you keep per-source arrays, size them by this, never by a literal. PPB itself published every head contact as `FINGER` for a while because of an `[8]`. |
+| 20103 | **The kiss** | The mouth probe meeting her upper lip raises `PPB_MouthLips` with strArg `"R\|LIPS\|HEAD"`: a third field **appended** to the usual `WAND\|STAGE`, `numArg` 1 at the start and 0 at the end. Entry 2.2 u, exit 3.2 u (hysteresis), so a held kiss does not flicker. Lips only; a kiss never raises `ENTER` or `THROAT`. Split on `\|` and tolerate extra fields. |
+| 20103 | **HEAD names reach the digest stream** | `face` / `head` / `mouth` used to be dropped from the packed digest strings. Gate on `>= 20103` if you branch on them. |
+| — | **The gesture event bus** | `PPB_GestureUndressArm`, `PPB_GestureUndressEnd` (fires on cancel too, `done=0`), `PPB_GesturePlug` (`in`/`out`), `PPB_GestureDeviceEquipped`, `PPB_GestureGearEquipped`, `PPB_GestureClaim`; inbound `PPB_GestureSetPaused`. Field layouts at the top of `src/PpbTouchAPI.h`. The bus appends fields and never renumbers them. |
+| — | **`PPB_Native.SetGesturePaused(Bool)`** | Stand the gesture layer down while your scene places an actor's hands, so it doesn't read as a grab. |
+| — | **Feature switches** | A user can turn push/shove, its four outcomes, or the gestures off in `PPB.ini [Features]`. Touch contacts are never affected by these switches. |
+
+Also emitted, unchanged since 2.1: `PPB_PlayerMasturbation` (strArg `"MAX"`, numArg = erection level,
+sender = the player). It fires once on the release edge after the player's own hand brought him to
+full erection.
+
+---
+
+## What changed in 2.0.0
 
 `GetBuildNumber()` now returns **20000**; feature-detect on `>= 20000`. `PpbTouchContact` is still a
 frozen 160-byte POD and the vtable is unchanged, so an existing plugin keeps working untouched.
@@ -538,7 +559,8 @@ calls your destructor once per event.)
 `_reserved` — with one documented exception: **`_reserved[0]` is the erection level** as of 2.0.0
 (§1). Everything past it stays undocumented; do not assume it stays zero.
 
-**New `SourceKind` and `PseudoSlot` values append.** 2.0.0 added `kSourceGenital = 7`. A consumer
+**New `SourceKind` and `PseudoSlot` values append.** 2.0.0 added `kSourceGenital = 7`; 2.2.0 added
+`kSourceHead = 8` (and `kSourceCount = 9` to size arrays by). A consumer
 that has never heard of a value sees an unknown number on an otherwise ordinary contact — handle
 your `switch` default rather than asserting.
 

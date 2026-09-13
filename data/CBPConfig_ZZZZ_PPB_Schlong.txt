@@ -4,6 +4,12 @@
 # maxoffset 4 - a soft wide wobble. These raise the spring, kill the oscillation, and
 # halve the allowed tip travel. Dial here; flaccid dangle is SMP (MaleGenitals.xml),
 # untouched by this file.
+#
+# 2026-09-12 maxoffset 1.5 -> 4 (back to SPS). maxoffset is ISOTROPIC - this CBPC build has no
+# per-axis variant - so halving it for the side-to-side wobble ALSO capped travel along the
+# shaft: the erect state could not extend and the tip telescoped back into the mesh (user,
+# 2026-09-12). If lateral wobble returns, lower linearX/linearZ (the lateral axes) and leave
+# linearY (the shaft's own axis; PPA: LocalForwardAxis [0,1,0]) alone. Stiffness/damping kept.
 UBEPS01.stiffness 0.15
 UBEPS02.stiffness 0.15
 UBEPS03.stiffness 0.15
@@ -25,9 +31,9 @@ UBEPS04.damping 0.20
 UBEPS05.damping 0.20
 UBEPS06.damping 0.20
 
-UBEPS01.maxoffset 1.5
-UBEPS02.maxoffset 1.5
-UBEPS03.maxoffset 1.5
-UBEPS04.maxoffset 1.5
-UBEPS05.maxoffset 1.5
-UBEPS06.maxoffset 1.5
+UBEPS01.maxoffset 4
+UBEPS02.maxoffset 4
+UBEPS03.maxoffset 4
+UBEPS04.maxoffset 4
+UBEPS05.maxoffset 4
+UBEPS06.maxoffset 4

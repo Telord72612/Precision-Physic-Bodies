@@ -1,5 +1,141 @@
 # Changelog
 
+## 2.2.0
+
+The repository was last synced at 2.1.0. This entry covers 2.1.1 and everything built since.
+
+### Push and shove
+
+Put a hand, a weapon or a held object against an NPC and she reacts like a body: she gives ground,
+stumbles, or goes down.
+
+**How PPB knows she is being pushed.** Not from your hand. For each trunk joint (COM, Spine0–2,
+Neck, Head, and the thighs at the hip) PPB compares the Havok body with where the current animation
+wants that joint. The gap between the two is the push. Every joint lags its animation a little even
+when nobody touches her, so that resting lag is learned per actor and frozen the moment a probe
+comes within reach, because a baseline must never absorb a push.
+
+Sources are the hand boxes, HIGGS's own palm box, drawn weapons and held objects. The player's head is
+a touch source only and never pushes.
+
+- **Walk.** A steady press walks her back through the engine's own movement planner. The speed
+  follows the live push, ramping up as you press harder and slowing to a stop as the pressure goes.
+- **The ladder is measured as travel.** From the moment a push starts, PPB tracks how far each joint
+  has been driven *beyond* what her own walk carried it. Walking back therefore never counts as more
+  push. Shipped bars: **10 u walk · 20 u stumble · 35 u knockdown**, with the head and neck at
+  **10 / 30 / 40** because they swing furthest for the least effort.
+- **Stumble.** The vanilla stagger, turned to match where the push acts on her. Pushed from the
+  front or side, she stumbles back. Pushed from behind, she stumbles forward.
+- **Knockdown.** Ragdoll onset goes through the engine's own knock (`AIProcess::KnockExplosion`), which
+  flips her into the ragdoll state within ~24 ms and hands her straight to PLANCK. Across 38 recorded
+  knockdowns the older graph-driven onset spiked body speed to ~7,000 u/s and could launch her. This
+  one peaks around 220 u/s, and she falls from where your hand is.
+- **Leg sweep.** Lift **both** feet above her own standing height with a hand or a weapon and she goes
+  down. Height is measured from each actor's own rest, so heels are accounted for. One leg up with
+  the other planted does not trip her. After she gets up, the floor re-arms within 0.6 s even if
+  you keep sweeping.
+- **Equip settle.** For 0.25 s after a hand equip or removal nothing reacts, and her height afterwards
+  becomes the new floor. Putting heeled boots on her does not read as a lift.
+
+**When nothing fires:** she is fighting, in a kill move, or busy in furniture. "Busy" is her
+*body's* sit state (sitting, getting up, sleeping, waking), not the furniture reservation she holds
+while walking to a chair or after leaving it. An NPC leaning on a wall, rail, bar or counter is
+braced, so she can't be pushed but can still be swept. Conversation is not a gate. An NPC whose idle
+animation owns her movement can't be walked by the engine, so she stumbles or goes down in place.
+
+Every outcome is its own switch — see *Feature switches* below.
+
+### Hand gestures (moved into PPB from the VRTouchEvents DD-ZaZ AddOn)
+
+The gestures run on PPB's contact stream, so the plugin that owns the sensor now owns the detection.
+
+- **Press to equip.** Hold a piece of armour, clothing or a device against the matching body part for
+  about a second, then let go. The *release* fires the equip; the dwell only arms it. Works for
+  ordinary gear and for Devious Devices, ZaZ and Diary of Mine devices. Each device's body site comes
+  from its framework keywords, so a gag wants the mouth and a cuff wants the wrist.
+- **Two-hand undress.** Grab the same worn piece with both hands and pull. The trigger is the moment
+  HIGGS's grab snaps back to your controller, and the piece lands in the pulling hand.
+- **Fingertip plug extraction.** Hold a fingertip at an occupied orifice for a second to work the plug
+  loose into your hand. A worn chastity belt is the lock. Devious Devices unlocks go through DD's own
+  round trip, with a settle wait so DD cannot delete the device out of your hand.
+- **Refusals instead of silent swaps.** An occupied biped slot refuses the equip (`bSlotOccupiedRefuse`),
+  and a device is refused when ordinary clothing covers its own region (`bClothingGate`, per region:
+  gloves block wrist cuffs, a cuirass does not). Framework devices never block each other. A refused
+  piece falls.
+- **It stays on.** Ordinary gear is equipped with the engine's prevent-removal flag. Generic NPCs
+  are held by a pool of optional quest aliases (`PPB_HoldPoolQuest`) so a cell respawn can't reset
+  them. `OutfitGuard` detours `Actor::HasOutfitItems` so a pooled NPC you undressed isn't re-issued
+  her outfit. The detour fails closed: it installs only on a whitelisted prologue. SeverActions
+  followers with an active outfit preset or lock get the change recorded into SeverActions.
+- **No on-screen messages** by default (`equipNotify 0`, `undressNotify 0`).
+- **An event bus for consumers:** `PPB_GestureUndressArm/End`, `PPB_GesturePlug`,
+  `PPB_GestureDeviceEquipped`, `PPB_GestureGearEquipped`, `PPB_GestureClaim`, and inbound
+  `PPB_GestureSetPaused` / `PPB_Native.SetGesturePaused`. Documented in `src/PpbTouchAPI.h`.
+
+### The player's head, and the kiss
+
+- **A head box that rides the headset.** VRIK builds your body from the HMD with fixed proportions, so
+  standing taller than the rig makes the head *bone* top out below your real eyes. No fixed offset can
+  correct a posture-dependent gap, so the box follows the headset itself.
+- **A touch source of its own:** `kSourceHead = 8`, with `sourceName` `"face"`, `"head"` or `"mouth"`
+  (a small probe on the lower front of the face). A head contact never reports an interior
+  sub-region, and only the mouth can reach the vaginal/anal openings.
+- **The kiss.** The mouth probe meeting her upper lip raises `PPB_MouthLips` with strArg
+  `"R|LIPS|HEAD"`, `numArg` 1 at the start and 0 at the end. Entry is 2.2 u, exit 3.2 u, so it holds
+  steady instead of flickering on and off. A kiss is lips only and can never open her mouth.
+- `GetBuildNumber()` → **20103**.
+
+### Genitals
+
+- **Futa.** The genital rig now extends to females wearing a futa schlong (TNG Gentlewoman,
+  TRX-ERF). Both meshes are skinned to the standard genital chain the female skeleton already
+  carries. The gate is visible geometry parented under that chain, never slot 52, because a slot is
+  only a claim and would give phantom contacts to anything else worn there. Ships on. ⚠ Not yet seen
+  in VR: the author has neither mod installed, so reports are welcome.
+- **CBPC schlong `maxoffset` 1.5 → 4.** The erect state extends fully instead of the tip folding back
+  into itself.
+
+### Scenes
+
+- **NPC-vs-NPC OStim scenes** (`ostim_thread_start/end`) and **SexLab** (`StartSexLabAnimation` /
+  `AnimationStart`) now gate as well. Overlapping scenes are counted, not latched.
+- `sceneMode 2`: during a scene the bodies go **keyframed** instead of non-colliding. Collision stays
+  on, so touch and engine-verified contacts keep reporting. PLANCK restores dynamic motion whenever it
+  re-adds a ragdoll, so the gate re-asserts at 2 Hz and compares state before writing.
+- **Crash at scene end fixed.** The mod-event sink runs on its own thread and the actor's 3D can be
+  mid-rebuild at `ostim_end`, so the gate is queued to the task interface and checks the body's
+  world before touching it.
+
+### Feature switches — `PPB.ini`
+
+A new hot-reloaded file (edits apply within about a second):
+
+| key | section | controls |
+|---|---|---|
+| `bSlotOccupiedRefuse` | `[Equip]` | occupied slot refuses a gesture equip |
+| `bClothingGate` | `[Equip]` | clothing blocks a device on its region |
+| `bPushShove` | `[Features]` | the whole push system |
+| `bPushWalk` | `[Features]` | push walk |
+| `bPushStumble` | `[Features]` | push stumble |
+| `bShoveRagdoll` | `[Features]` | shove knockdown (with stumble on, a hard shove stumbles instead) |
+| `bFeetLift` | `[Features]` | leg sweep knockdown |
+| `bEquipGestures` | `[Features]` | equip / undress / plug gestures (read at load — restart) |
+
+Each switch is ANDed with its tuning knob and defaults to ON when missing. The FOMOD installs the
+matching variant: 33 generated `PPB.ini` files selected by flags, so choices that share one file
+can't overwrite each other. `PPB.log` prints the effective answer on the `PPB FEATURES:` lines.
+
+### Also
+
+- HIGGS's own hand box is now touch probe 5, the palm. An open hand pressing her registers even when
+  no finger box does.
+- A heel change now re-latches the feet reference even while a hand is on her. Contact may freeze a
+  *measurement*, never the *invalidation* of a reference that just became wrong.
+- A contained exception in the per-actor pipeline now logs which step threw and on whom.
+- `RAGFRAME` (`ragFrame 1`): a read-only 31-frame receipt around every knockdown, for diagnosing
+  ragdoll onset. Ships off.
+- Release builds ship with logging at level 0 and every diagnostic off.
+
 ## 2.1.0
 
 ### Havok collision was breaking OStim scene alignment

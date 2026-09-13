@@ -3,9 +3,14 @@
 #include "PPBHook.h"   // kPreLoadGame teardown: bind-rel cache + statue set
 #include "PivFix.h"    // kPreLoadGame teardown: per-actor pivot state
 #include "Tuning.h"    // ObjectHold::InitHeelFixDefault / ToggleHeelFix
+#include "DeviceGesture.h"
+#include "HoldPool.h"
+#include "OutfitGuard.h"   // Actor::HasOutfitItems guard — a hold-pool NPC is never re-issued her outfit (2026-09-06)
+#include "Ini.h"           // PPB.ini [Features] — the FOMOD feature switches (2026-09-11)
 #include "CapFix.h"    // CapFixConsole — the in-game hand-capsule editor
 #include "Natives.h"
 #include "PpbApi.h"     // public touch API: plugin-message listener + load teardown   // PPB_Native.SetStatuePose / SetHeelFix / ToggleHeelFix
+#include "PushStep.h"   // PushStep::ClearOnLoad — v11.1b: drop the engine hand-travel anchors across a load
 #include "Interop.h"   // Interop::AcquireHiggs — the PivFix grab gate's HIGGS handshake
 #include "PerfSys.h"
 #include "RayTel.h"    // RayTel — kPreLoadGame counter reset (the vtable patch itself lives in the EXE image)
@@ -13,7 +18,8 @@
 #include "Probe.h"     // Probe::DumpActorState — the `probe` console command
 #include "Diag.h"      // Diag — the read-only perf/contact/census instrument (`perf` + `capdis`)
 #include "NpcFingerTest.h"  // NpcFinger — the `nfing` console command + kPreLoadGame teardown
-#include "HandBox.h"   // HandBox — kPreLoadGame teardown (registration rides PerfSys::RegisterHiggs)
+#include "HandBox.h"
+#include "RagFrame.h"   // RAGFRAME onset receipt — kPreLoadGame teardown
 #include "DismemberGuard.h"  // DF/NGD ↔ PLANCK guard: death-grace ignore + head-clone exclusion (2026-07-26)
 #include "Orifice.h"    // Orifice::ClearOnLoad — restore every held bone ring before a load
 
@@ -29,7 +35,7 @@
 namespace logger = SKSE::log;
 
 SKSEPluginInfo(
-    .Version              = { 2, 1, 0 },
+    .Version              = { 2, 1, 1 },
     .Name                 = "PPB",
     .Author               = "mad72",
     .StructCompatibility  = SKSE::StructCompatibility::Independent,
@@ -486,6 +492,62 @@ public:
 };
 static ObodyEventSink g_obodySink;
 
+// ── EQUIP SINK (2026-09-03, user: "make sure if any NPC get undressed and OBody fire, that they
+// do get ReShape, that's super important") ──────────────────────────────────────────────────
+// The body-shape latch used to be invalidated by exactly ONE thing: OBody's Obody_ApplyMorph
+// ModEvent. Undressing an NPC changes which mesh is on top of her — and by user ruling the mesh
+// on top IS the surface we want (skin-tight armour measures as armour, and that is correct) —
+// so an equip or unequip of ARMOUR must re-measure her, whether or not OBody happens to fire.
+//   Routed through the same InvalidateBodyScale queue OBody uses: thread-safe by construction
+// (this sink runs on the game's event thread and must NEVER touch s_regionRatio directly), and
+// coalesced by the 1 Hz sweep. Rate-limited per actor: a full outfit swap fires 5-10 equip
+// events and one re-latch (~4 ms) is the whole point, not ten.
+class EquipEventSink : public RE::BSTEventSink<RE::TESEquipEvent> {
+public:
+    RE::BSEventNotifyControl ProcessEvent(const RE::TESEquipEvent* ev,
+                                          RE::BSTEventSource<RE::TESEquipEvent>*) override
+    {
+        if (!ev || !ev->actor) return RE::BSEventNotifyControl::kContinue;
+        auto* a = ev->actor->As<RE::Actor>();
+        if (!a || a->IsPlayerRef()) return RE::BSEventNotifyControl::kContinue;
+        if (a->IsDead()) return RE::BSEventNotifyControl::kContinue;   // looting a corpse must not re-measure her
+        // only ARMOUR changes geometry; weapons, ammo, potions, spells change nothing we measure
+        auto* armo = RE::TESForm::LookupByID<RE::TESObjectARMO>(ev->baseObject);
+        if (!armo) return RE::BSEventNotifyControl::kContinue;
+        // ... and only armour that can cover a MEASURED surface. Rings, amulets, circlets,
+        // shields and helmets change nothing ReShape reads; skipping them saves a 4 ms latch each.
+        {
+            const std::uint32_t sm = static_cast<std::uint32_t>(armo->GetSlotMask().underlying());
+            constexpr std::uint32_t kBodySlots =
+                (1u << (32-30)) | (1u << (33-30)) | (1u << (34-30)) | (1u << (37-30)) | (1u << (38-30)) |
+                (1u << (39-30)) | (1u << (40-30)) | (1u << (46-30)) | (1u << (49-30)) | (1u << (52-30)) |
+                (1u << (53-30)) | (1u << (54-30)) | (1u << (56-30)) | (1u << (58-30)) | (1u << (59-30)) |
+                (1u << (60-30));
+            if ((sm & kBodySlots) == 0) return RE::BSEventNotifyControl::kContinue;
+        }
+        const std::uint32_t id = a->GetFormID();
+        const auto now = std::chrono::steady_clock::now();
+        {
+            std::lock_guard<std::mutex> g(m_mx);
+            auto it = m_last.find(id);
+            if (it != m_last.end() && now - it->second < std::chrono::seconds(3)) {
+                // inside the window: do NOT drop it - book a TRAILING re-measure so the state after
+                // the LAST piece of an outfit swap is the one that gets measured (audit 2026-09-04)
+                GrabDiag::InvalidateBodyScaleAt(id, 3.0f);
+                return RE::BSEventNotifyControl::kContinue;
+            }
+            if (m_last.size() > 128) m_last.clear();
+            m_last[id] = now;
+        }
+        GrabDiag::InvalidateBodyScale(id);
+        return RE::BSEventNotifyControl::kContinue;
+    }
+private:
+    std::mutex m_mx;
+    std::unordered_map<std::uint32_t, std::chrono::steady_clock::time_point> m_last;
+};
+static EquipEventSink g_equipSink;
+
 // ── SCENE SINK (2026-08-03) — OStim / SexLab scene suspension ────────────────────────────────
 // Verified from source: HIGGS has NO scene gating (hand collision is disabled only for held
 // objects and two-handing, hand.cpp:658), and PLANCK's scene behaviour is incidental — its
@@ -500,20 +562,47 @@ public:
     {
         if (!ev || !ev->eventName.c_str()) return RE::BSEventNotifyControl::kContinue;
         const char* n = ev->eventName.c_str();
-        const bool start = _stricmp(n, "ostim_start") == 0 || _stricmp(n, "StartSexLabAnimation") == 0
-                        || _stricmp(n, "AnimationStart") == 0;
-        const bool end   = _stricmp(n, "ostim_end")   == 0 || _stricmp(n, "EndSexLabAnimation")   == 0
-                        || _stricmp(n, "AnimationEnd") == 0;
+        // ★ 2026-08-25: NPC-vs-NPC SCENES WERE NEVER COVERED.
+        // `ostim_start`/`ostim_end` are the PLAYER's scene. OStim also fires THREAD-scoped events
+        // for every scene it runs, and the NPC addon (OStim NPCs) registers for exactly those —
+        // `ostim_thread_start` / `ostim_thread_end`. Listening only to the player pair meant two
+        // NPCs going at it beside you kept full dynamic physics: the same broken alignment the
+        // player's scenes had, with nothing to trigger the gate.
+        const bool start = _stricmp(n, "ostim_start") == 0 || _stricmp(n, "ostim_thread_start") == 0
+                        || _stricmp(n, "StartSexLabAnimation") == 0 || _stricmp(n, "AnimationStart") == 0;
+        const bool end   = _stricmp(n, "ostim_end")   == 0 || _stricmp(n, "ostim_thread_end")   == 0
+                        || _stricmp(n, "EndSexLabAnimation")   == 0 || _stricmp(n, "AnimationEnd") == 0;
         if (!start && !end) return RE::BSEventNotifyControl::kContinue;
-        HandBox::SetSceneSuspended(start);
-        // ★ 2026-08-23: the PLAYER is hard-excluded from the driven path (ApplyToPoseTrack returns
-        // on him — VRIK owns his arms), so his bodies would never see the scene gate. Drive them
-        // from the edge itself. His hand boxes and the genital wand are handled by their own
-        // lifecycles off the same flag; this covers his RAGDOLL + bumper.
-        if (auto* pc = RE::PlayerCharacter::GetSingleton())
-            GrabDiag::SceneCollisionGate(pc, pc->GetFormID());
-        logger::info("SCENE: '{}' -> hand colliders {} (sceneSuspendHands {})", n,
-                     start ? "SUSPENDED" : "restored",
+
+        // ★ COUNT, do not latch. Scenes can overlap — an NPC pair in the corner while the player
+        // is in their own, or several NPC threads at once. With a bare boolean the FIRST scene to
+        // end would restore everyone to dynamic while other scenes were still running, which is
+        // exactly the broken-alignment bug again and would be maddening to reproduce.
+        static std::atomic<int> s_sceneDepth{ 0 };
+        int depth;
+        if (start) depth = s_sceneDepth.fetch_add(1, std::memory_order_relaxed) + 1;
+        else {
+            depth = s_sceneDepth.fetch_sub(1, std::memory_order_relaxed) - 1;
+            if (depth < 0) { depth = 0; s_sceneDepth.store(0, std::memory_order_relaxed); }  // unmatched end
+        }
+        const bool active = depth > 0;
+        HandBox::SetSceneSuspended(active);
+        // ★ 2026-08-25 CRASH FIX. The PLAYER is hard-excluded from the driven path (ApplyToPoseTrack
+        // returns on him — VRIK owns his arms), so his bodies never see the scene gate and must be
+        // driven from this edge. But THIS SINK RUNS ON THE MOD-EVENT THREAD, and the first version
+        // called straight into the gate from here — which under sceneMode 2 means engine physics
+        // calls (bhkRigidBody::SetMotionType touches motion, activation, the collision filter and
+        // the world) with no world lock and off the main thread. It CTD'd twice at `ostim_end`,
+        // identically, at `mov rcx, [rax+0x58]` with rax null.
+        // Queue only. The main-thread task does the work, under the world lock, with a null-world
+        // guard — the same discipline every other body-touching path in this codebase already uses.
+        if (auto* task = SKSE::GetTaskInterface())
+            task->AddTask([]() {
+                if (auto* pc = RE::PlayerCharacter::GetSingleton())
+                    GrabDiag::SceneCollisionGate(pc, pc->GetFormID());
+            });
+        logger::info("SCENE: '{}' depth={} -> hand colliders {} (sceneSuspendHands {})", n, depth,
+                     active ? "SUSPENDED" : "restored",
                      ObjectHold::SceneSuspendHandsMode() == 0 ? "0 - tracked but NOT acted on"
                      : ObjectHold::SceneSuspendHandsMode() == 1 ? "1 - whole scene"
                                                                : "2 - third person only");
@@ -1008,6 +1097,8 @@ static void OnSKSEMessage(SKSE::MessagingInterface::Message* msg)
         // Diagnostic (2026-07-08): the physics-step timer. Chains ON TOP of HIGGS at 0xDFB722 with a
         // mandatory p[0]!=0xE8 self-abort — feeds Diag's step ms only while `perf` is armed. Read-only.
         Hooks::InstallPhysicsStepHook();
+        Hooks::InstallPushWalkHook();      // PushWalk: pressure-driven planner-direct-control stepping
+        Hooks::InstallMoveParamsHooks();   // v7: commanded walk speed becomes ACTUAL speed (PLANCK's params override)
         Interop::ApplyHiggsPokeFix("kDataLoaded");   // hand stays OPEN near grabbables (knob higgsPokeFix)
         RegisterConsoleCommands();  // 'HeelFix' / 'hf' + 'CapFix' / 'capfix' + 'statue' + 'probe' + 'perf' + 'capdis' + 'nfing' + 'jtrack'
         // RUNTIME SKELETON MAP (2026-07-17): repoint race female skeletons + load per-NPC capsule
@@ -1019,6 +1110,24 @@ static void OnSKSEMessage(SKSE::MessagingInterface::Message* msg)
             mcSrc->AddEventSink(&g_obodySink);   // OBody push re-fit (Obody_ApplyMorph)
             mcSrc->AddEventSink(&g_sceneSink);   // OStim/SexLab scene suspension (ostim_start/ostim_end)
         }
+        // armour equip/unequip -> re-measure body shape (the same queue OBody feeds); engine event,
+        // so it lives on the ScriptEventSourceHolder like DismemberGuard's death/hit sinks
+        if (auto* holder = RE::ScriptEventSourceHolder::GetSingleton()) {
+            holder->AddEventSink<RE::TESEquipEvent>(&g_equipSink);
+            logger::info("ReShape: TESEquipEvent sink registered (armour change -> re-measure, 3 s/actor)");
+        }
+        // ★ 2026-09-11 THE EQUIP FEATURE MASTER covers its SUPPORT modules too, not just the
+        // gesture layer. HoldPool and OutfitGuard exist only to make a gesture-equipped item
+        // persist; with the gestures inert they have no work — and OutfitGuard installs a DETOUR,
+        // which is best simply not present when the feature is not shipped. (HoldPool::Hold()
+        // already answers false when the pool was never resolved, so nothing downstream breaks.)
+        if (Ini::FeatureEquipGestures()) {
+            HoldPool::Install();    // resolve PPB_HoldPoolQuest (inert with one log line until the ESP record exists)
+            OutfitGuard::Install(); // hook Actor::HasOutfitItems (runtime prologue check; fail closed)
+        } else {
+            logger::info("[FEATURES] equip gestures OFF - HoldPool and OutfitGuard not installed "
+                         "(no quest resolve, no HasOutfitItems detour).");
+        }
         Interop::AcquireHiggs();    // grab-gate handshake retry (the AIHands kPostPostLoad+kDataLoaded pattern)
         Interop::AcquireSkee();     // Body-Scale morph handshake retry (SKEE may register after kPostPostLoad)
         Interop::AcquireVrik();     // finger-pose handshake retry (same pattern)
@@ -1029,6 +1138,32 @@ static void OnSKSEMessage(SKSE::MessagingInterface::Message* msg)
         DismemberGuard::AcquirePlanck();   // retry (PLANCK registers its listener during its own load)
         DismemberGuard::AcquireDfNgd();    // DF + NGD plugin APIs (retried at kPostLoadGame below)
         DismemberGuard::Install();         // TESDeathEvent sink + DF ProcessDismemberment defer-hook
+        RagFrame::Install();            // TESHitEvent sink — the H3 discriminator (read-only)
+        DeviceGesture::Install();          // hand-gesture device layer (moved from the DD-ZaZ add-on)
+        // ★ 2026-09-11 THE FEATURE RECEIPT. "Off" has to be OBSERVABLE, not assumed — the failure
+        // mode for a feature switch is always something that runs anyway, and silence proves
+        // nothing. Both halves are named separately so a surprise is attributable: the ini says
+        // whether the feature SHIPPED, the knob is the dial, and the effective state is the AND.
+        {
+            const bool fPush  = Ini::FeaturePushShove();
+            const bool fEquip = Ini::FeatureEquipGestures();
+            const bool fFeet  = Ini::FeatureFeetLift();
+            const bool ePush  = ObjectHold::PushStepEnabled();   // ini AND the pushStep knob
+            const bool eFeet  = ePush && ObjectHold::PushStepLiftRagOn();
+            logger::info("PPB FEATURES: push/shove = {}  [PPB.ini bPushShove={}{}]  |  "
+                         "feet-lift ragdoll = {}  [PPB.ini bFeetLift={}{}]  |  "
+                         "equip gestures = {}  [PPB.ini bEquipGestures={}]",
+                         ePush ? "ON" : "OFF", fPush ? 1 : 0,
+                         (fPush && !ePush) ? ", but the tuning knob pushStep is 0" : "",
+                         eFeet ? "ON" : "OFF", fFeet ? 1 : 0,
+                         !ePush ? ", moot: push is off" : ((fFeet && !eFeet) ? ", but the tuning knob pushStepLiftRag is 0" : ""),
+                         fEquip ? "ON" : "OFF", fEquip ? 1 : 0);
+            // 2.2.0: the three push sub-choices (moot when push is off)
+            logger::info("PPB FEATURES: push walk = {} [bPushWalk]  |  push stumble = {} [bPushStumble]  |  "
+                         "shove knockdown = {} [bShoveRagdoll]{}",
+                         Ini::FeaturePushWalk() ? "ON" : "OFF", Ini::FeaturePushStumble() ? "ON" : "OFF",
+                         Ini::FeatureShoveRagdoll() ? "ON" : "OFF", ePush ? "" : "  (moot: push is off)");
+        }
         logger::info("PPB init complete. Watching for first driveToPose fire "
                      "(expect FIRST-FIRE, then HEELFIX/CapFix/PivFix lines near any humanoid NPC).");
         break;
@@ -1042,6 +1177,9 @@ static void OnSKSEMessage(SKSE::MessagingInterface::Message* msg)
         // after a load. Idempotent — no-ops (and stays silent) when the value is already ours.
         Interop::ApplyHiggsPokeFix("kPostLoadGame");
         HandBox::MarkSessionReloaded();   // AUTO userData-null arms after the first load (safe boot)
+        DeviceGesture::Install();         // retry: idempotent, and HIGGS may not have been
+                                          // acquired yet at kDataLoaded on a slow load order
+        HoldPool::Resync();               // the alias fills are save state — rebuild the pool's receipts from them
         break;
 
     case SKSE::MessagingInterface::kNewGame:
@@ -1057,6 +1195,12 @@ static void OnSKSEMessage(SKSE::MessagingInterface::Message* msg)
         // The Havok world is torn down + rebuilt across a load. Drop every cached
         // pointer into it (constraint instances, drivers) so we never touch a
         // freed world after the load.
+        // ⛔ 2026-08-27: the gesture layer holds ObjectRefHandles and raw base-object pointers
+        // (held device, pending grab, pending eject, the plug pull, the undress pair) into the
+        // world this teardown is about to rebuild. The add-on cleared these on every load
+        // boundary - "gestures never survive a load boundary" - and the move must not lose that.
+        DeviceGesture::Reset();
+        HoldPool::ClearOnLoad();        // pool receipts are FormID-keyed and recycle across saves; the engine map is re-read at kPostLoadGame
         ObjectHold::PivFixClearAll();   // per-actor pivot state (sticky auto-seats included)
         ObjectHold::PivDescaleClearAll();  // descaled-instance pointers dangle across loads
         ObjectHold::PivReScaleClearAll();  // re-scale scaled-instance pointers dangle across loads too
@@ -1069,10 +1213,12 @@ static void OnSKSEMessage(SKSE::MessagingInterface::Message* msg)
         RayTel::ClearOnLoad();          // zero the raycast-telemetry window (rates across a load are meaningless)
         NpcFinger::ClearOnLoad();       // remove the finger-test capsules while the world is still alive, drop the pin
         PpbApi::ClearOnLoad();          // drop live touch contacts (no End events across a load)
+        PushStep::ClearOnLoad();        // v11.1b: drop the engine hand-travel anchors (FormID-keyed)
         Orifice::ClearOnLoad();         // ★ restore every armed bone ring FIRST (the 3D is still
                                         //   alive at PRE-load — this is the last moment a restore
                                         //   can land), then drop the FormID-keyed rest captures
         HandBox::ClearOnLoad();         // remove the hand boxes + drop slab baselines (HIGGS rebuilds its bodies)
+        RagFrame::ClearOnLoad();        // drop the onset ring + disarm (FormIDs are recycled across saves)
         GrabDiag::CapFixClearOnLoad();  // FormID-keyed latches (measured effScale + identities) must not cross saves
         DismemberGuard::ClearOnLoad();  // actor handles + PLANCK-ignore bookkeeping don't survive a load
         ObjectHold::PivGuardClearOnLoad();  // pivot captures are per ragdoll instance — none survive a load
@@ -1104,7 +1250,7 @@ SKSEPluginLoad(const SKSE::LoadInterface* skse)
     SKSE::Init(skse);
 
     logger::info("==================================================");
-    logger::info("PPB v2.1.0 (Precision Physic Bodies) loaded.");
+    logger::info("PPB v2.2.0 (Precision Physic Bodies) loaded.");
     if (auto dir = SKSE::log::log_directory()) {
         logger::info("Log file: {}\\PPB.log", dir->string());
     }

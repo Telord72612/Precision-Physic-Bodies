@@ -55,10 +55,23 @@ addresses then resolve to real function names instead of hex.
 
 ```
 src/        the plugin
-data/       shipped config files (tuning, skeleton map, race map)
+data/       shipped config files (tuning, skeleton map, race map, PPB.ini)
+scripts/    Papyrus sources for the five shipped scripts
+meshes/     the seven PPB skeletons (four female, three male)
 fomod/      installer definition
 docs/       engineering reference — read docs/01 (pitfalls) before changing physics code
 ```
+
+### Not in this repository
+
+- **`Precision Physic Bodies.esp`** ships in the release zip. It carries the A-pose/statue spells and
+  `PPB_HoldPoolQuest`, the alias pool that keeps hand-equipped gear on generic NPCs.
+- **The FOMOD's option folders** (`20 Performance…`, `30 Features\…`) are generated at release time
+  from `data/PPB_tuning.txt` and `data/PPB.ini`, and each is verified to differ from the core file by
+  exactly the switched keys. `fomod/ModuleConfig.xml`'s `<conditionalFileInstalls>` block is
+  generated from the same table.
+- **`scripts/PPB_DeviceEquip.psc`** compiles against Devious Devices and SeverActions headers. The
+  shipped `.pex` has no hard dependency: every foreign call is guarded at runtime.
 
 ## Working on it
 

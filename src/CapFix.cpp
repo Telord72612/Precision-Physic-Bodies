@@ -6,7 +6,8 @@
 #include "Interop.h"   // Interop::IsActorGrabbedByPlayer — the auto-fit grab gate (2026-07-07)
 #include "HiggsInterface.h"  // GetWeaponRigidBody — WeaponSegmentU (touch API, 2026-07-30)
 #include "NpcFingerTest.h"   // NpcFinger::UpdateMeshMarkers — the Route B band markers (2026-07-18)
-#include "DismemberGuard.h"  // IsExcluded — the dead/dismembered latch gate (2026-07-28)
+#include "DismemberGuard.h"
+#include "PpbApi.h"       // CopyContacts — the Brace reads the touch snapshot  // IsExcluded — the dead/dismembered latch gate (2026-07-28)
 
 #include <algorithm>
 #include <array>
@@ -126,6 +127,52 @@ namespace GrabDiag {
     }
 
     // Per-actor, throttled: GetFactionRank walks the faction list, so it is not a per-frame read.
+    // ── FORCE KEYFRAME (knob forceKeyframe) — DIAGNOSTIC ────────────────────────────────
+    // Sets every one of the actor's ragdoll bodies to MOTION_KEYFRAMED (4) while the knob is on,
+    // and back to MOTION_DYNAMIC (1) on the falling edge. Reuses the same body walk as the scene
+    // gate (kSlotNode + left twins + CharacterBumper) under the world write lock.
+    // ⛔ WE TRACK OUR OWN PER-ACTOR STATE rather than reading the motion type back. A live dynamic
+    // body reports 2 (sphere inertia) or 3 (box inertia), NEVER 1, so a `curMt == 1` state compare
+    // can never pass and would re-issue the write every tick — that is exactly the shipped 2.1.1
+    // SCENEPHYS storm (report 31 §14). Edge-triggered on our own bool: no storm possible.
+    static void ForceKeyframeGate(RE::Actor* actor, std::uint32_t id)
+    {
+        static std::unordered_map<std::uint32_t, bool> s_kf;   // true = WE keyframed this actor
+        const bool want = ObjectHold::ForceKeyframe() > 0.5f;
+        auto it = s_kf.find(id);
+        const bool have = (it != s_kf.end()) && it->second;
+        if (want == have) return;                              // edge-triggered — nothing to do
+        if (s_kf.size() > 512) s_kf.clear();
+        const std::uint8_t wantMt = want ? 4u : 1u;
+        int changed = 0;
+        auto setBody = [&](const char* nodeName) {
+            if (!nodeName) return;
+            auto* hn = FindNode(actor, nodeName);
+            auto* colObj = hn ? hn->collisionObject.get() : nullptr;
+            if (!colObj) return;
+            auto* rb  = static_cast<RE::bhkCollisionObject*>(colObj)->GetRigidBody();
+            auto* hkb = rb ? rb->GetRigidBody() : nullptr;
+            auto* cb  = hkb ? hkb->GetCollidableRW() : nullptr;
+            if (!cb || !cb->broadPhaseHandle.id) return;        // not in a world -> skip
+            NpcFinger::SetBodyMotionType(hn, wantMt);
+            ++changed;
+        };
+        {
+            auto* cell   = actor->GetParentCell();
+            auto* bworld = cell ? cell->GetbhkWorld() : nullptr;
+            RE::BSReadWriteLock* wl = bworld ? std::addressof(bworld->worldLock) : nullptr;
+            if (wl) wl->LockForWrite();
+            for (int sl = 0; sl < 12; ++sl) { setBody(kSlotNode[sl]); setBody(kSlotNodeL[sl]); }
+            setBody("CharacterBumper");
+            if (wl) wl->UnlockForWrite();
+        }
+        s_kf[id] = want;
+        logger::info("FORCEKF {:08X} -> {} on {} bodies. Keyframed = NOT SOLVED (infinite mass, no "
+                     "gravity, no contacts). If the shake stops here it is made in the physics solve; "
+                     "if it survives, the pose handed to the solve already shakes.",
+                     id, want ? "KEYFRAMED" : "DYNAMIC (restored)", changed);
+    }
+
     void SceneCollisionGate(RE::Actor* actor, std::uint32_t id)
     {
         if (!ObjectHold::BumperSceneOff()) return;
@@ -175,12 +222,63 @@ namespace GrabDiag {
         // left twins, and the bumper. NOTHING is moved or removed — only the collide bit flips, so
         // the pose, the constraints and every capsule's geometry are untouched and the restore is
         // a single bit per body.
+        // ── MODE 2: KEYFRAME, don't blind (2026-08-23) ────────────────────────────────────────
+        // The user's clue: a DD arm binder put Carmella's HANDS behind her back while her arm
+        // CAPSULES stayed at her side. The ragdoll was not following the animation — because
+        // PLANCK had made those bodies MOTION_DYNAMIC, and a dynamic ragdoll must satisfy its
+        // joint LIMITS, which an arms-behind-the-back pose exceeds. The solver parks at the
+        // nearest reachable pose and the collision diverges from what you see.
+        //
+        // An actor's bodies are KEYFRAMED by default (14_Dismemberment §3) — animation-driven,
+        // which in Havok is literally "the velocity is NOT changed by impulses or forces ... has
+        // an INFINITE MASS when viewed by the rest of the system" (hkpMotion.h). PLANCK is what
+        // makes them dynamic, in ModifyConstraints — and crucially that runs ONCE, from
+        // AddRagdollToWorld, NOT per frame. So a keyframe we set afterwards is not fought.
+        //
+        // Keyframed during a scene gives all three things at once, which mode 1 cannot:
+        //   * the body stops being SOLVED — no constraint solve, no contacts, no gravity. It is
+        //     then moved only by the ragdoll drive's servo, so it converges on the animated pose
+        //     instead of being dragged off it by the partner. THAT is what fixes alignment.
+        //     ⛔ NOT "tracks the animation exactly" — that was this comment's original claim and it
+        //     is FALSE under PLANCK. Exact tracking would come from kSyncOnUpdate (collision-object
+        //     flags 137: the engine copies the animated NiNode straight into the body, no solve),
+        //     but PLANCK force-clears that bit EVERY FRAME for every active actor
+        //     (planck_080 main.cpp:4761-4762). So the body follows driveToPose's PD servo
+        //     (hierarchyGain 0.6 / velocityGain 0.6 / positionGain 0.05) — convergent, but LAGGING.
+        //     And because postPhysics writes the ragdoll back into TRACK_POSE, a lagging keyframed
+        //     limb is a lagging VISIBLE limb. See doc 25 §0b.;
+        //   * infinite mass -> the partner cannot shove it and it cannot shove back;
+        //   * COLLISION STAYS ON -> the player can still touch, and the engine-narrowphase path
+        //     (src=ENG) keeps working instead of dropping to geometry-only as it does in mode 1.
+        // Values are this codebase's own: 1 = MOTION_DYNAMIC, 4 = MOTION_KEYFRAMED.
+        const int mode = (int)(ObjectHold::SceneModeSel() + 0.5f);
         int changed = 0;
         auto setBody = [&](const char* nodeName) {
             if (!nodeName) return;
             auto* hn = FindNode(actor, nodeName);
             auto* colObj = hn ? hn->collisionObject.get() : nullptr;
             if (!colObj) return;
+            if (mode == 2) {                       // keyframe / restore-dynamic
+                // ★ 2026-08-25: guard the WORLD. SetMotionType walks into the body's world; at
+                // scene end the 3D can be mid-rebuild and that pointer is null, which is the
+                // `mov rcx, [rax+0x58]` fault. A body not in a world needs no change anyway.
+                auto* rb  = static_cast<RE::bhkCollisionObject*>(colObj)->GetRigidBody();
+                auto* hkb = rb ? rb->GetRigidBody() : nullptr;
+                auto* cb  = hkb ? hkb->GetCollidableRW() : nullptr;
+                if (!cb || !cb->broadPhaseHandle.id) return;
+                // ★ STATE COMPARE (2026-08-25). Mode 1 has always compared before writing; mode 2
+                // did not, so every baked actor in the cell was taking 19 redundant
+                // SetMotionType calls twice a second, forever — each of which is a real engine
+                // call that also rewrites activation and the collision filter. Read first.
+                // Motion type lives at hkpMotion +0x00 (the byte the engine's own accessor reads);
+                // 1 = MOTION_DYNAMIC, 4 = MOTION_KEYFRAMED.
+                const std::uint8_t wantMt = want ? 4u : 1u;
+                const std::uint8_t curMt  = hkb->motion.type.underlying();
+                if (curMt == wantMt) return;              // already there — nothing to do
+                NpcFinger::SetBodyMotionType(hn, wantMt);
+                ++changed;
+                return;
+            }
             auto* body = static_cast<RE::bhkCollisionObject*>(colObj)->GetRigidBody();
             auto* hkp  = body ? body->GetRigidBody() : nullptr;
             auto* col  = hkp ? hkp->GetCollidableRW() : nullptr;
@@ -191,12 +289,234 @@ namespace GrabDiag {
             if (want) filt |= 0x4000u; else filt &= ~0x4000u;
             ++changed;
         };
-        for (int sl = 0; sl < 12; ++sl) { setBody(kSlotNode[sl]); setBody(kSlotNodeL[sl]); }
-        setBody("CharacterBumper");
+        // One lock for the whole sweep, the PLANCK idiom (it wraps AddRagdollToWorld +
+        // ModifyConstraints in a single BSWriteLocker). Cheap: this runs at most twice a second
+        // per actor and only does work on a state change.
+        {
+            auto* cell   = actor->GetParentCell();
+            auto* bworld = cell ? cell->GetbhkWorld() : nullptr;
+            RE::BSReadWriteLock* wl = bworld ? std::addressof(bworld->worldLock) : nullptr;
+            if (wl) wl->LockForWrite();
+            for (int sl = 0; sl < 12; ++sl) { setBody(kSlotNode[sl]); setBody(kSlotNodeL[sl]); }
+            setBody("CharacterBumper");
+            if (wl) wl->UnlockForWrite();
+        }
         if (changed)
-            logger::info("SCENEPHYS {:08X} collision {} on {} bodies (scene {} / excitement {})",
-                         id, want ? "OFF" : "ON", changed, inScene ? 1 : 0, excite);
+            logger::info("SCENEPHYS {:08X} mode {} -> {} on {} bodies (scene {} / excitement {})",
+                         id, mode,
+                         mode == 2 ? (want ? "KEYFRAMED (no solve, infinite mass, still collides; drive still LAGS)"
+                                           : "DYNAMIC (restored)")
+                                   : (want ? "collision OFF" : "collision ON"),
+                         changed, inScene ? 1 : 0, excite);
         s_state[id] = { nowMs, want };
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════════════
+    //  THE BRACE (2026-08-29) — ONE bone keyframed while the player pushes it, rest dynamic.
+    //
+    //  The user's resistance design: "make that capsule infinite mass while the player pushes
+    //  on that node, and make it go 0 when it's not." MOTION_KEYFRAMED is infinite mass, and
+    //  motion type is per RIGID BODY — so one slot can brace while the other 17 stay dynamic.
+    //  The keyframed bone stops responding to contacts/gravity but still follows the drive
+    //  servo, i.e. it holds its ANIMATED location: the pushed surface stops yielding, the
+    //  dynamic neighbours hang off it through their joints (doc 25 §4.1's "drag" — here that
+    //  is the point: the braced bone is the anchor).
+    //
+    //  v0 scope: TRUNK slots only (spine0/spine1/spine2/com). Armed by a hand-class contact
+    //  from the touch snapshot at braceDepthU or deeper; released braceHoldS after the last
+    //  qualifying contact (hysteresis — a flickering contact must not machine-gun the motion
+    //  type). Re-asserted every drive tick with a state compare, because PLANCK restores
+    //  DYNAMIC on every AddRagdollToWorld.
+    //
+    //  ⚠ RELEASE ZEROES BOTH VELOCITIES (doc 25 §4.8): the keyframe servo drives the body via
+    //  real velocities; flip to DYNAMIC without clearing them and the bone pops.
+    //  ⚠ HIGGS-GRAB STAND-DOWN (Report 18 §5): a motorized grab pulling an immovable bone is
+    //  the solver-strain shape. While the player grabs this actor, the brace releases.
+    // ════════════════════════════════════════════════════════════════════════════════════
+    struct BraceState {
+        int    slot     = -1;    // armed slot, -1 = none
+        double lastQual = 0.0;   // last time a qualifying contact was seen
+        double armedAt  = 0.0;
+    };
+    static std::unordered_map<std::uint32_t, BraceState> s_brace;
+
+    // Set/restore one node's motion under the world lock, with the broadphase guard and state
+    // compare. Returns true if the write happened. `zeroVel` clears both velocities (release).
+    static bool BraceSetMotion(RE::Actor* actor, const char* nodeName, bool keyframe, bool zeroVel)
+    {
+        auto* hn = FindNode(actor, nodeName);
+        auto* colObj = hn ? hn->collisionObject.get() : nullptr;
+        if (!colObj) return false;
+        auto* rb  = static_cast<RE::bhkCollisionObject*>(colObj)->GetRigidBody();
+        auto* hkb = rb ? rb->GetRigidBody() : nullptr;
+        auto* cb  = hkb ? hkb->GetCollidableRW() : nullptr;
+        if (!cb || !cb->broadPhaseHandle.id) return false;      // not in a world -> nothing to do
+
+        const std::uint8_t wantMt = keyframe ? 4u : 1u;         // 4 KEYFRAMED / 1 DYNAMIC
+        if (hkb->motion.type.underlying() == wantMt) return false;
+
+        auto* cell   = actor->GetParentCell();
+        auto* bworld = cell ? cell->GetbhkWorld() : nullptr;
+        RE::BSReadWriteLock* wl = bworld ? std::addressof(bworld->worldLock) : nullptr;
+        if (wl) wl->LockForWrite();
+        NpcFinger::SetBodyMotionType(hn, wantMt);
+        if (zeroVel) {
+            hkb->motion.linearVelocity.quad  = _mm_setzero_ps();
+            hkb->motion.angularVelocity.quad = _mm_setzero_ps();
+        }
+        if (wl) wl->UnlockForWrite();
+        return true;
+    }
+
+    static void BraceRelease(RE::Actor* actor, std::uint32_t id, BraceState& b, const char* why,
+                             double nowS)
+    {
+        if (b.slot < 0) return;
+        const char* node = kSlotNode[b.slot];
+        BraceSetMotion(actor, node, false, true);               // DYNAMIC + velocities zeroed
+        logger::info("BRACE {:08X} released {} after {:.1f}s ({})",
+                     id, kSlotName[b.slot], nowS - b.armedAt, why);
+        b = BraceState{};
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════════════
+    //  PUSH-DISPLACEMENT READER (2026-08-29, PushWalk v3) — per trunk slot, the horizontal
+    //  vector from the XP32 node's animated position to the rigid body's actual position:
+    //  the direction the player's push physically moved the bone. PushWalk retreats along it.
+    //  ⚠ A BRACED (keyframed) bone does not displace — that is the brace's whole job — so the
+    //  consumer picks the displaced-most trunk bone and falls back to the player vector when
+    //  everything is pinned. Updated per drive, gated on the pushStep knob; ~5 node reads.
+    // ════════════════════════════════════════════════════════════════════════════════════
+    // v3.1: raw + LEARNED BASELINE. Doc 25 §8.3: the body rests at a constant offset from its
+    // node (trunk capsules sit FORWARD of the spine nodes), so the raw gap is anatomy, not push
+    // — raw-only made her retreat toward her own front, i.e. AT the player. The baseline is a
+    // slow EMA updated only near rest (|raw-base| < 1u), so a sustained push cannot absorb into
+    // it; displacement = raw - baseline. Warmup 90 samples (~1s) before the accessor trusts it.
+    struct PushDisp { float dx, dy; float baseDx, baseDy; int samples; };
+    static std::unordered_map<std::uint64_t, PushDisp> s_pushDisp;   // key = (id<<8)|slot
+    static std::mutex s_pushDispMx;
+
+    static void PushDisplacementTick(RE::Actor* actor, std::uint32_t id)
+    {
+        if (!ObjectHold::PushStepEnabled()) return;
+        static constexpr int kSlots[5] = { 4, 5, 6, 11, 8 };   // spine0/1/2, com, thighR
+        for (int k = 0; k < 5; ++k) {
+            const int sl = kSlots[k];
+            auto* hn = FindNode(actor, kSlotNode[sl]);
+            auto* colObj = hn ? hn->collisionObject.get() : nullptr;
+            if (!colObj) continue;
+            auto* rb  = static_cast<RE::bhkCollisionObject*>(colObj)->GetRigidBody();
+            auto* hkb = rb ? rb->GetRigidBody() : nullptr;
+            if (!hkb) continue;
+            const auto& t = hkb->motion.motionState.transform.translation;
+            const float bx = t.quad.m128_f32[0] * kHavokToSkyrim;
+            const float by = t.quad.m128_f32[1] * kHavokToSkyrim;
+            const float dx = bx - hn->world.translate.x;
+            const float dy = by - hn->world.translate.y;
+            std::scoped_lock lk(s_pushDispMx);
+            if (s_pushDisp.size() > 512) s_pushDisp.clear();
+            auto& d = s_pushDisp[(std::uint64_t(id) << 8) | (unsigned)sl];
+            d.dx = dx; d.dy = dy;
+            const float rx = dx - d.baseDx, ry = dy - d.baseDy;
+            if (d.samples < 90 || (rx * rx + ry * ry) < 1.0f) {   // learn at rest, hold under push
+                d.baseDx += 0.02f * (dx - d.baseDx);
+                d.baseDy += 0.02f * (dy - d.baseDy);
+                if (d.samples < 1000) ++d.samples;
+            }
+        }
+    }
+
+    void BraceTick(RE::Actor* actor, std::uint32_t id)
+    {
+        {   // knob receipt, once per state change
+            static int s_last = -1;
+            const int en = ObjectHold::BraceEnabled() ? 1 : 0;
+            if (en != s_last) {
+                s_last = en;
+                logger::info("BRACE knob -> {} (brace {})", en ? "ARMED" : "off", en);
+            }
+        }
+        const double nowS = std::chrono::duration_cast<std::chrono::duration<double>>(
+                                std::chrono::steady_clock::now().time_since_epoch()).count();
+        if (s_brace.size() > 512) s_brace.clear();
+        auto& b = s_brace[id];
+
+        if (!ObjectHold::BraceEnabled()) { BraceRelease(actor, id, b, "knob off", nowS); return; }
+        if (HandBox::IsSceneSuspended()) { BraceRelease(actor, id, b, "scene running", nowS); return; }
+        if (Interop::IsActorGrabbedByPlayer(actor)) {
+            if (b.slot >= 0)
+                logger::info("BRACE {:08X} STAND-DOWN: HIGGS is holding this actor (Report 18 §5)", id);
+            BraceRelease(actor, id, b, "HIGGS grab", nowS);
+            return;
+        }
+
+        // Deepest hand-class contact on a TRUNK slot of THIS actor, at braceDepthU or deeper.
+        // ⛔ ARM ON CONTACT, NOT PENETRATION (fixed 2026-08-29 after the first VR test). The v0
+        // gate required distU < -0.3 (genuinely inside). Measured: a real trunk press reads
+        // d = +0.3..+1.2u, because the DYNAMIC capsule YIELDS away from the hand and keeps the
+        // separation near zero — the flimsiness the brace exists to cure is what kept it from
+        // ever arming. Touching the trunk is the trigger; the brace then makes depth possible.
+        PPBAPI::PpbTouchContact c[32];
+        const int n = PpbApi::CopyContacts(c, 32);
+        const float nearU = ObjectHold::BraceNearU();           // arm when distU <= this
+        int   bestSlot = -1; float bestD = -1e9f; float bestDist = 0.f; const char* bestPart = "";
+        for (int i = 0; i < n; ++i) {
+            if (c[i].actorFormId != id) continue;
+            if (c[i].sourceKind > 3) continue;                  // finger/palm/fist/hand only
+            if (c[i].distU > nearU) continue;                   // touching / pressed / inside
+            const bool trunk = c[i].slot == 4 || c[i].slot == 5 || c[i].slot == 6 || c[i].slot == 11;
+            if (!trunk) continue;
+            const float d = nearU - c[i].distU;                 // closer/deeper ranks higher
+            if (d > bestD) { bestD = d; bestSlot = c[i].slot; bestDist = c[i].distU; bestPart = c[i].bodyPart; }
+        }
+
+        // ── WHY-NOT RECEIPT (2026-08-29): the first two VR tests produced silent no-fires and
+        // the log could not say which condition ate the contact. While ANY hand-class contact
+        // exists on this actor but no arm happens, print a 2s-throttled digest of what the scan
+        // actually saw. A guard that can veto a feature must say so. (Same lesson, third time.)
+        if (bestSlot < 0) {
+            int nAct = 0, nHand = 0, nTrunk = 0; float minD = 1e9f; int seenSlot = -1;
+            for (int i = 0; i < n; ++i) {
+                if (c[i].actorFormId != id) continue;
+                ++nAct;
+                if (c[i].sourceKind > 3) continue;
+                ++nHand;
+                if (c[i].distU < minD) { minD = c[i].distU; seenSlot = c[i].slot; }
+                if (c[i].slot == 4 || c[i].slot == 5 || c[i].slot == 6 || c[i].slot == 11) ++nTrunk;
+            }
+            if (nHand > 0) {
+                static std::unordered_map<std::uint32_t, double> s_whyLast;
+                if (s_whyLast.size() > 512) s_whyLast.clear();
+                double& last = s_whyLast[id];
+                if (nowS - last > 2.0) {
+                    last = nowS;
+                    logger::info("BRACE {:08X} scan, NO ARM: snapshot={} thisActor={} handClass={} "
+                                 "trunkSlots={} closest d={:+.2f}u on slot {} (nearU {:.2f})",
+                                 id, n, nAct, nHand, nTrunk,
+                                 minD < 1e8f ? minD : 99.f, seenSlot, nearU);
+                }
+            }
+        }
+
+        if (bestSlot >= 0) {
+            b.lastQual = nowS;
+            if (b.slot != bestSlot) {
+                BraceRelease(actor, id, b, "brace moved to another slot", nowS);
+                b.slot = bestSlot; b.armedAt = nowS;
+                BraceSetMotion(actor, kSlotNode[bestSlot], true, false);
+                logger::info("BRACE {:08X} ARMED {} — '{}' at d={:.2f}u; bone is now "
+                             "INFINITE MASS (keyframed), rest of the body stays dynamic",
+                             id, kSlotName[bestSlot], bestPart, bestDist);
+            } else {
+                // re-assert: PLANCK restores DYNAMIC on every ragdoll re-add. State compare
+                // inside makes this free when nothing changed.
+                BraceSetMotion(actor, kSlotNode[b.slot], true, false);
+            }
+        } else if (b.slot >= 0 && nowS - b.lastQual > ObjectHold::BraceHoldS()) {
+            BraceRelease(actor, id, b, "contact released", nowS);
+        } else if (b.slot >= 0) {
+            BraceSetMotion(actor, kSlotNode[b.slot], true, false);   // hold through the hysteresis gap
+        }
     }
 
     // Same chain from an ALREADY-RESOLVED node (no name search, no string interning) — the per-frame
@@ -234,6 +554,51 @@ namespace GrabDiag {
     // list-child shape key, so a weapon hit needs no geometric reconstruction; the main thread
     // just has to map those pointers back to (actor, slot, side). Same walk as GetNodeCapsule,
     // stopping one step earlier. NEVER allocates.
+    constexpr float kSkyrimToHavokCF = 0.0142875f;
+
+    // ★ v9.7 KNOCKDOWN SETTLE (2026-08-30, "straight to the ceiling with a sword"). When an
+    // actor is knocked down with the player's blade/hand DEEP INSIDE her (a sword measured
+    // -2.48u into the chest), her bodies go dynamic while massively overlapping an infinite-mass
+    // object; the solver's separation impulse launches her. For a short window after the
+    // knockdown we cap every body's speed, so the overlap resolves as a collapse instead of a
+    // catapult. Same world-lock + raw-motion idiom the Brace's velocity zeroing already uses.
+    int ClampRagdollSpeed(RE::Actor* actor, float maxU)
+    {
+        if (!actor || maxU <= 0.f) return 0;
+        auto* cell   = actor->GetParentCell();
+        auto* bworld = cell ? cell->GetbhkWorld() : nullptr;
+        RE::BSReadWriteLock* wl = bworld ? std::addressof(bworld->worldLock) : nullptr;
+        const float maxH  = maxU * kSkyrimToHavokCF;      // game u/s -> havok m/s
+        const float maxH2 = maxH * maxH;
+        int clamped = 0;
+        if (wl) wl->LockForWrite();
+        for (int slot = 0; slot < 12; ++slot) {
+            for (int side = 0; side < 2; ++side) {
+                auto* hkb = static_cast<RE::hkpRigidBody*>(SlotBodyRaw(actor, slot, side != 0));
+                if (!hkb) continue;
+                alignas(16) float v[4];
+                _mm_store_ps(v, hkb->motion.linearVelocity.quad);
+                const float m2 = v[0]*v[0] + v[1]*v[1] + v[2]*v[2];
+                if (m2 > maxH2 && m2 > 1e-9f) {
+                    const float k = maxH / std::sqrt(m2);
+                    v[0] *= k; v[1] *= k; v[2] *= k;
+                    hkb->motion.linearVelocity.quad = _mm_load_ps(v);
+                    ++clamped;
+                }
+                alignas(16) float w[4];
+                _mm_store_ps(w, hkb->motion.angularVelocity.quad);
+                const float w2 = w[0]*w[0] + w[1]*w[1] + w[2]*w[2];
+                if (w2 > 400.f) {                        // ~20 rad/s, a violent spin
+                    const float k = 20.f / std::sqrt(w2);
+                    w[0] *= k; w[1] *= k; w[2] *= k;
+                    hkb->motion.angularVelocity.quad = _mm_load_ps(w);
+                }
+            }
+        }
+        if (wl) wl->UnlockForWrite();
+        return clamped;
+    }
+
     void* SlotBodyRaw(RE::Actor* actor, int slot, bool left)
     {
         if (!actor || slot < 0 || slot >= 12) return nullptr;
@@ -612,6 +977,12 @@ namespace GrabDiag {
         float headRaw = 0.f, headRef = 0.f;            // head measure + the matching reference
         int   headSrc = 0;                             // 0 none / 1 bound(diam) / 2 verts(depth)
         bool  latched = false;
+        // ★ 2026-09-03: `latched` alone could not distinguish "measured her" from "tried and
+        // failed", which permanently froze any actor whose first sample failed. These three
+        // separate the two and bound the retry.
+        bool  measOk    = false;   // a landmark set was actually cached
+        int   measTries = 0;       // failed attempts so far (retry stops at 6)
+        std::chrono::steady_clock::time_point nextTry{};   // earliest next attempt
         // ROUTE B (2026-07-18, review-reworked): RAW sampled girths (0 = that band failed) —
         // ratios resolve at READ time against the live meshNeutral*/clamp/master knobs, honoring
         // the struct's own raw-reads doctrine. Per-REGION validity: one failed band no longer
@@ -770,7 +1141,7 @@ namespace GrabDiag {
         bool  ok   = false;
     };
     static bool SampleBoneBands(RE::Actor* actor, std::uint32_t id, BoneBands& out, bool verbose,
-                                const RE::BSGeometry* exclude = nullptr);
+                                const RE::BSGeometry* const* exclude = nullptr, int nExclude = 0);
 
     // ── v3 VERTEX SOURCE (2026-07-18c, the in-game FINDING #2 fix): VR bodies are STATIC
     // BSTriShapes — RaceMenu/OBody morphs regenerate the RAW RENDER VERTEX BUFFER; the
@@ -946,8 +1317,16 @@ namespace GrabDiag {
 
     // The body = the largest readable trishape with a BODY-LIKE HEIGHT (z-span ~100u vs a head's
     // ~25u vs origin-centered garment spaces). verbose=true logs every candidate + its source.
+    // ★ 2026-09-03: `exclude` widened from ONE pointer to a LIST so the caller can walk DOWN the
+    // candidates largest-first (the Carmella case: boot chains 37,712 > FakeOverlay 16,247 >
+    // her real body 15,460). A single pointer could only skip one mesh and then re-picked the
+    // original winner on the next try.
+    static bool IsExcluded(const RE::BSGeometry* g, const RE::BSGeometry* const* ex, int nEx) {
+        for (int i = 0; i < nEx; ++i) if (ex[i] == g) return true;
+        return false;
+    }
     static bool FindBodyMesh(RE::Actor* actor, BodyMesh& out, bool verbose = false,
-                             const RE::BSGeometry* exclude = nullptr)
+                             const RE::BSGeometry* const* exclude = nullptr, int nExclude = 0)
     {
         auto* root = actor ? actor->Get3D() : nullptr;
         if (!root) return false;
@@ -955,9 +1334,9 @@ namespace GrabDiag {
         int bestN = 4000;                                  // reject anything smaller than a body
         const RE::NiPoint3 anchor = root->world.translate; // the ACTOR's world position
         struct Rec {
-            static void Walk(RE::NiAVObject* obj, const RE::NiPoint3& anchor, BodyMesh& best, int& bestN, bool verbose, int depth, const RE::BSGeometry* exclude) {
+            static void Walk(RE::NiAVObject* obj, const RE::NiPoint3& anchor, BodyMesh& best, int& bestN, bool verbose, int depth, const RE::BSGeometry* const* exclude, int nExclude) {
                 if (!obj || depth > 40) return;
-                if (auto* geom = obj->AsGeometry(); geom && geom != exclude) {
+                if (auto* geom = obj->AsGeometry(); geom && !IsExcluded(geom, exclude, nExclude)) {
                     // 2026-07-19 WRONG-MESH fixes: (1) "*Overlay*"/"*Ovl*" shapes are RaceMenu
                     // proxies (FakeOverlay = shared template; Body [Ovl0] = overlay layer with a
                     // PARKED world transform — its marker landed 2000u away). (2) TRANSFORM gate:
@@ -1000,10 +1379,10 @@ namespace GrabDiag {
                 }
                 if (auto* node = obj->AsNode())
                     for (auto& c : node->GetChildren())
-                        if (auto* cp = c.get()) Walk(cp, anchor, best, bestN, verbose, depth + 1, exclude);
+                        if (auto* cp = c.get()) Walk(cp, anchor, best, bestN, verbose, depth + 1, exclude, nExclude);
             }
         };
-        Rec::Walk(root, anchor, out, bestN, verbose, 0, exclude);
+        Rec::Walk(root, anchor, out, bestN, verbose, 0, exclude, nExclude);
         return out.geo != nullptr;
     }
 
@@ -2169,6 +2548,20 @@ namespace GrabDiag {
         return true;
     }
 
+    // ══ BREAST CUP EXPORT (2026-09-03, VRTE_API_Change_Request_BreastTouchReach) ═══════════════
+    // The measured vertical extent of this actor's mound (|brUp - brDn|), the same driver the
+    // radius model consumes. The touch engine needs it because the radius SATURATES at
+    // lmBrCupSat 10.40 while the flesh keeps growing — above the clamp the capsule stops
+    // tracking the body entirely, and the contact test has to make up the difference. Returns 0
+    // when this actor has no latched landmark set (never measured, or the set was rejected).
+    // ⚠ READ-ONLY and cheap: one map lookup, no sampling, no side effects.
+    float BreastCupOf(std::uint32_t actorId)
+    {
+        auto it = s_regionRatio.find(actorId);
+        if (it == s_regionRatio.end() || !it->second.latched || !it->second.lmBreastOk) return 0.f;
+        return it->second.lmCup;
+    }
+
     // ══ LANDMARK BUTT FIT (2026-07-22) ══════════════════════════════════════════════════════════
     // Where this actor's cheek capsule must move relative to the neutral. Her butt_cheek landmark is
     // a REAL VERTEX ON HER SKIN found by UV, so there is no girth statistic, no neutral mesh and no
@@ -2441,6 +2834,9 @@ namespace GrabDiag {
         if (male && ObjectHold::MaleGeometryMode() != 1) {
             RegionData md;
             md.latched = true;
+            md.measOk  = true;   // AUDIT FIX 2026-09-04: this record IS the intended final state -
+                                 // without it retryDue fired every tick (re-latch + full re-dress
+                                 // + two log lines per male, forever) whenever maleGeometry == 2
             md.male    = true;
             s_regionRatio[id] = md;
             // never a silent exit (ledger rule): one line says WHY his ReShape is inert
@@ -2508,6 +2904,73 @@ namespace GrabDiag {
                                                             // the male head — female-only for now
             BoneBands bb;
             bool bbOk = SampleBoneBands(actor, id, bb, false);
+            // ★★ WALK DOWN THE CANDIDATES (2026-09-03, user spec — the Carmella case).
+            //   "if the UV mesh is way off like that, go down to the next biggest mesh that got a
+            //    minimum 10 out of 11 successes for point recognition, then use that. Instead of
+            //    'don't fit, stop trying'."
+            // FindBodyMesh is LARGEST-READABLE-WINS, and an accessory can simply be bigger than the
+            // skin: Carmella's BOOT CHAINS ('Chains', 37,712 verts) beat her body ('Softbody',
+            // 15,460) every time — dressed, undressed, and on all four OBody re-measures. Every
+            // landmark then missed by 0.39-0.67 (gate 0.02) and she silently got no ReShape.
+            //   The pass criterion is the LANDMARK COUNT, not the dressed-mesh guard alone: a mesh
+            // that resolves nearly every anatomical address is a body-layout surface, whether it is
+            // skin or a skin-tight outfit — and measuring the outfit is CORRECT (user ruling): the
+            // capsules then sit on the surface you actually see and touch. Threshold = all defined
+            // landmarks minus one, computed from the sex's table (the male table has no breast rows,
+            // so a fixed "10 of 11" would refuse every man).
+            //   Bounded: at most 6 candidates. Each failed try costs one FindBodyMesh walk; on a
+            // ~40-shape actor that is ~2-4 ms, so the worst case is a one-off ~20 ms on first sight.
+            // ⛔ AUDIT FIX (2026-09-04, five-lens review, CONFIRMED x4): the first version kept the
+            // LAST candidate, not the BEST, and treated a legitimately PARTIAL body (a BodySlide
+            // cuirass whose embedded body zaps the upper arms: 9/11) as a wrong mesh - so a 9/11
+            // body followed by any failing mesh ended with NOTHING cached, where before today she
+            // had chest/belly/waist/butt/breast/thigh from the nine good landmarks.
+            //   Two criteria, deliberately different:
+            //   * WALK criterion = "this is not a body-layout surface at all": fewer than
+            //     kBodyFloor accepted landmarks - the ARMOR-CHECK's own floor (its wrong-mesh
+            //     verdict needs >= 4 accepted). Chains scored 0/11; a partial body scores 9.
+            //   * STOP criterion = the user's "10 of 11": at need = defined-1 we are done.
+            //   Between the two we keep looking but never DOWNGRADE: a candidate only replaces the
+            // best-so-far if it resolves MORE landmarks, and once a body (>= floor) is held, two
+            // consecutive not-better candidates end the walk - accessories never beat skin twice.
+            // bbOk (the sparse-ring girth guard) no longer vetoes a real landmark set - the
+            // landmarks ARE the criterion, as the comment already claimed and the code did not do.
+            const RE::BSGeometry* excl[6] = {};
+            int nExcl = 0;
+            {
+                const auto accepted = [](const BoneBands& b) {
+                    int n = 0; for (int i = 0; i < kNumUvLandmarks; ++i) if (b.lmOk[i]) ++n; return n;
+                };
+                constexpr int kBodyFloor = 4;
+                const bool maleT = IsMaleShape(actor);   // the same sex route the latch uses
+                int defined = 0;
+                for (int m = 0; m < kNumUvLandmarks; ++m)
+                    if ((maleT ? kUvLandmarksMale[m].u : kUvLandmarks[m].u) >= 0.f) ++defined;
+                const int need = defined > 1 ? defined - 1 : defined;
+
+                BoneBands best = bb; bool bestOk = bbOk; int bestN = bb.geo ? accepted(bb) : -1;
+                const RE::BSGeometry* cur = bb.geo;
+                int tries = 0, notBetterRun = 0;
+                while (cur && bestN < need && nExcl < 6 && tries < 6) {
+                    ++tries;
+                    excl[nExcl++] = cur;
+                    BoneBands bbR;
+                    const bool okR = SampleBoneBands(actor, id, bbR, false, excl, nExcl);
+                    const int  nR  = bbR.geo ? accepted(bbR) : -1;
+                    const bool better = nR > bestN;
+                    logger::info("BodyScale {:08X} '{}' resolved {}/{} landmarks -> next candidate '{}' "
+                                 "resolved {}/{}{}", id, cur->name.c_str(), bestN < 0 ? 0 : bestN, defined,
+                                 bbR.geo ? bbR.geo->name.c_str() : "(none)", nR < 0 ? 0 : nR, defined,
+                                 better ? (nR >= need ? " -> ACCEPTED" : " -> better, kept looking")
+                                        : " -> not better, discarded");
+                    if (!bbR.geo) break;                        // nothing left to try
+                    if (better) { best = bbR; bestOk = okR; bestN = nR; notBetterRun = 0; }
+                    else if (++notBetterRun >= 2 && bestN >= kBodyFloor) break;
+                    cur = bbR.geo;
+                }
+                bb   = best;
+                bbOk = bestOk || (bestN >= kBodyFloor);         // landmarks are the criterion
+            }
             // ── DECOY DETECTION (2026-07-23, the Faralda 17:57 case): her outfit carried an
             // embedded reference body FROZEN AT BASE SHAPE, and biggest-mesh-wins picked it over
             // her real morphed skin. It passes every gate — genuine body, perfect UVs, clean
@@ -2530,7 +2993,13 @@ namespace GrabDiag {
                 }
                 if (baseFrozen) {
                     BoneBands bb2;
-                    if (SampleBoneBands(actor, id, bb2, false, bb.geo) && bb2.lmOk[kLmNipple]) {
+                    // AUDIT FIX (2026-09-04): carry the walk-down's exclusion list too, or the decoy
+                    // re-sample re-finds the accessory the walk-down just rejected.
+                    const RE::BSGeometry* ex2[7] = {};
+                    int nEx2 = 0;
+                    for (int q = 0; q < nExcl; ++q) ex2[nEx2++] = excl[q];
+                    ex2[nEx2++] = bb.geo;
+                    if (SampleBoneBands(actor, id, bb2, false, ex2, nEx2) && bb2.lmOk[kLmNipple]) {
                         float nt[3]; ObjectHold::LmNeutralPos(kLmNipple, nt);
                         const bool moved = std::fabs(bb2.lmPos[kLmNipple][0] - nt[0]) > 0.05f ||
                                            std::fabs(bb2.lmPos[kLmNipple][1] - nt[1]) > 0.05f ||
@@ -2685,6 +3154,26 @@ namespace GrabDiag {
         // landmarks replaced it outright: a UV coordinate is the same anatomical point on
         // CBBE / 3BA / Softbody, so there is nothing left for a fingerprint to disambiguate
         // and no band that can collapse. If the landmarks fail, ReShape does nothing.
+        // ★ `latched` means "the sampler RAN", never "it SUCCEEDED" — and the 1 Hz caller only
+        // runs the latch while !latched, so a failed measure froze that actor for the session.
+        // Record the verdict honestly and carry a bounded retry budget forward, so an actor who
+        // failed for a transient reason (mid-load 3D, an outfit that later comes off) gets
+        // another look, while a genuinely non-CBBE body stops costing ~4 ms after six tries.
+        // ⛔ Do NOT simply leave `latched` false on failure: that re-runs the whole ~4 ms latch
+        // (tree walk + disk facegen read) every second, forever, for that actor.
+        {
+            auto pit = s_regionRatio.find(id);
+            const int prevTries = (pit != s_regionRatio.end()) ? pit->second.measTries : 0;
+            // measOk = "a BODY was measured": a landmark set was cached AND it resolved at least
+            // the ARMOR-CHECK floor. (AUDIT FIX 2026-09-04: it used to mirror the girth gate, so a
+            // final candidate with 0-4 usable landmarks was recorded as a success and never retried.)
+            int nAcc = 0; for (int i = 0; i < kNumUvLandmarks; ++i) if (d.lmOk[i]) ++nAcc;
+            d.measOk    = v2done && nAcc >= 4;
+            d.measTries = prevTries + 1;
+            const int shift = (d.measTries < 6) ? d.measTries : 6;      // 10,20,40,80,160,320 s
+            d.nextTry   = std::chrono::steady_clock::now() +
+                          std::chrono::seconds(10LL << (shift - 1));
+        }
         d.latched = true;
         s_regionRatio[id] = d;
         // Log the raw reads + the currently-resolved ratios (factor/clamp live) so the user can verify + tune.
@@ -2851,7 +3340,36 @@ namespace GrabDiag {
             // how all three male skeletons were sculpted. npcCap (per-NPC layer) stays male-legal.
             const bool gateOn   = *ObjectHold::SculptTarget() != 0;
             const bool maleBank = IsMaleShape(actor) && !gateOn;
-            const bool haveKnob = sculptOk && !maleBank &&
+            // ★★ FEMALE-ONLY ANATOMY (2026-09-03, user ruling). spine2 C11/C12 are the BREAST
+            // capsules. All three male nifs deliberately ship them as BURIED SEEDS — r 0.5 rods
+            // parked at (0,5,0)->(0,5,2), fully inside the C0 chest ring — because a man has no
+            // breasts and deleting them outright was not an option: they sit mid-list, so removing
+            // them would reindex C13..C18 and break every capSpine2C* knob and every published API
+            // name above them. Burial is the correct neutralisation; this keeps it PERMANENT.
+            //   THE HOLE THIS CLOSES, stated honestly: `maleBank` above already refuses the whole
+            // female bank for males in normal play and under a female sculpt gate — so this is NOT
+            // load-bearing for a shipped game. It closes the ONE window `maleBank` deliberately
+            // leaves open: a MALE sculpt session (`sculpt skeleton.nif`), where banks are meant to
+            // apply. In that session these two knobs are `Enable 1` carrying the female breast
+            // geometry (A 3.67,4.75,9.30 -> B 4.67,8.75,9.30 r 3.00), so they would silently
+            // un-bury his chest seeds into 3u breasts, and whoever bakes afterwards has to
+            // remember to re-bury them. That manual step is how male breasts would ship; the
+            // engine should not need a human to remember it.
+            //   ⚠ npcCap is deliberately NOT gated: a per-NPC line is an explicit instruction
+            // about one named actor (a futa/gentlewoman build), not the global bank leaking.
+            const bool femaleOnly = (slot == 6 && (i == 11 || i == 12)) && IsMaleShape(actor);
+            if (femaleOnly) {
+                // every refusal speaks — a silent skip mid-dial reads as "the knob is broken"
+                static std::chrono::steady_clock::time_point s_lastFo{};
+                const auto nowFo = std::chrono::steady_clock::now();
+                if (nowFo - s_lastFo > std::chrono::seconds(10)) {
+                    s_lastFo = nowFo;
+                    logger::info("CapFix {:08X} {}: BREAST child on a MALE — global knob refused, "
+                                 "baked seed left buried (female-only anatomy; use npcCap to "
+                                 "override for one named actor)", id, label);
+                }
+            }
+            const bool haveKnob = sculptOk && !maleBank && !femaleOnly &&
                                   ObjectHold::CapFixChildSlot(slot, static_cast<int>(i), a, b, r);
             const bool haveNpc  = ObjectHold::NpcCapOverride(npcBaseId, slot, static_cast<int>(i), a, b, &r);
             if (!haveKnob && !haveNpc) {
@@ -2994,6 +3512,38 @@ namespace GrabDiag {
             // ReShape == ReScale (2026-07-19c): measured shape scales radial endpoints + radius
             // exactly like es; slider mode stays radius-only (legacy). See ApplyScaleShape.
             ApplyScaleShape(actor, slot, static_cast<int>(i), a, b, &r);
+            // ★ HEAD RATIO ON THE KNOB PATH (AUDIT FIX 2026-09-04, doc 08 C4 was LIVE, not latent).
+            // The head channel (nose->chin vs neutral, from the disk facegen) used to land ONLY in
+            // the knobless branch below - written when the head had no knobs. Every human head
+            // child has carried a knob since the 2026-07-19 seed extension (capHeadEnable +
+            // C1..C24 all 1 in the live file), so haveKnob is true for all 25 and the ratio never
+            // reached a single human-female head capsule; "region=head ratio=1.029" printed while
+            // the face stayed put. Same rules as the knobless branch, restated with es present:
+            //   * FULL 3D incl. Z (the head is the end of the chain, not a ring);
+            //   * scale about the XP32 HEAD NODE - which sits kHeadBodyFrameZOffset above the
+            //     capsule frame - so node-centred scaling keeps the capsules ON the face;
+            //   * the knob values are scale-1 dial values and ApplyScaleShape just multiplied
+            //     them by es, so the node sits at z = offset x es in this frame. The knobless
+            //     branch reads a LIVE (already-engine-scaled) shape and therefore omits es; the
+            //     two paths agree by construction.
+            //   * LmIndexForRegion(kHead) is -1, so ApplyScaleShape never touched the head and
+            //     there is no double application.
+            if (slot == 3) {
+                const float hr = BodyScaleRegionRatio(actor, 3, static_cast<int>(i));
+                if (std::fabs(hr - 1.f) > 0.005f) {
+                    const float cz = kHeadBodyFrameZOffset * CapScaleOf(actor);
+                    for (int ax = 0; ax < 3; ++ax) {
+                        const float cc = (ax == 2) ? cz : 0.f;
+                        a[ax] = cc + (a[ax] - cc) * hr;
+                        b[ax] = cc + (b[ax] - cc) * hr;
+                    }
+                    r *= hr;
+                    static std::atomic<int> s_headKnobSaid{ 0 };
+                    if (s_headKnobSaid.exchange(1) == 0)
+                        logger::info("CapFix {:08X}: head ratio {:.3f} applied on the KNOB path (first time this "
+                                     "session) - the head channel now reaches knobbed head capsules", id, hr);
+                }
+            }
             // DEGENERATE GUARD (the June lesson): A==B collides fine but is INVISIBLE to the visualizer.
             if (std::fabs(a[0]-b[0]) < 0.01f && std::fabs(a[1]-b[1]) < 0.01f && std::fabs(a[2]-b[2]) < 0.01f)
                 b[2] += 0.15f;
@@ -3353,6 +3903,127 @@ namespace GrabDiag {
         return true;
     }
 
+    // ══ THE HELD OBJECT'S REAL COLLISION BOX (2026-09-03) ═══════════════════════════════════════
+    // User ruling: "the collision box of the object is what need to be used, not the mesh. If the
+    // collision box is bigger, that's what will contact with the NPC, and lots of armors got really
+    // loose collision box on their ground model."
+    //
+    // WHY THIS EXISTS. Every other object probe describes a held item as a POINT plus an inflated
+    // pad (worldBound sphere, capped at objectPadMaxU 8u) or as a thin segment from the form's OBND
+    // record. Both are dishonest about a big item: a full armour ~50u across, resting a CORNER on
+    // her chest, has its ORIGIN ~25u away, so PPB reported no contact at all and the equip gesture
+    // could never fire ("no PPB OBJECT contacts (0 total in snapshot)", 45 times in one session).
+    // Inflating the sphere instead is what the 8u cap was invented to stop — a yoke's ~30u bound
+    // engulfed her whole body and every capsule tied for nearest. A sphere cannot serve both. A BOX
+    // can: it is big where the item is big and small where it is small, so there is nothing to cap.
+    //
+    // ⚠ THE SHAPE, NOT THE FORM. OBND is authored data that mod authors frequently never
+    // recalculate (PPB's own weapon probe says so). The Havok shape is what the engine actually
+    // collides with, which is exactly what the ruling asks for.
+    // ⚠ BORROWED POINTER. HIGGS hands back a raw pointer out of a NiPointer with no refcount, and
+    // the body dies with the object's 3D on a cell change. Same-frame use only — never cache the
+    // bhkRigidBody, the hkpRigidBody or the hkpShape across frames.
+    // ⚠ READ-ONLY. That shape belongs to the world and to everything else colliding with it.
+    // Shared body -> world box reader (2026-09-06). The object path is the 09-03 logic unchanged;
+    // the hand-slab path reuses it with HIGGS's hand body and its own sanity cap.
+    static bool BodyBoxU(const void* ni, ObjBoxU& out, float capU, const char* what,
+                         std::atomic<int>& logged)
+    {
+        if (!ni) return false;
+        auto* hkp = *reinterpret_cast<RE::hkpRigidBody**>(reinterpret_cast<std::uintptr_t>(ni) + 0x10);
+        if (!hkp || (reinterpret_cast<std::uintptr_t>(hkp) & 7) != 0) return false;
+        auto* col = hkp->GetCollidableRW();
+        const RE::hkpShape* shape = col ? col->shape : nullptr;
+        if (!shape || (reinterpret_cast<std::uintptr_t>(shape) & 7) != 0) return false;
+
+        // LOCAL AABB via the shape's own virtual, identity transform in -> local box out. This is
+        // vtable slot 07 and it is what HIGGS itself calls on a live shape every placement frame,
+        // on the main thread. Going through the engine means ZERO layout guessing: a census of 372
+        // ground models on this rig found 278 convexVertices / 89 box / 4 list / 1 capsule and no
+        // MOPP, but the exotic tail (kConvexTransform / kConvexTranslate) has no CommonLibVR header
+        // at all, and guessing that layout is how plugins crash.
+        alignas(16) RE::hkTransform ident{};
+        ident.rotation.col0.quad = _mm_setr_ps(1.f, 0.f, 0.f, 0.f);
+        ident.rotation.col1.quad = _mm_setr_ps(0.f, 1.f, 0.f, 0.f);
+        ident.rotation.col2.quad = _mm_setr_ps(0.f, 0.f, 1.f, 0.f);
+        ident.translation.quad   = _mm_setzero_ps();
+        alignas(16) RE::hkAabb ab{};
+        shape->GetAabbImpl(ident, 0.f, ab);
+        alignas(16) float amin[4], amax[4];
+        _mm_store_ps(amin, ab.min.quad);
+        _mm_store_ps(amax, ab.max.quad);
+
+        float lc[3], he[3];
+        for (int i = 0; i < 3; ++i) {
+            lc[i] = (amax[i] + amin[i]) * 0.5f;
+            he[i] = (amax[i] - amin[i]) * 0.5f;
+            if (!(he[i] == he[i])) return false;                 // NaN shape -> keep the old path
+        }
+
+        // body world transform — the ReadCapsuleWorldUSide / WeaponSegmentU math, verbatim
+        alignas(16) float t[4], c0[4], c1[4], c2[4];
+        const auto& ms = hkp->motion.motionState.transform;
+        _mm_store_ps(t,  ms.translation.quad);
+        _mm_store_ps(c0, ms.rotation.col0.quad);
+        _mm_store_ps(c1, ms.rotation.col1.quad);
+        _mm_store_ps(c2, ms.rotation.col2.quad);
+        float pos[3], R[9];
+        for (int i = 0; i < 3; ++i) pos[i] = t[i] * kHavokToSkyrim;
+        R[0]=c0[0]; R[1]=c1[0]; R[2]=c2[0];
+        R[3]=c0[1]; R[4]=c1[1]; R[5]=c2[1];
+        R[6]=c0[2]; R[7]=c1[2]; R[8]=c2[2];
+
+        for (int i = 0; i < 3; ++i) {
+            out.h[i] = he[i] * kHavokToSkyrim;
+            out.c[i] = pos[i] + (R[i*3+0]*lc[0] + R[i*3+1]*lc[1] + R[i*3+2]*lc[2]) * kHavokToSkyrim;
+        }
+        for (int i = 0; i < 9; ++i) out.R[i] = R[i];
+
+        // SANITY, in SlabWrite's spirit: a garbage box must never become a body-sized collider.
+        // Below the floor the item is genuinely tiny and the old sphere is the honest description;
+        // above the ceiling something is wrong and we refuse rather than engulf her.
+        const float cap = capU;
+        for (int i = 0; i < 3; ++i) {
+            if (out.h[i] < 0.05f) return false;
+            if (cap > 0.f && out.h[i] > cap) return false;
+        }
+
+        // One-shot census: name the shape type actually found and its measured size, so the very
+        // first session says what a yoke / a full armour / a robe really carries instead of us
+        // reasoning about it. Same idiom as the weapon-shape census above.
+        if (logged.exchange(1) == 0) {
+            logger::info("API {} box: hkpShapeType={} half=[{:.1f} {:.1f} {:.1f}]u "
+                         "centre-offset=[{:.1f} {:.1f} {:.1f}]u — this body's REAL collision "
+                         "shape drives contact",
+                         what, static_cast<int>(shape->type),
+                         out.h[0], out.h[1], out.h[2],
+                         lc[0] * kHavokToSkyrim, lc[1] * kHavokToSkyrim, lc[2] * kHavokToSkyrim);
+        }
+        return true;
+    }
+
+    bool ObjectBoxU(bool left, ObjBoxU& out)
+    {
+        auto* hig = Interop::GetHiggs();
+        if (!hig) return false;
+        static std::atomic<int> s_objLogged{ 0 };
+        return BodyBoxU(hig->GetGrabbedRigidBody(left),          // slot 26; null unless actually held
+                        out, ObjectHold::ObjectBoxMaxU(), "object", s_objLogged);
+    }
+
+    // ★ THE PALM (2026-09-06, user in VR): "HIGGS's box IS the palm, it always has been; all our
+    // fingers are just extensions of it." HIGGS's hand body (slot 24) read exactly like the held
+    // object. It is what physically pushes her when the hand is open or fisted — and the 19:56 log
+    // showed her trunk bent 10–19u with ZERO contacts because it was never a probe. Sanity cap is a
+    // fixed 20u: the slab is ~6x2x6u and nothing else can come back from that slot.
+    bool HandSlabBoxU(bool left, ObjBoxU& out)
+    {
+        auto* hig = Interop::GetHiggs();
+        if (!hig) return false;
+        static std::atomic<int> s_slabLogged{ 0 };
+        return BodyBoxU(hig->GetHandRigidBody(left), out, 20.f, "hand slab", s_slabLogged);
+    }
+
     bool ReadCapsuleWorldUSide(RE::Actor* actor, int slot, bool left, int child,
                                float aOut[3], float bOut[3], float* rOut)
     {
@@ -3643,7 +4314,19 @@ namespace GrabDiag {
     void InvalidateBodyScale(std::uint32_t id)   // any thread (the OBody VM event sink)
     {
         std::lock_guard<std::mutex> g(g_bsInvalMx);
+        for (std::uint32_t q : g_bsInval) if (q == id) return;      // dedupe (audit, 2026-09-04)
         if (g_bsInval.size() < 256) g_bsInval.push_back(id);
+    }
+    // Deferred variant (AUDIT FIX 2026-09-04): the equip sink rate-limits to one event per actor
+    // per 3 s, but a leading-edge limiter measures the HALF-changed body and never the final one.
+    // A suppressed event books a trailing re-measure here; the 1 Hz sweep promotes it when due.
+    static std::unordered_map<std::uint32_t, std::chrono::steady_clock::time_point> g_bsInvalAt;   // under g_bsInvalMx
+    void InvalidateBodyScaleAt(std::uint32_t id, float delayS)
+    {
+        std::lock_guard<std::mutex> g(g_bsInvalMx);
+        if (g_bsInvalAt.size() > 128) g_bsInvalAt.clear();
+        g_bsInvalAt[id] = std::chrono::steady_clock::now() +
+                          std::chrono::milliseconds(static_cast<int>(delayS * 1000.f));
     }
 
     // ══ PATH-B FOUNDATION TEST (2026-07-20): skin-weight bone anchoring + 12-angle girth ═══════
@@ -3660,11 +4343,11 @@ namespace GrabDiag {
     // SELF-CALIBRATE the skinning byte offset (find the offset whose 4 half-weights sum ~1.0 with
     // in-range indices) — descriptors have burned us before (PlausibleDecode, positions).
     static bool SampleBoneBands(RE::Actor* actor, std::uint32_t id, BoneBands& out, bool verbose,
-                                const RE::BSGeometry* exclude)
+                                const RE::BSGeometry* const* exclude, int nExclude)
     {
         const auto t0 = std::chrono::steady_clock::now();   // cost is logged per call (perf question)
         BodyMesh bm;
-        if (!FindBodyMesh(actor, bm, false, exclude)) { if (verbose) logger::info("BONETEST {:08X} no body mesh", id); return false; }
+        if (!FindBodyMesh(actor, bm, false, exclude, nExclude)) { if (verbose) logger::info("BONETEST {:08X} no body mesh", id); return false; }
         RE::NiSkinPartition* sp = bm.skinPart;
         RE::NiSkinInstance*  si = bm.skinInst;
         const char* mname = bm.geo ? bm.geo->name.c_str() : "?";
@@ -4398,7 +5081,12 @@ namespace GrabDiag {
         // Runs EVERY driven frame, BEFORE the rebuild/latch early-return below — the scene gate is
         // a live state that has to track excitement rising and decaying, not a one-shot dressing
         // step. It self-throttles to ~2 Hz internally.
+        ForceKeyframeGate(actor, actor->GetFormID());   // knob-gated, edge-triggered
         SceneCollisionGate(actor, actor->GetFormID());
+        // THE BRACE: per-bone infinite-mass while the player pushes that bone (knob `brace`).
+        BraceTick(actor, actor->GetFormID());
+        // PushWalk v3: refresh the per-slot displacement vectors (the measured push direction).
+        PushDisplacementTick(actor, actor->GetFormID());
 
         // The 6 mirror-targeted L twins ride the identity probe too (indices 12..17), so an
         // AI-warp/teleport ragdoll rebuild re-applies the LEFT side with everything else.
@@ -4628,7 +5316,22 @@ namespace GrabDiag {
                 // thread (Obody_ApplyMorph sink in main.cpp) — erased actors re-latch below and
                 // the freshLatch path re-dresses them, no manual pulse needed.
                 std::lock_guard<std::mutex> g(g_bsInvalMx);
-                for (std::uint32_t iid : g_bsInval) s_regionRatio.erase(iid);
+                {   // promote due deferred invalidations (the equip sink's trailing edge)
+                    const auto nowD = std::chrono::steady_clock::now();
+                    for (auto it = g_bsInvalAt.begin(); it != g_bsInvalAt.end();) {
+                        if (nowD >= it->second) { g_bsInval.push_back(it->first); it = g_bsInvalAt.erase(it); }
+                        else ++it;
+                    }
+                }
+                for (std::uint32_t iid : g_bsInval) {
+                    // AUDIT FIX 2026-09-04: never erase a DEAD actor's record - looting a corpse
+                    // fires equip events, the latch early-returns for the dead, and her capsules
+                    // would revert to knob defaults ("corpses keep their shape" rule).
+                    auto* f = RE::TESForm::LookupByID(iid);
+                    auto* a = f ? f->As<RE::Actor>() : nullptr;
+                    if (a && a->IsDead()) continue;
+                    s_regionRatio.erase(iid);
+                }
                 g_bsInval.clear();
             }
             bool freshLatch = false;
@@ -4689,7 +5392,12 @@ namespace GrabDiag {
                 // body regions at a spurious base. A no-morph NPC (or SKEE absent) latches after a short
                 // settle grace (head can still scale; body stays at base — a safe under-scale).
                 const bool ready = !Interop::HasSkee() || Interop::SkeeHasMorphs(actor) || ap.attachedTicks >= 6;
-                if (!rr.latched && ready) {
+                // A failed measure is retried on a widening backoff (10s..320s, 6 tries), so a
+                // transient cause — 3D still loading, an outfit that later comes off — gets a
+                // second chance without an unlatched actor re-sampling every single second.
+                const bool retryDue = rr.latched && !rr.measOk && rr.measTries < 6 &&
+                                      std::chrono::steady_clock::now() >= rr.nextTry;
+                if ((!rr.latched || retryDue) && ready) {
                     BodyScaleLatch(actor, id, isRef);
                     // 2026-07-18 RE-DRESS FIX (the "everything sticking out" gotcha): a fresh latch
                     // must re-APPLY, not just re-measure — otherwise the previous preset's geometry
@@ -4981,4 +5689,48 @@ namespace GrabDiag {
             WriteCapsule(cap, kOrigin, b, rKnob);                      // pure float edit; no AABB cache to repatch
         }
     }
+}
+
+// PushWalk v3 accessor: the displaced-most trunk bone's horizontal displacement for this actor.
+// Returns false when nothing exceeds minMagU (all bones pinned/braced or no data yet).
+// v4.1 (2026-08-29, from the live bearings): the CONTACTED slot's displacement only. The
+// displaced-most vote let the PELVIS win on chest pushes -- its counter-lean (hips swing toward
+// the player when the upper trunk is shoved back, plain balance mechanics in the constraint
+// chain) points AT the player, so she walked forward (-5/+18/-1 deg measured). The pushed bone
+// itself always displaces along the push.
+bool GrabDiag::GetSlotPushDisplacement(std::uint32_t id, int slot, float minMagU,
+                                       float& dxOut, float& dyOut, float& magOut)
+{
+    std::scoped_lock lk(s_pushDispMx);
+    auto it = s_pushDisp.find((std::uint64_t(id) << 8) | (unsigned)slot);
+    if (it == s_pushDisp.end()) return false;
+    const auto& d = it->second;
+    if (d.samples < 90) return false;                 // baseline not learned yet -- no verdict
+    const float cx = d.dx - d.baseDx, cy = d.dy - d.baseDy;   // baseline-corrected push
+    const float m  = std::sqrt(cx * cx + cy * cy);
+    if (m < minMagU) return false;
+    dxOut = cx; dyOut = cy; magOut = m;
+    return true;
+}
+
+bool GrabDiag::GetPushDisplacement(std::uint32_t id, float minMagU,
+                                   float& dxOut, float& dyOut, float& magOut, int& slotOut)
+{
+    static constexpr int kSlots[5] = { 4, 5, 6, 11, 8 };
+    std::scoped_lock lk(s_pushDispMx);
+    float best = minMagU; bool found = false;
+    for (int k = 0; k < 5; ++k) {
+        auto it = s_pushDisp.find((std::uint64_t(id) << 8) | (unsigned)kSlots[k]);
+        if (it == s_pushDisp.end()) continue;
+        const auto& d = it->second;
+        if (d.samples < 90) continue;                 // baseline not learned yet — no verdict
+        const float cx = d.dx - d.baseDx, cy = d.dy - d.baseDy;   // baseline-corrected push
+        const float m  = std::sqrt(cx * cx + cy * cy);
+        if (m >= best) {
+            best = m; found = true;
+            dxOut = cx; dyOut = cy; magOut = m;
+            slotOut = kSlots[k];
+        }
+    }
+    return found;
 }

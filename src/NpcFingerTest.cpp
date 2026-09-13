@@ -860,6 +860,41 @@ namespace {
         return false;
     }
 
+    // ── ★★ FUTA EVIDENCE (2026-09-12) — ONE definition, used by BOTH the probe admission and
+    // the 2 s dress guard. They MUST ask the same question: an admission the guard cannot
+    // reproduce means the rig is created and destroyed on a 2 s cycle forever.
+    //
+    // The user's objection, and it is the correct one: a biped slot is a CLAIM. Gate on slot 52
+    // and any unrelated slot-52 item — or a skin record that merely carries the slot — hands a
+    // vanilla naked female a GEN rig, and PPB starts publishing "shaft" contacts on someone who
+    // has none. So gate on the MESH:
+    //   1. SKINNED (primary, parenting-agnostic): some geometry in her tree is weighted to one
+    //      of Genitals01..06. A naked vanilla female carries all 8 bones and nothing weighted to
+    //      them, so she fails here by construction, not by threshold. Same primitive and same
+    //      lesson as the tbl-5 tail gate.
+    //   2. VISIBLE (dress state, best-effort): if shapes are also PARENTED under the chain, at
+    //      least one must not be kHidden. When nothing is parented there this degrades to
+    //      "skinned = present" — less precise about dressed vs naked, still fail-closed for the
+    //      phantom-rig risk, which is the part that matters.
+    // ⚠ NEVER RUN IN VR: neither futa mod is installed on the author's machine. The receipts at
+    // the call site print all three signals so a USER's log settles it without a debug build.
+    struct FutaEvidence { bool skinned = false; int vis = 0; int hid = 0; char name[64] = {}; };
+    bool FutaPresent(RE::Actor* actor, RE::NiAVObject* root3d, FutaEvidence* out = nullptr)
+    {
+        FutaEvidence e{};
+        if (!actor || !root3d) { if (out) *out = e; return false; }
+        for (int gi = 1; gi <= 6 && !e.skinned; ++gi) {
+            char bn[40];
+            std::snprintf(bn, sizeof bn, "NPC Genitals0%d [Gen0%d]", gi, gi);
+            if (auto* gn = root3d->GetObjectByName(RE::BSFixedString(bn)))
+                e.skinned = TailChainSkinned(root3d, gn);
+        }
+        GenitalProbe::HasVisibleGenGeometry(actor, &e.vis, &e.hid, e.name, sizeof e.name);
+        const bool visibleOk = (e.vis + e.hid == 0) ? true : (e.vis > 0);
+        if (out) *out = e;
+        return e.skinned && visibleOk;
+    }
+
     // 2026-07-13 PERF fix (audit rank 1): ONE depth-first walk resolving EVERY chord
     // name of a table at once, replacing 2×n full-tree FindBoneSuffix walks per resolve
     // (the wig alone was 30 walks per frame — >85% of PPB's steady frame cost was this
@@ -1141,6 +1176,7 @@ namespace {
     constexpr std::uint32_t kFKVsWorld      = 1u << 2;
     constexpr std::uint32_t kFKVsNpc        = 1u << 3;
     constexpr int           kFKBoxPartShift = 8;      // bits 8-12 = the HandBox part number
+    constexpr int           kFKHeadPartShift = 13;    // bits 13-17 = the player HEAD BOX part
     // Seeded like HandBox's sibling `g_boxPart{4}`: if anything ever reads this before the first
     // refresh, it reads the DEFAULT part (4 = SkipBoth), never 0. (Currently unreachable — the
     // isFinger group scan bails first, and OnPreDrive refreshes before any TryCreate — but the
@@ -1161,6 +1197,12 @@ namespace {
         if (ObjectHold::NpcFingerVsWorld()   >= 0.5f)  w |= kFKVsWorld;     // float
         if (ObjectHold::NpcFingerVsNpc()     >= 0.5f)  w |= kFKVsNpc;       // float
         w |= (ObjectHold::HandBoxSubLayer() & 0x1Fu) << kFKBoxPartShift;    // unsigned, already sanitised
+        // the player HEAD BOX (2026-09-03) — same reason the hand boxes are here: without its
+        // part in this whitelist the head slides straight through every PPB rig capsule (tails,
+        // wigs, GEN, NPC fingers), so resting your face in her hair would do nothing physically
+        // while still reporting a geometric touch. That inconsistency is the 2026-07-11 finger
+        // bug repeating on a new body.
+        w |= (ObjectHold::HeadBoxPart() & 0x1Fu) << kFKHeadPartShift;
         g_filterKnobs.store(w, std::memory_order_relaxed);
     }
 
@@ -1877,7 +1919,15 @@ namespace {
         // Re-check on the same ~2 s cadence; IsExposed is itself cached, so this is nearly free.
         if (rig.tbl == 7 && now - rig.lastSkinCheck >= std::chrono::milliseconds(2000)) {
             rig.lastSkinCheck = now;
-            if (!GenitalProbe::IsExposed(actor)) {
+            // ★ FUTA (2026-09-12): the guard must use the SAME gate that admitted the rig, or a
+            // female's rig would be admitted by geometry and then destroyed 2 s later by a male
+            // slot-52 test she can never pass. For her, "covered" means the schlong mesh went
+            // kHidden or vanished — which is exactly what HasVisibleGenGeometry reports.
+            auto* gbR = actor->GetActorBase();
+            const bool stillThere = (gbR && gbR->IsFemale())
+                                  ? FutaPresent(actor, actor->Get3D())   // the SAME test that admitted her
+                                  : GenitalProbe::IsExposed(actor);
+            if (!stillThere) {
                 if (++rig.skinMiss >= 3) { DestroyRig(slot, "covered"); return; }
             } else {
                 rig.skinMiss = 0;
@@ -2262,8 +2312,17 @@ namespace NpcFinger {
                   return child < 5 ? n[child] : nullptr; }
         case 1: { static const char* n[] = {"forearm (elbow half)","forearm (wrist half)"};
                   return child < 2 ? n[child] : nullptr; }
-        // C3 is LIVE on all four skeletons (not a seed): a thinner twin co-located with C1
-        // (same endpoints, r 2.20 vs 2.60). Named so the API never reports it as unknown.
+        // ⚠ C3 IS NOW UNREACHABLE ON EVERY SHIPPED SKELETON (2026-09-03). It was a thinner twin
+        // co-located with C1 (same span, r 2.20 vs 2.60 — geometrically CONTAINED in it, so it
+        // added no collision surface). The 2026-08-22 male ship strip deleted it from the human
+        // female, draenei and all three male nifs but MISSED the two beast females, leaving slot
+        // 2 as the only slot whose child count varied by race for no reason. Both beast females
+        // were trimmed to 3 (tools/ppb-scratch/strip_beast_arm_twin.py), so the census now reads
+        // 3 on all seven and this row can no longer be reached by any actor.
+        //   KEPT, not deleted: the name costs nothing, and if a 4th child is ever baked back in
+        // it is this capsule. The old comment here read "C3 is LIVE on all four skeletons" —
+        // that was true when written and is now false, which is exactly why it is corrected in
+        // place rather than left for someone to trust.
         case 2: { static const char* n[] = {"upper arm (shoulder half)","upper arm (elbow half)",
                   "deltoid / shoulder cap","upper arm (elbow half, inner twin)"};
                   return child < 4 ? n[child] : nullptr; }
@@ -2321,6 +2380,10 @@ namespace NpcFinger {
             bool          inMouth = false;
             bool          inThroat = false;   // tip at the end-of-mouth wall (only reachable while inMouth)
             bool          lipsLogged = false;
+            int           lipsHand   = -1;      // ★ kiss: who raised LIPS (0 R, 1 L, 2 = the player's mouth) — the OFF edge must name the same source
+            int           mouthHand  = -1;      // ★ which fingertip raised ENTER (for closing it on an actor change)
+            std::uint32_t stateFid   = 0;       // ★ the NPC the lips/mouth/throat states above BELONG to
+            int           emptyFrames = 0;      // ★ consecutive frames with no NPC in range (grace before closing)
             bool          warnedPhon = false;
             std::uint64_t lastViz = 0, lastProbe = 0;
         };
@@ -2334,6 +2397,45 @@ namespace NpcFinger {
             float t = L2 > 1e-6f ? (ap[0]*ab[0] + ap[1]*ab[1] + ap[2]*ab[2]) / L2 : 0.f;
             t = t < 0.f ? 0.f : (t > 1.f ? 1.f : t);
             const float dx = pt[0]-(a[0]+ab[0]*t), dy = pt[1]-(a[1]+ab[1]*t), dz = pt[2]-(a[2]+ab[2]*t);
+            return std::sqrt(dx*dx + dy*dy + dz*dz);
+        }
+        // ★ KISS (2026-09-12): segment-vs-segment, copied VERBATIM from PpbApi.cpp's file-local
+        // SegSegDistU so the mouth gate measures the kiss exactly as the touch scan does (the same
+        // local-copy idiom SegPointDistU already follows in three files). Both sides are rods here —
+        // her lip capsule and the player's lateral mouth segment — so a point test would under-read
+        // a kiss that lands off-centre by up to the segment's half-width.
+        inline float SegSegDistU(const float p1[3], const float q1[3],
+                                 const float p2[3], const float q2[3])
+        {
+            const float d1[3] = { q1[0]-p1[0], q1[1]-p1[1], q1[2]-p1[2] };
+            const float d2[3] = { q2[0]-p2[0], q2[1]-p2[1], q2[2]-p2[2] };
+            const float r[3]  = { p1[0]-p2[0], p1[1]-p2[1], p1[2]-p2[2] };
+            const float A = d1[0]*d1[0] + d1[1]*d1[1] + d1[2]*d1[2];
+            const float E = d2[0]*d2[0] + d2[1]*d2[1] + d2[2]*d2[2];
+            const float F = d2[0]*r[0] + d2[1]*r[1] + d2[2]*r[2];
+            float sN = 0.f, tN = 0.f;
+            if (A <= 1e-8f && E <= 1e-8f) {
+                // both degenerate: point-point
+            } else if (A <= 1e-8f) {
+                tN = F / E; tN = tN < 0.f ? 0.f : (tN > 1.f ? 1.f : tN);
+            } else {
+                const float C = d1[0]*r[0] + d1[1]*r[1] + d1[2]*r[2];
+                if (E <= 1e-8f) {
+                    sN = -C / A; sN = sN < 0.f ? 0.f : (sN > 1.f ? 1.f : sN);
+                } else {
+                    const float B = d1[0]*d2[0] + d1[1]*d2[1] + d1[2]*d2[2];
+                    const float den = A * E - B * B;
+                    sN = den > 1e-8f ? (B * F - C * E) / den : 0.f;
+                    sN = sN < 0.f ? 0.f : (sN > 1.f ? 1.f : sN);
+                    tN = (B * sN + F) / E;
+                    if (tN < 0.f)      { tN = 0.f; sN = -C / A; }
+                    else if (tN > 1.f) { tN = 1.f; sN = (B - C) / A; }
+                    sN = sN < 0.f ? 0.f : (sN > 1.f ? 1.f : sN);
+                }
+            }
+            const float c1[3] = { p1[0]+d1[0]*sN, p1[1]+d1[1]*sN, p1[2]+d1[2]*sN };
+            const float c2[3] = { p2[0]+d2[0]*tN, p2[1]+d2[1]*tN, p2[2]+d2[2]*tN };
+            const float dx = c1[0]-c2[0], dy = c1[1]-c2[1], dz = c1[2]-c2[2];
             return std::sqrt(dx*dx + dy*dy + dz*dz);
         }
         bool PlayerTipU(int hand, float out[3])
@@ -2392,13 +2494,52 @@ namespace NpcFinger {
             return kha ? 1 : (beast ? 2 : 0);
         }
     }
+    // ★★ 2026-09-12 (review finding, raised by two reviewers independently): CLOSE the mouth states on the
+    // NPC they were raised on. Before, a tracking change reset inMouth/inThroat silently and left lipsLogged
+    // latched — so a kiss on NPC A, interrupted by NPC B stepping 20% closer, left A reading "LIPS ON" to every
+    // consumer (and her oral channel at 0.25) until the 30 s watchdog, while B later received an OFF it never
+    // had an ON for. Pre-existing for fingertips; the kiss made it common.
+    // Looked up by FORMID, never through a kept pointer. (A deleted temp ref resolves to null and only the flags
+    // are cleared; a PERSISTENT NPC whose cell unloaded still resolves and gets the OFFs — harmless: Orifice
+    // ignores untracked ids and an event with a valid Actor sender is fine.)
+    // Deepest stage first — THROAT, ENTER, LIPS — so the orifice ladder ends at 0. (⚠ The per-frame edge path
+    // further down emits ENTER before THROAT on a same-frame exit, which can leave oral openness at 0.70 until
+    // the watchdog — a PRE-EXISTING fingertip bug, noted in the handover, deliberately not changed here.)
+    static void CloseMouthStates(const char* why)
+    {
+        const bool any = g_gt.lipsLogged || g_gt.inMouth || g_gt.inThroat;
+        if (any && g_gt.stateFid) {
+            if (auto* old = RE::TESForm::LookupByID<RE::Actor>(g_gt.stateFid)) {
+                if (g_gt.inThroat)   PpbApi::EmitMouthStage(old, 2, false, g_gt.mouthHand, -1.f);
+                if (g_gt.inMouth)    PpbApi::EmitMouthStage(old, 1, false, g_gt.mouthHand, -1.f);
+                if (g_gt.lipsLogged) PpbApi::EmitMouthStage(old, 0, false, g_gt.lipsHand,  -1.f);
+            }
+            logger::info("MOUTHTOUCH {:08X} states CLOSED ({}) — lips={} enter={} throat={}", g_gt.stateFid, why,
+                         g_gt.lipsLogged ? 1 : 0, g_gt.inMouth ? 1 : 0, g_gt.inThroat ? 1 : 0);
+        }
+        g_gt.lipsLogged = false; g_gt.lipsHand = -1;
+        g_gt.inMouth = false;    g_gt.inThroat = false; g_gt.mouthHand = -1;
+        g_gt.stateFid = 0;
+    }
+
     static void GhostTouchFrame()
     {
-        if (!ObjectHold::GhostZonesEnabled()) { g_gt = GhostTouchState{}; return; }
+        if (!ObjectHold::GhostZonesEnabled()) { CloseMouthStates("ghostZones off"); g_gt = GhostTouchState{}; return; }
         RE::Actor* a = g_gt.best;  g_gt.best = nullptr;
         const float d2 = g_gt.bestD2; g_gt.bestD2 = FLT_MAX;
         const float rng = ObjectHold::GhostRangeU();
-        if (!a || d2 > rng * rng) { g_gt.actor = nullptr; g_gt.inMouth = false; g_gt.inThroat = false; g_gt.phon = 0.f; return; }
+        if (!a || d2 > rng * rng) {
+            // ★ 3-frame GRACE (round-2 review): before round 2 a single empty frame left LIPS latched; closing on the
+            // first one would flicker a live kiss OFF/ON whenever one drive tick is skipped. The swap and
+            // ghostZones-off closes stay immediate — those are real actor changes, not a missed tick.
+            // ⚠ g_gt.actor must SURVIVE the grace frames as well: if it were nulled here, the same NPC reappearing
+            // next frame would read as a new actor and the SWAP path would close her states anyway — the grace
+            // would do nothing. It is only ever COMPARED while stale; the keep-branch dereference below requires
+            // curAlive, which is set only when a live driven actor matched it this frame.
+            if (++g_gt.emptyFrames >= 3) { CloseMouthStates("no NPC in range"); g_gt.actor = nullptr; }
+            g_gt.phon = 0.f; return;
+        }
+        g_gt.emptyFrames = 0;
         // -- STICKY TRACKING (2026-08-07, the synchronized-spasm fix) -------------------------
         // Nearest-wins flapped between two equidistant NPCs ~1/s (160 switches in 2 min on
         // M'rissi+Aela), and the pair visibly SPASMED in lockstep -- confirmed by single-variable
@@ -2410,12 +2551,17 @@ namespace NpcFinger {
         if (a != g_gt.actor) {
             const bool curAlive = g_gt.actor && curD2 <= rng * rng;
             if (!curAlive || d2 < curD2 * 0.64f) {          // 0.8^2: >=20% closer to steal
-                g_gt.actor = a; g_gt.inMouth = false; g_gt.inThroat = false; g_gt.phon = 0.f;
+                CloseMouthStates("tracking moved to another NPC");   // ★ close on the OLD actor first
+                g_gt.actor = a; g_gt.phon = 0.f;
                 logger::info("GHOST tracking {:08X}", a->GetFormID());
             } else {
                 a = g_gt.actor;                             // keep the incumbent this frame
             }
         }
+        // ★ same-address guard (round-2 review): if a new actor reused the old pointer address, the swap never
+        // fired — close by FormID before silently re-labelling the old flags with her id.
+        if (g_gt.stateFid && g_gt.stateFid != a->GetFormID()) CloseMouthStates("actor FormID changed at the same address");
+        g_gt.stateFid = a->GetFormID();                     // ★ every state raised below belongs to THIS actor
         // marker knob falling edge -> ACTIVELY remove parked bodies (the seizure lesson)
         {
             static bool s_prevMk = true;
@@ -2451,6 +2597,7 @@ namespace NpcFinger {
         const int  ch2 = isBeast ? ObjectHold::MouthBeastChild(fam == 1, 4) : 3;
         const float gate = isBeast ? ObjectHold::MouthBeastEnterU() : ObjectHold::MouthEnterU();
         float bestIn = FLT_MAX; int bestHand = -1; bool anyLips = false;
+        int lipsFingerHand = -1;   // ★ 2026-09-12: the fingertip that actually MET the lips rule (bestHand is the palate winner)
         for (int h = 0; h < 2; ++h) {
             if (!tipOk[h]) continue;
             const float dEA = childDist(eA, tip[h]);
@@ -2462,7 +2609,57 @@ namespace NpcFinger {
                 const float dLip  = childDist(1, tip[h]);
                 const float dJawR = childDist(2, tip[h]);
                 const float dJawL = childDist(3, tip[h]);
-                anyLips = anyLips || std::max(dLip, std::max(dJawR, dJawL)) < gate;
+                if (std::max(dLip, std::max(dJawR, dJawL)) < gate) {
+                    if (!anyLips) lipsFingerHand = h;
+                    anyLips = true;
+                }
+            }
+        }
+        // ── ★★ THE KISS (2026-09-12, user ruling: "a kiss also fires PPB_MouthLips") ─────────────────
+        // The player's MOUTH probe against her UPPER LIP (C1). It feeds ONE flag, headLips, which is
+        // OR'd into the LIPS stage below and NOTHING ELSE. That is the whole safety argument, and it is
+        // structural rather than careful: ENTER reads bestIn/bestHand/fingerOk and THROAT reads
+        // throatBest, and all of those are computed exclusively from the two fingertips above. The head
+        // never assigns any of them, so a kiss cannot open her mouth or reach her throat however the
+        // knobs are set. (It must also never be run through ClassifySource: that fails OPEN when a box
+        // cannot resolve, which would have handed the head the finger check for free.)
+        // C1 ONLY, deliberately: the fingertip LIPS rule also demands both chin lines (C2/C3), which a
+        // mouth resting on her lips rarely reaches. Human heads only — beasts have no LIPS stage.
+        bool headLips = false;
+        float kissC1 = FLT_MAX, kissC2 = FLT_MAX, kissC3 = FLT_MAX;
+        float kissGate = ObjectHold::MouthKissLipU();   // the gate THIS frame used: entry, or exit while a kiss holds LIPS
+        if (!isBeast && ObjectHold::MouthKissLipsOn()) {
+            float mA[3], mB[3], mR = 0.f;
+            if (HandBox::MouthProbeSegment(mA, mB, &mR)) {
+                const auto kissGap = [&](int child) -> float {
+                    if (!GrabDiag::ReadCapsuleWorldU(a, 3, child, ca, cb, &cr)) return FLT_MAX;
+                    return SegSegDistU(ca, cb, mA, mB) - cr - mR;
+                };
+                kissC1 = kissGap(1);
+                // ★ HYSTERESIS (2026-09-12 VR, the first kiss session): one threshold flickered LIPS 6x in 8 s at
+                // gaps 1.69..2.19u. START under mouthKissLipU; once THIS kiss holds the stage (lipsHand 2), END only
+                // past mouthKissExitU. A finger-raised LIPS never borrows the wider gate — a mouth that never met
+                // the entry gate must not be able to hold a kiss. g_gt's flags belong to `a` (stateFid, above).
+                const bool kissHolds = g_gt.lipsLogged && g_gt.lipsHand == 2;
+                kissGate = kissHolds ? ObjectHold::MouthKissExitU() : ObjectHold::MouthKissLipU();
+                headLips = kissC1 < kissGate;
+                if (ObjectHold::MouthProbeLogOn() && kissC1 < 12.f) {
+                    kissC2 = kissGap(2); kissC3 = kissGap(3);
+                    static std::uint64_t s_kissLogMs = 0;
+                    const std::uint64_t nowMs = (std::uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                    std::chrono::steady_clock::now().time_since_epoch()).count();
+                    if (nowMs - s_kissLogMs >= 2000) {
+                        s_kissLogMs = nowMs;
+                        float fzUp = 0.f, fzFull = 0.f; bool onFull = false;
+                        HandBox::HeadForwardZ(&fzUp, &fzFull, &onFull);
+                        logger::info("KISSPROBE {:08X} mouth->C1(lip) {:+.2f}u C2 {:+.2f}u C3 {:+.2f}u | gate {:.2f}u ({}) -> {} "
+                                     "| posed on {} | forward.z upright(+0x580) {:+.3f} full(+0x570) {:+.3f}",
+                                     a->GetFormID(), kissC1, kissC2, kissC3, kissGate,
+                                     (g_gt.lipsLogged && g_gt.lipsHand == 2) ? "exit, kiss holding" : "entry",
+                                     headLips ? "KISS" : "no", onFull ? "+0x570 full-rotation" : "+0x580 rider (fallback)",
+                                     fzUp, fzFull);
+                    }
+                }
             }
         }
         // finger-only requirement (user: "make sure it's detecting the finger, not the palm"):
@@ -2514,6 +2711,7 @@ namespace NpcFinger {
             if (!stayFront && !deepHold) g_gt.inMouth = false;
         }
         if (g_gt.inMouth != wasIn) {
+            if (g_gt.inMouth) g_gt.mouthHand = bestHand;    // ★ remembered so CloseMouthStates can name it
             logger::info("MOUTHTOUCH {:08X} {} hand={} worstOf3={:.2f}u", a->GetFormID(),
                          g_gt.inMouth ? "ENTER" : "EXIT", bestHand == 0 ? "R" : "L", bestIn);
             PpbApi::EmitMouthStage(a, 1, g_gt.inMouth, bestHand, bestIn);
@@ -2531,13 +2729,39 @@ namespace NpcFinger {
                                        throatBest == FLT_MAX ? -1.f : throatBest);
             }
         }
-        if (anyLips && !g_gt.inMouth && !g_gt.lipsLogged) {
+        // ★ KISS: the LIPS stage is raised by a fingertip OR the player's mouth. `lipsHand` remembers WHO
+        // raised it so the OFF edge names the same source as the ON edge — previously OFF used whatever
+        // bestHand read at release, which could already be -1 or the other hand.
+        const bool lipsNow = anyLips || headLips;
+        if (lipsNow && !g_gt.inMouth && !g_gt.lipsLogged) {
             g_gt.lipsLogged = true;
-            logger::info("MOUTHTOUCH {:08X} LIPS (C1+C2+C3 all within {:.2f}u)", a->GetFormID(), gate);
-            PpbApi::EmitMouthStage(a, 0, true, bestHand, gate);
-        } else if (!anyLips) {
-            if (g_gt.lipsLogged) PpbApi::EmitMouthStage(a, 0, false, bestHand, gate);
+            g_gt.lipsHand   = anyLips ? lipsFingerHand : 2;   // the fingertip that met the rule; a kiss reports HEAD
+            if (anyLips)
+                logger::info("MOUTHTOUCH {:08X} LIPS (C1+C2+C3 all within {:.2f}u)", a->GetFormID(), gate);
+            else
+                logger::info("MOUTHTOUCH {:08X} LIPS by KISS (mouth -> upper lip {:+.2f}u, gate {:.2f}u)",
+                             a->GetFormID(), kissC1, ObjectHold::MouthKissLipU());
+            PpbApi::EmitMouthStage(a, 0, true, g_gt.lipsHand, anyLips ? gate : kissC1);
+        } else if (!lipsNow && (!g_gt.inMouth || g_gt.lipsHand == 2)) {
+            // ⛔ 2026-09-12 (review): a FINGER-raised LIPS waits while a finger is inside — the orifice drive treats
+            // a stage-0 OFF as "target 0", so it used to snap her published openness shut under a live ENTER.
+            // A KISS-raised LIPS (lipsHand 2) does NOT wait (round-2 review): holding it would report a kiss that
+            // ended for as long as a finger stays in. Its OFF can drop oral to 0 under ENTER for a frame; the next
+            // ENTER-held frame does not re-raise it, so in that one case she reads closed while a finger is in —
+            // accepted: a stale "still kissing" is the worse lie for a consumer to act on.
+            // ★ every exit speaks (2026-09-12): the kiss OFF edge was silent, so the first VR session could count
+            // six ONs but never see the OFFs between them. The fingertip OFF stays quiet as it always was.
+            if (g_gt.lipsLogged && g_gt.lipsHand == 2) {
+                if (kissC1 == FLT_MAX)   // the mouth probe went away (head box down / kiss knob off / probe off)
+                    logger::info("MOUTHTOUCH {:08X} LIPS KISS ENDED (mouth probe unreadable, exit gate {:.2f}u)",
+                                 a->GetFormID(), ObjectHold::MouthKissExitU());
+                else
+                    logger::info("MOUTHTOUCH {:08X} LIPS KISS ENDED (mouth -> upper lip {:+.2f}u, exit gate {:.2f}u)",
+                                 a->GetFormID(), kissC1, ObjectHold::MouthKissExitU());
+            }
+            if (g_gt.lipsLogged) PpbApi::EmitMouthStage(a, 0, false, g_gt.lipsHand, gate);
             g_gt.lipsLogged = false;
+            g_gt.lipsHand   = -1;
         }
         // ── WIDE-O BLEND (2026-07-25): "Oh" rounds the lips but barely drops the jaw. A real
         // open mouth is Oh + BigAah underneath. g_gt.phon is a NORMALIZED 0..1 ramp; each
@@ -3011,8 +3235,40 @@ namespace NpcFinger {
                         // right below is the same lesson, already learned once.
                         if (cand == 7) {
                             auto* gb = actor->GetActorBase();
-                            if (!gb || gb->IsFemale() || !ObjectHold::NpcGenCapEnabled()) continue;
-                            if (!GenitalProbe::IsExposed(actor)) continue;   // no schlong / dressed
+                            if (!gb || !ObjectHold::NpcGenCapEnabled()) continue;
+                            if (gb->IsFemale()) {
+                                // ★★ FUTA (2026-09-12). Ships OFF, and deliberately does NOT reuse
+                                // the male slot-52 gate: on a female slot 52 is measured FLAT in both
+                                // states, and a slot is a CLAIM anyway — an unrelated slot-52 item
+                                // would hand a vanilla naked female phantom "shaft" contacts. Require
+                                // the mesh itself (visible geometry under the Gen chain), so every
+                                // no-futa female answers false BY CONSTRUCTION, not by threshold.
+                                if (!ObjectHold::NpcGenCapFemaleEnabled()) continue;
+                                FutaEvidence fe{};
+                                if (!FutaPresent(actor, root3d, &fe)) {
+                                    // ⛔ EVERY EXIT SPEAKS. The author cannot test this (neither futa
+                                    // mod is installed here), so a USER's log must answer "why no
+                                    // capsules?" on its own, and must distinguish the two failures
+                                    // that look identical from outside: nothing weighted to the chain
+                                    // (no futa / mesh not built in BodySlide) vs weighted but hidden
+                                    // (she is dressed). One line per actor per session.
+                                    static std::unordered_set<std::uint32_t> s_futaMissLogged;
+                                    if (s_futaMissLogged.insert(id).second)
+                                        logger::info("NFING {:08X} FUTA declined — skinnedToGenChain={} "
+                                                     "parentedShapes(visible={} hidden={}) first='{}'. "
+                                                     "Needs a BUILT mesh WEIGHTED to NPC Genitals01..06; "
+                                                     "slot 52 is deliberately NOT consulted on females, so "
+                                                     "an unrelated slot-52 item can never create this rig.",
+                                                     id, fe.skinned ? 1 : 0, fe.vis, fe.hid,
+                                                     fe.name[0] ? fe.name : "-");
+                                    continue;
+                                }
+                                logger::info("NFING {:08X} FUTA admitted — skinnedToGenChain=1 "
+                                             "parentedShapes(visible={} hidden={}) first='{}'",
+                                             id, fe.vis, fe.hid, fe.name[0] ? fe.name : "-");
+                            } else {
+                                if (!GenitalProbe::IsExposed(actor)) continue;   // no schlong / dressed
+                            }
                         }
                         // tbl 5 GATE (the Carmella + Yvanni lessons, both mandatory): XP32 ships the
                         // dormant TailBone01..05 on EVERY humanoid, so bone existence proves nothing —
@@ -3349,6 +3605,16 @@ namespace NpcFinger {
         return nullptr;
     }
 
+    inline void BhkSetMotionType(void* bhkWrapper, std::uint64_t motionType);   // defined below
+    void SetBodyMotionType(RE::NiAVObject* node, std::uint64_t motionType)
+    {
+        if (!node) return;
+        auto* colObj = node->collisionObject.get();
+        if (!colObj) return;
+        auto* body = static_cast<RE::bhkCollisionObject*>(colObj)->GetRigidBody();
+        if (body) BhkSetMotionType(body, motionType);
+    }
+
     int GenLevelOf(std::uint32_t actorId)
     {
         FingerRig* r = FindGarmentRig(actorId, 2);      // kind 2 = GEN (tbl 7)
@@ -3513,9 +3779,11 @@ namespace NpcFinger {
         // boxes previously slid through tail capsules because their part was unlisted.
         // Knobs come from the main-thread cache — NEVER call a float accessor here (g_filterKnobs).
         const std::uint32_t knobs   = g_filterKnobs.load(std::memory_order_relaxed);
-        const unsigned      boxPart = (knobs >> kFKBoxPartShift) & 0x1Fu;
+        const unsigned      boxPart  = (knobs >> kFKBoxPartShift) & 0x1Fu;
+        const unsigned      headPart = (knobs >> kFKHeadPartShift) & 0x1Fu;
         if ((o & 0x7Fu) == kHiggsLayer && (o & kBit15) && (o >> 16) != grp &&
-            (op == 2u || op == 3u || op == 5u || op == 6u || op == boxPart)) {
+            (op == 2u || op == 3u || op == 5u || op == 6u || op == boxPart ||
+             (headPart && op == headPart))) {
             g_logHand.store(true, std::memory_order_relaxed);
             return 1;
         }
@@ -3949,5 +4217,10 @@ namespace NpcFinger {
         // mesh markers: drop pointers at the load boundary (leak-by-design, never-free convention)
         for (auto& b : g_meshMarker) b = nullptr;
         g_meshMarkerWorld = nullptr;
+        // ⛔ 2026-09-12 (round-2 review): the mouth gate's state must NOT survive a load. It carries a FormID
+        // (stateFid) and latched LIPS / ENTER / THROAT flags; left alive, the first frame of the next session
+        // ran CloseMouthStates and sent OFF edges to the previous session's actor — or to a recycled FF id that
+        // now belongs to someone else. Reset SILENTLY: no events cross a load (the PpbApi::ClearOnLoad policy).
+        g_gt = GhostTouchState{};
     }
 }

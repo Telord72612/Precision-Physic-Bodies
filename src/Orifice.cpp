@@ -518,6 +518,14 @@ namespace Orifice {
             int keep = 0;
             for (int i = 0; i < nP; ++i) {
                 if (pv[i].cls == 1 /* kClsWeapon */ && pv[i].grabActorId == id) continue;
+                // ⛔ 2026-09-12 THE HEAD IS NOT AN INSERTION SOURCE — enforced HERE, where the rule
+                // belongs. PpbApi.h promised "the head can never open an orifice" because this drive
+                // passes a 14-slot buffer and the head was appended 15th. But CopyProbes counts only
+                // LIVE probes, so whenever dead hand probes left room the head box and the mouth probe
+                // landed inside those 14 slots — and a face pressed against her could gape the vaginal
+                // or anal ring (orificeEnable is live). A safety property must not rest on the
+                // coincidence of an array size.
+                if (pv[i].cls == 4 /* player head box / mouth — PpbApi.h ProbeView */) continue;
                 if (keep != i) pv[keep] = pv[i];
                 ++keep;
             }

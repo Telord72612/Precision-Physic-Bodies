@@ -2,6 +2,7 @@
 #include "PPBHook.h"   // ArmIK::SetStatuePose
 #include "Tuning.h"    // ObjectHold::SetHeelFix / ToggleHeelFix
 #include "PpbApi.h"    // PPB_Touch natives (the public touch API)
+#include "DeviceGesture.h"   // PPB_Native.SetGesturePaused
 
 namespace logger = SKSE::log;
 
@@ -37,12 +38,22 @@ namespace PapyrusNatives {
         return on;
     }
 
+    // GESTURE PAUSE — a scene manager that wants the hand-gesture device layer to stand down
+    // (so a scripted animation's hand placement is not read as a grab) calls this.
+    // Moved from the DD-ZaZ add-on's VRTE_DDZaZ_Native.SetScenePaused on 2026-08-27, when the
+    // gesture layer itself moved into PPB. That old native still exists in the add-on and now
+    // forwards here through the PPB_GestureSetPaused mod event, so existing callers keep working.
+    static void SetGesturePaused(RE::StaticFunctionTag*, bool paused) {
+        DeviceGesture::SetPaused(paused);
+    }
+
     bool Register(RE::BSScript::IVirtualMachine* vm) {
         if (!vm) return false;
         vm->RegisterFunction("SetStatuePose", kClassName, SetStatuePose);
         vm->RegisterFunction("ToggleHeelFix", kClassName, ToggleHeelFix);
         vm->RegisterFunction("SetHeelFix",    kClassName, SetHeelFix);
-        logger::info("Papyrus natives registered: {}.SetStatuePose / ToggleHeelFix / SetHeelFix.", kClassName);
+        vm->RegisterFunction("SetGesturePaused", kClassName, SetGesturePaused);
+        logger::info("Papyrus natives registered: {}.SetStatuePose / ToggleHeelFix / SetHeelFix / SetGesturePaused.", kClassName);
         PpbApi::RegisterNatives(vm);   // PPB_Touch.GetContact* (the public touch API)
         return true;
     }

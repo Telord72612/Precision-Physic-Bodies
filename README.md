@@ -8,19 +8,31 @@ that fit the actual body mesh, both refitted live at runtime.**
 ![status](https://img.shields.io/badge/status-beta-orange)
 ![platform](https://img.shields.io/badge/platform-Skyrim%20VR-blue)
 ![plugin](https://img.shields.io/badge/SKSE-VR-green)
-![version](https://img.shields.io/badge/version-2.1.0-blue)
+![version](https://img.shields.io/badge/version-2.2.0-blue)
 
-**Latest: 2.1.0.**
+**Latest: 2.2.0.**
+
+**2.2 — push, shove, hands and the kiss.**
+- **NPCs react to being pushed.** A steady press walks them back, a firm push makes them stumble,
+  and a hard shove or a sweep of both legs knocks them down.
+- **The push is read from the NPC's own joints**, as the distance each Havok joint is driven from where
+  its animation wants it, so it works the same with a hand, a weapon or a held object.
+- **Busy and braced NPCs are respected:** sitting, sleeping, crafting, fighting, leaning.
+- **Hand gestures:** equip, two-hand undress and fingertip plug extraction, for ordinary gear and for
+  Devious Devices / ZaZ / Diary of Mine. What you put on stays on.
+- **Your own head is a collider** that rides the headset, and a **kiss** is a first-class API event.
+- **The futa genital rig**, and **per-feature install switches** for every push outcome and the
+  gestures.
 
 **2.0 — males.** Three hand-dialled male skeletons (human, Khajiit, Argonian) join the four female
 ones. Male NPCs are now driven and reported like anyone else, with their own per-race head layouts
 (snout, jaw, crest, horns) and their own COM ladder. Also: a **front-neck** capsule on every
 skeleton — a real choking target — and **genital collision** with touch-driven erection.
 
-**2.1 — scenes.** Havok collision was breaking OStim scene alignment. Every PPB body, on NPCs *and*
-the player, now goes non-colliding between `ostim_start` and `ostim_end` and is restored afterwards.
-**Touch detection is unaffected** — it measures live capsule geometry rather than collision, so the
-API keeps reporting throughout a scene.
+**2.1 — scenes.** Havok collision was breaking OStim scene alignment. During an OStim scene (player
+or NPC-vs-NPC) or a SexLab animation every PPB body is now keyframed to the animation, and restored
+afterwards. **Touch detection is unaffected**: it measures live capsule geometry rather than
+collision, so the API keeps reporting throughout a scene.
 
 See **[INTEGRATION.md](INTEGRATION.md)** to consume the API, and [CHANGELOG.md](CHANGELOG.md) for
 the full list.
@@ -34,6 +46,9 @@ the full list.
 - [ReScale — fitting the joints](#rescale--fitting-the-joints)
 - [ReShape — fitting the capsules](#reshape--fitting-the-capsules)
 - [The Touch API — a tutorial for mod authors](#the-touch-api--a-tutorial-for-mod-authors)
+- [Push and shove](#push-and-shove)
+- [Hand gestures — equip, undress, plugs](#hand-gestures--equip-undress-plugs)
+- [Your head, and the kiss](#your-head-and-the-kiss)
 - [Features](#features)
 - [Fixes](#fixes)
 - [Install](#install)
@@ -126,7 +141,7 @@ XP32 Spine2 node and triangulated for elevation and thickness against a known ne
 sag, inflation and offset the capsules need.
 
 > **In short:** any NPC on an XP32 skeleton with any CBBE-based body — 3BA, SoftBody, custom NPCs,
-> OBody, arbitrary morphs. *(Female only for now.)*
+> OBody, arbitrary morphs. *(Males since 2.0 run on their own hand-dialled skeletons.)*
 
 ## The Touch API — a tutorial for mod authors
 
@@ -192,7 +207,7 @@ EndEvent
    | Field | Example | Values |
    |---|---|---|
    | `f[0]` **WAND** | `"R"` | `L` / `R` — the two hands are tracked independently |
-   | `f[1]` **SOURCE** | `"FINGER"` | `FINGER` / `PALM` / `FIST` / `HAND` / `GRAB` / `WEAPON:<name>` / `OBJECT:<name>` |
+   | `f[1]` **SOURCE** | `"FINGER"` | `FINGER` / `PALM` / `FIST` / `HAND` / `GRAB` / `WEAPON:<name>` / `OBJECT:<name>` / `GENITAL:<shaft\|tip>` / `HEAD:<face\|head\|mouth>` |
    | `f[2]` **BODYPART** | `"Face(cheek L)"` | `Region(part)` — the region, and the capsule you spent longest on |
    | `f[3]` **SKELETON** | `"human"` | `human` / `argonian` / `khajiit` / `draenei` |
 
@@ -209,6 +224,30 @@ EndEvent
 
 **Mouth events**, if that is what you are after — edge-triggered, no parsing needed:
 `PPB_MouthLips`, `PPB_MouthEnter`, `PPB_MouthThroat`.
+
+**The kiss** (build ≥ 20103) arrives on the same event. The player's mouth meeting her upper lip
+sends `PPB_MouthLips` with strArg `"R|LIPS|HEAD"`, `numArg` 1 when the kiss starts and 0 when it
+ends. Split on `|` and tolerate the extra third field:
+
+```papyrus
+Event OnPpbMouthLips(String eventName, String strArg, Float numArg, Form sender)
+    String[] f = StringUtil.Split(strArg, "|")
+    If f.Length >= 3 && f[2] == "HEAD"
+        If numArg > 0.5
+            ; kiss started on (sender as Actor)
+        Else
+            ; kiss ended
+        EndIf
+    EndIf
+EndEvent
+```
+
+**Gesture events** tell you a hand just *did* something to a worn item: an undress armed or finished,
+a plug worked in or out, a device or piece of gear put on. They are `PPB_GestureUndressArm`,
+`PPB_GestureUndressEnd`, `PPB_GesturePlug`, `PPB_GestureDeviceEquipped`, `PPB_GestureGearEquipped`
+and `PPB_GestureClaim`. Field layouts are documented at the top of [`src/PpbTouchAPI.h`](src/PpbTouchAPI.h).
+To stand the gestures down while your scene poses an actor's hands, call
+`PPB_Native.SetGesturePaused(True)`, then `False` afterwards.
 
 ---
 
@@ -347,8 +386,8 @@ valid **only for the duration of the call** — copy what you need. Do not block
 | `actorFormId` | `GetContactActor` | the touched NPC |
 | `toucherFormId` | — | `0x14` = the player (always, in revision 1) |
 | `wand` | `GetContactWand` | `0` = right hand, `1` = left |
-| `sourceKind` | `GetContactSource` | `kSourceFinger` / `Palm` / `Fist` / `Hand` / `Grab` / `Weapon` / `Object` |
-| `sourceName` | (in `SOURCE`) | weapon or object name, else `""` |
+| `sourceKind` | `GetContactSource` | `kSourceFinger` / `Palm` / `Fist` / `Hand` / `Grab` / `Weapon` / `Object` / `Genital` / `Head` |
+| `sourceName` | (in `SOURCE`) | weapon or object name; `"shaft"`/`"tip"` for genital; `"face"`/`"head"`/`"mouth"` for head; else `""` |
 | `bodyPart` | `GetContactBodyPart` | the named capsule |
 | `region` | `GetContactRegion` | `kRegionFace`, `kRegionIntimate`… |
 | `subRegion` | `GetContactSubRegion` | `kSubFaceSurface`, `kSubInMouth`… |
@@ -444,6 +483,165 @@ lists all 107 capsules with their group, depth and override behaviour.
 
 ---
 
+## Push and shove
+
+Put a hand, a weapon or a held object against an NPC and she reacts like a body.
+
+| Outcome | What you do | What she does |
+|---|---|---|
+| **Push walk** | press steadily | steps back, faster as you press harder, stopping as the pressure goes |
+| **Push stumble** | push firmly enough to bend her back | the vanilla stagger, turned to where the push acts on her |
+| **Shove knockdown** | shove hard | ragdolls from where your hand is, then gets up |
+| **Leg sweep knockdown** | lift **both** her feet off the floor with a hand or weapon | ragdolls |
+
+### How PPB reads a push
+
+Not from your hand. Your hand's speed says nothing about how much force reached her. PPB reads the
+NPC instead.
+
+For each trunk joint (COM, Spine0, Spine1, Spine2, Neck, Head, and each thigh at the hip) it
+compares the **Havok body** with where the **current animation** wants that joint this frame. A body
+driven away from its animation is being pushed.
+
+Every joint lags its animation a little even when nobody is near. That lag grows toward the head and
+is real PD-servo lag, so each actor's resting lag is learned and **frozen the moment a probe comes
+within reach**. A baseline must never absorb a push.
+
+Once she moves, the ladder is measured as **travel**: how far each joint has been driven beyond what
+her own walk carried it since the push began. A push that walks her back 5 u has not come 5 u closer
+to a knockdown. Shipped bars:
+
+| | walk | stumble | knockdown |
+|---|---|---|---|
+| COM, spine, thighs | 10 u | 20 u | 35 u |
+| Neck, head | 10 u | 30 u | 40 u |
+
+The head and neck get higher bars because they swing furthest for the least effort. On the shared
+ladder the head decided 18 of 20 reactions.
+
+### The details that make it feel right
+
+- **The walk** is the engine's own movement planner under direct control, not a scripted translate.
+  PPB also overrides her gait parameters, because the planner maps a speed onto the actor's *own*
+  gait and otherwise treats the command as a suggestion.
+- **The knockdown** starts through the engine's own knock (`AIProcess::KnockExplosion`), so PLANCK
+  owns her ragdoll from the first frame. Across 38 recorded onsets the graph-driven path spiked body
+  speed to ~7,000 u/s, which is the "launched to the ceiling" bug. The engine knock peaks around
+  220 u/s.
+- **The leg sweep** is measured from each NPC's own standing height, so heels are accounted for. One
+  leg lifted with the other planted does not trip her. After she gets up, the floor re-arms within
+  0.6 s even while you keep sweeping.
+- **Equipping doesn't read as a push.** For 0.25 s after a hand equip or removal nothing reacts, and
+  her height afterwards is the new floor. Putting heeled boots on her is not a lift.
+
+### When she won't react
+
+- **Fighting or in a kill move.** Not yours to interrupt.
+- **Busy in furniture.** This is her *body's* sit state (sitting, getting up, sleeping, waking), not
+  the furniture reservation. An NPC walking to a chair, or just leaving one, holds that reservation
+  but is on her feet and fully pushable. Crafting stations and chores count as busy.
+- **Leaning** on a wall, rail, bar or counter. She is braced: she **can't be pushed, but can still be
+  swept**.
+- **Idle animations that own her movement.** The engine refuses planner control there, so she can't
+  be walked. She still stumbles or goes down in place.
+
+Conversation is deliberately *not* a gate.
+
+### Choosing what you want
+
+Each outcome is a switch in `SKSE/Plugins/PPB.ini` under `[Features]` (`bPushShove`, `bPushWalk`,
+`bPushStumble`, `bShoveRagdoll`, `bFeetLift`). The installer asks for each one, and every switch is
+hot: save the file and it applies within a second. With the knockdown off and the stumble on, a hard
+shove plays a stumble instead.
+
+---
+
+## Hand gestures — equip, undress, plugs
+
+Three gestures, all built on PPB's contact stream, so they know exactly which body part you are at.
+
+### Press to equip
+
+Hold a piece of armour, clothing or a device against the matching body part for about a second,
+then **let go**. The dwell arms the gesture; the release fires it. Placement is deliberately
+forgiving: you bring a thing roughly where it goes, and the dwell plus the explicit release make it
+intentional.
+
+It works for **ordinary gear** and for **Devious Devices, ZaZ and Diary of Mine** devices. A device's
+body site comes from its framework keywords: a gag wants the mouth, cuffs the wrists, a plug an
+orifice, a piercing the nipple or clitoris. An optional `SKSE/Plugins/PPB_deviceSites.txt` can
+override a device's site.
+
+**Refusals instead of silent swaps.** The piece falls instead of going on when:
+
+- the biped slot is already occupied (`bSlotOccupiedRefuse`), instead of vanilla's silent swap; or
+- ordinary clothing covers the device's own region (`bClothingGate`), per region: gloves block
+  wrist cuffs, a cuirass does not, and a plug under a dress is refused.
+
+Framework devices never block each other; Devious Devices arbitrates its own layering.
+
+### Two-hand undress
+
+Grab the same worn piece with both hands and pull them apart. The trigger is the moment HIGGS's grab
+snaps back to your controller, which is HIGGS breaking the hold at its stretch limit. That snap *is*
+the gesture completing, and the piece lands in the pulling hand.
+
+### Fingertip plug extraction
+
+Hold a bare fingertip at an occupied orifice for a second and the plug works loose into your hand.
+
+- **A worn chastity belt is the lock.** It is matched by Devious Devices class, not by slot 49, which
+  belts share with corsets and underwear.
+- **Devious Devices removal goes through DD's own unlock round trip.** PPB waits for DD to settle
+  before handing the device to your hand. Dropping it on the unlock frame lets DD delete the
+  inventory half, making the device vanish.
+- **Quest and block-generic devices are refused** before anything is announced.
+
+### What you put on stays on
+
+Hand-equipped gear is meant to be permanent:
+
+- **Ordinary gear** is equipped with the engine's prevent-removal flag, so outfit re-evaluation
+  leaves it alone.
+- **Generic NPCs** are held by a pool of optional quest aliases (`PPB_HoldPoolQuest`, 32 slots), so a
+  cell respawn can't rebuild them from their record. Unique NPCs don't need it.
+- **`OutfitGuard`** detours `Actor::HasOutfitItems`, so a pooled NPC you undressed is not re-issued her
+  default outfit the next time her 3D loads. The detour reads the function prologue at runtime and
+  installs only on a whitelisted instruction pattern; anything unexpected logs the bytes and
+  installs nothing.
+- **SeverActions followers** under an active outfit preset or lock get the change recorded into
+  SeverActions, because its alias would otherwise strip the piece on the next load.
+
+Gestures show no on-screen messages by default (`equipNotify` / `undressNotify` in
+`PPB_tuning.txt`), and the whole layer is one switch: `bEquipGestures` in `PPB.ini`, read at load. Mod
+authors: every gesture is published on the event bus described in the Touch API section above.
+
+---
+
+## Your head, and the kiss
+
+**The player's head is a collider.** One keyframed box sized to a skull rides the headset, not the
+head bone. VRIK builds your body from the HMD with fixed proportions, so when you stand taller than
+the rig can reach the head *bone* tops out below your real eyes: at eye level sitting, chin level
+standing. No fixed offset can correct a gap that depends on posture.
+
+**It is a touch source,** `HEAD`, named by which part made contact:
+
+- `face`: the front of the head
+- `head`: anywhere else
+- `mouth`: a small probe on the lower front of the face
+
+A forehead on her shoulder, a cheek, a nuzzle into her neck all arrive as named contacts. A head
+contact never reports an interior sub-region, and only the mouth can reach the intimate openings. The
+head never pushes anyone.
+
+**The kiss.** The mouth probe meeting her upper lip raises `PPB_MouthLips` with `"R|LIPS|HEAD"`,
+start and end. It starts at 2.2 u and ends only past 3.2 u, so a real kiss holds steady instead of
+flickering. A kiss is lips only; it can never open her mouth. The head box is removed during
+OStim/SexLab scenes.
+
+---
+
 ## Features
 
 ### Per-race Havok bodies
@@ -451,9 +649,12 @@ lists all 107 capsules with their group, depth and override behaviour.
 | Skeleton | Covers |
 |---|---|
 | Human female | human, elf, orc females |
-| Argonian | beast skeleton, own face sculpt |
-| Khajiit | beast skeleton, own face sculpt |
-| Draenei | custom horns and hooves (Yvanni) |
+| Argonian female | beast skeleton, own face sculpt |
+| Khajiit female | beast skeleton, own face sculpt |
+| Draenei female | custom horns and hooves (Yvanni) |
+| Human male (2.0) | human, elf, orc males — own head layout and COM ladder |
+| Argonian male (2.0) | snout, jaw, crest and horns |
+| Khajiit male (2.0) | own head layout |
 
 Any race can be mapped to any skeleton in `PPB_Skeletons_Added_Race.ini`.
 
@@ -480,14 +681,31 @@ driven every frame, so this is the main performance dial.
 
 ### Proximity sensing ("orifices")
 
-Sculpting the body capsule by capsule also allows real orifices. The **mouth** is built from chin, jaw
-and palate capsules that detect insertion of another capsule (currently the index finger).
+Sculpting the body capsule by capsule also allows real orifices.
 
-Havok capsules can report **proximity**, not just collision. Watching the distance across four mouth
-capsules detects a fingertip at the lips and tracks it toward the palate — native engine touch
-detection, and very cheap. Wired to **MFG Fix** so the lips and chin respond.
+- **The mouth** is built from lip, cheek, palate and throat capsules. The gate needs the palate and
+  both cheeks at once, and the depth ladder runs from the lips to the throat. Wired to **MFG Fix** so
+  the lips and jaw respond.
+- **The vaginal and anal openings** are capsule ladders on the pelvis. The gate is an ellipse test
+  on the capsule axes, so it survives ReScale, ReShape and body morphs.
 
-An API for other plugins to consume this is planned if there's demand.
+**The orifice drive** opens the actual bone rings as something goes in, scaled by both depth and
+girth, so a fingertip and a plug at the same depth differ. It uses the same bone rings and directions
+as Penetration Physics (PPA), so both mods deform them alike. PPB arbitrates with PPA **by
+measurement**: a bone still holding PPB's own
+last write is PPB's, anything else is PPA animating and PPB stands down. When PPB stands down it
+still restores exactly the bones it moved, so it can never leave a permanent gape.
+
+All of it is published through the Touch API: mouth events, sub-regions and the depth number.
+
+### Genital collision
+
+A 4-capsule chain over the schlong bones, plus **GenBend**: touching drives erection up, holds, then
+decays, negotiated with SPS's own arousal erections so whichever is higher wins. Requires TNG + SPS.
+The rig exists only while the genitals are actually exposed.
+
+**Futa (2.2):** females wearing a futa schlong (TNG Gentlewoman, TRX-ERF) get the same rig. The gate
+is visible geometry on the genital chain, never slot 52, because a slot is only a claim.
 
 ## Fixes
 
@@ -568,7 +786,26 @@ ground" — the log-tumbling-down-stairs noise from an NPC caught on furniture. 
 **Optional:** [OBody NG](https://www.nexusmods.com/skyrimspecialedition/mods/77016) · [FSMP](https://www.nexusmods.com/skyrimspecialedition/mods/57339) / [SMP Flex](https://www.nexusmods.com/skyrimspecialedition/mods/101564) · [Dismembering Framework](https://www.nexusmods.com/skyrimspecialedition/mods/126203) · [Heels Fix](https://www.nexusmods.com/skyrimspecialedition/mods/64442)
 · SMP hair and tail mods
 
+**Optional, for specific features:**
+- **Genital collision:** TNG + SPS, or TNG Gentlewoman / TRX-ERF for futa.
+- **Orifice drive:** Penetration Physics (PPA) bone rings.
+- **Device gestures:** Devious Devices, ZaZ Animation Pack, Diary of Mine.
+- **Outfit handoff for followers:** SeverActions.
+- **Scene gating:** OStim / SexLab.
+- **Lips react to the mouth sensor:** MFG Fix.
+
 Install with a mod manager. Keep it above other skeleton mods.
+
+### Installer choices
+
+| Page | Choice |
+|---|---|
+| Performance | SMP hair and tail collision on, or off for weaker machines (`npcFollower`) |
+| Optional Features | Push and shove on/off · Equip gestures on/off |
+| Push and Shove Options | shown when push is on: Push walk · Push stumble · Shove knockdown · Leg sweep knockdown, each on/off |
+| Compatibility Patch | the Dismembering Framework freeze fix |
+
+Every choice is a line in a config file, so you can change your mind later without reinstalling.
 
 ## Configuration
 
@@ -577,6 +814,10 @@ Install with a mod manager. Keep it above other skeleton mods.
 | `PPB_Skeletons_Added_Race.ini` | maps races to skeletons — **removing it disables the mod** |
 | `PPB_skeletons.txt` | runtime skeleton map (read once at load) |
 | `PPB_tuning.txt` | live-polled tuning knobs |
+| `PPB.ini` | general settings, hot-reloaded: `[Equip]` refusal rules and the `[Features]` switches |
+
+`PPB.log` (in `My Games/Skyrim VR/SKSE/`) prints the effective feature state at startup on the
+`PPB FEATURES:` lines. When something doesn't react, check those first.
 
 ## Compatibility
 
@@ -589,6 +830,11 @@ several other fixes work the same way.
 Everything is gated behind plain config files, so bodies can be added or removed freely. A missing or
 malformed file is a no-op.
 
+- **Gift by Hand** also equips items by hand. If you prefer it, install PPB with *Equip gestures off*
+  so the two don't both act on the same item.
+- **Physical Collision VR (PCVR) 4.x:** no conflict. Both use HIGGS's collision layer and coexist.
+- **Follower Bump Guard** and **VRTouchEvents** read PPB's player head box; it is harmless without them.
+
 ## Status and roadmap
 
 **Beta** — not because it doesn't work, but because of its size and how deeply it reaches into the
@@ -599,15 +845,17 @@ sensors.
 
 Please report issues with logs.
 
+**Built on PPB:** **VRTouchEvents** turns PPB's contacts into SkyrimNet events, so NPCs react in
+conversation to where and how they are touched. Its DD-ZaZ AddOn narrates the device gestures.
+
 **Planned**
 
-- All vanilla and common male races
-- Companion mods built on PPB — one in progress with SkyrimNet using the proximity sensors
-- On demand: a tool for adding collision capsules to any SMP object, and a C++ API exposing PPB's
-  proximity events
+- Selective scene collision: ignore actor-vs-actor inside a scene while keeping the player's hands live
+- A positional hand stop, so your hand rests on skin instead of passing into it
+- On demand: a tool for adding collision capsules to any SMP object
 
 Identifying **which object was pressed against an NPC's skin** already works, by reading what the
-HIGGS hand is holding.
+HIGGS hand is holding. Since 2.2 the gestures use it.
 
 A lot of this was built with AI assistance — understanding deep engine mechanisms and searching
 thousands of installed mods for conflicts, work that would otherwise have taken weeks.

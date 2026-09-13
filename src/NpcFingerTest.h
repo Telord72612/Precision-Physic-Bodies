@@ -71,6 +71,12 @@ namespace NpcFinger {
     // event, which a consumer cannot observe. Returns -1 when he carries no GEN rig at all
     // (female / no schlong / dressed / rig budget), which the API reports as "unknown".
     int  GenLevelOf(std::uint32_t actorId);
+
+    // ★ 2026-08-23: bhkRigidBody::SetMotionType at the WRAPPER level (motion type + activation +
+    // collision-filter update together; a raw field poke does none of the last two). Exposed so the
+    // SCENE GATE can reuse the one relocation rather than duplicating the address.
+    // Values, as already used by this file's severed-head code: 1 = MOTION_DYNAMIC, 4 = MOTION_KEYFRAMED.
+    void SetBodyMotionType(RE::NiAVObject* node, std::uint64_t motionType);
     bool GarmentChordU(std::uint32_t actorId, int kind, int chord,
                        float aOutU[3], float bOutU[3], float* rOutU);
 

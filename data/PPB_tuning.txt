@@ -1123,7 +1123,7 @@ jtrackNow 0
 # refCapNow: flip to 1 WHILE STANDING NEXT TO LYDIA to read her exact scale-1 reference spans
 # (COM->head / COM->calf) into the log, then set back to 0. Bakes the measured-scale reference.
 refCapNow 0
-# poseConform 1 = per-bone XP32 conform (the working system — joints track nodes at ~0.2u). KEEP ON.
+# poseConform = per-bone XP32 conform (the working system — joints track nodes at ~0.2u). KEEP ON.
 poseConform 1
 # poseConformDump: diagnostic per-bone dump. Off for normal play (log spam otherwise).
 poseConformDump 0
@@ -1162,6 +1162,11 @@ fsmpPushForce 12000
 fsmpPushMaxForce 32000
 fsmpPushMinDispU 0.15
 npcGenCap 1
+npcGenCapFemale 1   # FUTA (2026-09-12): extend the GEN rig to FEMALES wearing a futa schlong
+                    # (TNG Gentlewoman / TRX-ERF). 2.2.0: SHIPS 1 (user ruling). Gated on the MESH, never slot 52.
+                    # Gate is NOT slot 52: it requires VISIBLE geometry skinned under
+                    # NPC Genitals01..06, so a naked vanilla female or an unrelated
+                    # slot-52 item can never produce a phantom rig. Receipt: 'NFING ... FUTA'.
 npcGenMassKg 2.0
 npcGenR 1.6
 npcGenAlpha 0.85
@@ -1224,6 +1229,27 @@ apiEvents 1
 # apiHairTarget: hair chords as touch TARGETS. OFF — hair drapes the face, so it would win
 # the nearest-capsule race against cheeks and shadow face touch. Tails are always targets.
 apiHairTarget 0
+
+# ── BREAST TOUCH REACH (2026-09-03, VRTE request) ────────────────────────────────────
+# "Breast capsules are easily half the size of the breast ... touch is now way late.
+#  It's particularly worse on bigger breasts."  MEASURED CAUSE: the breast radius is
+#  r = -0.6418 + 0.3645*cup and `cup` saturates at lmBrCupSat 10.40 — but the captured
+#  zero-slider neutrals are CBBE 9.97 / 3BA 9.63, so the clamp sits ~4% ABOVE THE BASE
+#  BODY. The capsule's whole range from a zero-slider CBBE to the biggest preset in the
+#  game is 2.99 -> 3.15u (~5%) while the flesh can double. Above the clamp the capsule
+#  stops growing and the mesh keeps going.
+# This adds the missing reach on the CAPSULE side, for the two breast children ONLY, and
+# only to the REPORTED distance — never to the nearest-capsule ranking, so a padded breast
+# can never steal a contact from the sternum/rib/collarbone beside it. Nothing physical
+# changes: not the Havok radius, not the bake, not the sculpt, not jiggle.
+# DIAL IT: the visualiser already draws capsule+ghostBreastPadU; walk the ghost onto the
+# skin and put that number here. 0 disables the feature.
+apiBreastPadU     1.5      # base pad, game units (1.5 = ghostBreastPadU, the eye-calibrated gap)
+                           # A/B 2026-09-03: run B (0.0) captured on Yvanni FF002702 21:15:26-44,
+                           # R FINGER, digest onset d = +0.71/+0.47 (L), +0.64/+0.62/+0.65 (R).
+                           # NOW ON RUN A (1.5) — repeat the SAME finger touch for the comparison.
+apiBreastPadSlope 0.3645   # + this per unit of cup ABOVE the 10.40 clamp; 0.3645 restores
+                           # exactly what saturation withheld. Geometry argues for ~0.5.
 # apiRawEvents: also fire the VERBOSE PPB_TouchRaw* events (one per capsule per source
 # class, no region grouping). OFF — the digest stream is what consumers want; raw is for
 # mod authors building their own aggregation. The native interface exposes raw either way
@@ -1241,7 +1267,10 @@ apiSubRegionInEvent 0
 # 1 = smart: a holding hand's palm/slab are muted (grip noise) but its INDEX boxes stay live
 #     while VRIK reads the finger as extended - so a weapon hand can still poke and BOTH hands
 #     report when both touch. 2 = strict full mute (pre-2026-07-31). 0 = off.
-apiSuppressHeldHand 1
+# 2026-09-06 (user, in VR): STRICT. "If a hand is holding an apple and the player touches the apple
+#     and the hand, mute the hand - there is a reason the player is holding the apple, it's deliberate."
+#     Code default is now 2 as well. The held thing reports; the holding hand does not.
+apiSuppressHeldHand 2
 # ── DWELL FILTER (2026-07-30): a body part is only SENT through the API (events,
 # callbacks, Papyrus snapshot) after the probe LINGERED on it this many seconds.
 # Tracking is unaffected — this is emission-side, so brushing 20 capsules in one
@@ -1259,7 +1288,7 @@ apiDwellTailS 0.25
 # apiLog: START/END receipt lines in PPB.log. ON for this dev session (first in-game
 # verification); the packager refuses to ship it on.
 # dev machine: 1 for verification sessions; flip to 0 at packaging (shipping default)
-apiLog 0
+apiLog 0  # 2026-09-12 kiss VR test finished (was 1). v13b: OFF - the PUSHTRAVEL receipt already names the touched slot (was 1)
 npcRigRangeU 700
 npcRigRangeHystU 100
 npcRigMaxActors 2
@@ -1676,7 +1705,7 @@ mouthRampOut 3
 mouthFingerBox 1
 # touchProbe: capsule-DIALLING aid. Logs the nearest capsule to each fingertip every 45
 # frames. Ships OFF. Flip to 1 (with touchProbeHud 1) to re-enter a mapping session.
-touchProbe 0
+touchProbe 0  # v13b: OFF - logs every 45 frames (was 1)
 touchProbeRangeU 3.0
 lmGainThigh 1.0
 lmGainArm 1.0
@@ -1838,7 +1867,7 @@ dgVictimPlanck 1
 #   geomHidden=  how many of those are hidden
 #   bodyArmor= / revealing= / armor='name'   the biped-slot-32 signal
 # Whichever column flips in lockstep with what you SEE is the signal the rig can trust.
-genProbe 0
+genProbe 0  # v13b: OFF - was 2 = 10 Hz poll (was 2)
 
 # maleGeometry: 0 = the geometry writers REFUSE a male even if he carries a PPB bake.
 # PPB decides "we own this actor's geometry" by a SHAPE test (COM is a bhkListShape). That was
@@ -1961,8 +1990,371 @@ touchProbeHudU 1.0
 # animation. The engine already does this for FURNITURE (it removes the non-ragdoll bodies from
 # the world); this is the reversible version: drop the bumper's collision while the actor carries
 # OStim excitement, restore it when the excitement decays away.
-# Trigger = OStimExcitementFaction rank. Inert if OStim is not installed (faction absent).
-bumperSceneOff 1
+#
+# !! CORRECTED 2026-08-23: the excitement faction NEVER ARMED. It resolves, but no driven actor
+# ever read a rank at or above the threshold -- proven by eye (the bumper never went green) and by
+# the total absence of a state-change receipt. The one apparent success was a scene on a TABLE,
+# i.e. the ENGINE's furniture path removing the bumper for us; on the floor it came straight back.
+# The PRIMARY trigger is now the ostim_start / ostim_thread_start mod events (which also cover
+# NPC-on-NPC scenes). Excitement rank is kept only as a SECONDARY, because the rank DECAYS and so
+# it covers the post-scene settle that the event's hard end edge does not.
+
+# ── HOW the scene gate neutralises physics (2026-08-23) ────────────────────────────────────
+# 1 = collision OFF on all 19 bodies. The 2.1 shipped behaviour: fixes alignment, but nothing can
+#     be touched physically during a scene and the engine-narrowphase contact path (src=ENG) stops.
+# 2 = MOTION_KEYFRAMED (default, recommended). Three things at once:
+#       * NO CONSTRAINT SOLVE, no contacts, no gravity acting on the body. It is moved only by the
+#         ragdoll drive, so it converges on the animated pose instead of being dragged off it.
+#       * INFINITE MASS -- neither actor can shove the other.
+#       * IT KEEPS COLLIDING -- the player can still touch, and the engine-narrowphase contact
+#         path (src=ENG) keeps working, which mode 1 loses.
+#     Safe against PLANCK: PLANCK sets DYNAMIC once from AddRagdollToWorld, not per frame. PPB
+#     re-asserts twice a second anyway, because PLANCK re-adds ragdolls constantly.
+#
+#     !! IT DOES NOT "track the animation exactly". That was this file's original wording and it is
+#     FALSE. Exact tracking would come from kSyncOnUpdate (collision-object flags 137: the engine
+#     copies the animated node straight into the body, no solve) -- but PLANCK force-clears that
+#     bit EVERY FRAME for every active actor (planck_080 main.cpp:4761-4762). So the body follows
+#     driveToPose's PD servo (hierarchyGain 0.6 / velocityGain 0.6 / positionGain 0.05):
+#     convergent, but LAGGING. And postPhysics writes the ragdoll back into the visible mesh, so a
+#     lagging keyframed limb is a lagging VISIBLE limb. See doc 25 section 0b.
+#
+#     WHAT THIS MEANS IN PRACTICE: mode 2 stops the actors fighting each other, which is what fixes
+#     alignment. It does NOT make a capsule snap onto an extreme animated pose. For a DD arm-binder
+#     the arms will track BETTER than dynamic (no joint-limit parking, no partner shoving) but
+#     still with servo lag.
+
+# ── DIVERGENCE PROBE (2026-08-25) — MEASURE ONLY, writes nothing to the game ────────────────
+# Doc 25 section 7.7 step 1. Answers, per bone: "is this body sitting off its animated target,
+# and is the gap PERSISTING?" -- the evidence needed before building any authority dial.
+# Self-calibrating: a SLOW ema learns each bone's own baseline (a body's transform is not its
+# bone's transform, so the raw gap never settles at zero), a FAST ema tracks now, and the
+# detector keys on the DIFFERENCE. No calibration table, survives ReScale/ReShape.
+# Player-caused divergence is excluded (HIGGS grab id + hand/weapon/object proximity), so it
+# will not fight your own hands.
+
+# ============================================================================================
+#  HandStop -- the player's hand STOPS at NPC body surfaces (2026-08-28, PRIMARY GOAL)
+# ============================================================================================
+# "Me pushing a NPC with my hand, my hand moving 2u or 3u, not going further cause the NPC IS
+# an obstacle, even if my controller IS going further" -- resistance in VR is the VISIBLE hand
+# holding at the surface while the controller continues. PCVR already does this against world
+# geometry and its own player body (bBodyStopsHands); its filter ignores NPCs. HandStop aims
+# the same idea at PPB's NPC capsules. Longer term PCVR becomes a FOMOD-optional dependency:
+# its clamp physics, our obstacle geometry.
+#
+# 0 = off
+# 1 = PROBE (stage 1, current): log-only. Press a hand into an NPC and PPB.log shows the
+#     penetration episodes -- "HANDSTOP R CONTACT: 2.31u into 'Belly'", 2 Hz while inside,
+#     and a max-depth line on release. Validates the numbers the clamp will act on. NO writes.
+# 2 = the clamp itself (stage 2, NOT built yet)
+handStop 0  # v13b: OFF - depth-probe log spam (was 1)
+
+# ============================================================================================
+#  PUSHSTEP -- sustained trunk pressure makes the NPC step away, engine-native (2026-08-29)
+# ============================================================================================
+# The user's spec, verbatim: the bump RESPONSE (the back-away walk FBG guards), driven by hand
+# pressure -- "until the pressure is 0 from the player hand for 1 sec." Mechanism: the engine's
+# own small-bump package (the drag-stepping's cousin), re-issued on a cadence while a hand
+# presses the trunk (same qualifying contact as the Brace). Direction = away from the player.
+#
+# FollowerBumpGuard note: FBG softens TEAMMATE bumps to a ~16u shuffle and forwards them --
+# repeated softened bumps = little steps, which is the desired look. Non-teammates get the
+# full engine walk.
+#
+# Receipts: "PUSHSTEP <id> episode START/END", "bump issued" per cadence tick.
+pushStep 1
+pushStepRepeatS 0.7   # seconds between bumps while pressure persists
+pushStepStopS 0.2   # v7 (user): stop as soon as the push stops     # pressure must be zero this long to end the episode
+pushStepWalkU 16      # ★ v2: the RETREAT BUDGET cap — 2026-08-29 in-game: 60→12 (user: a 3u chest push = ~10u stabilizing step, not a 60u march)
+                      # before pausing (even under sustained pressure; keep pressing and the
+                      # next measured retreat starts after a 0.35s beat). Scaled by region:
+                      #   com/hips x1.25 | waist x1.10 | belly x1.00 | chest x0.85
+                      # (delivered to FBG via the 'PSHB' handshake; FBG keeps its 16u
+                      #  anti-retreat clamp for every bump that is NOT a PPB push)
+pushStepWeapon 1      # 1 = weapon pressure on the trunk also drives steps
+pushStepSpeedU 42     # PushWalk speed, game units/sec (~85 = deliberate backward walk).
+pushStepDispU 0.4     # v7.5: faster still     # v4 TRIGGER: a trunk bone must sit this far off its XP32 home to start a walk
+pushStepDispSlowU 3.0   # v9.3: depth needed when the push is SLOW (gentle touch must travel further)
+pushStepDispFastU 1.5   # 2026-09-06 (user in VR): finger engage was 'too prime' at 0.5 - a fast poke now needs 1.5u  # v9.3: depth needed at full shove speed
+pushStepRateFastU 15    # v9.3: the gap growth rate (u/s) that counts as a full shove
+pushStepFacePush 1      # v9.3: she TURNS toward the push and walks backward (0 = old sideways strafe)
+pushStepReaction 1      # v9.5 master: big/fast pushes play a STAGGER, huge ones RAGDOLL (both are animations, so they work where planner control is refused - e.g. weapon drawn)
+pushStepStaggerU  10.0    # 2026-09-03 user eye-call at onset 1: 4/8 was "way too low", 10/20 was the  # v10.3 (user): 'add some to the shove' (was 8)
+                         # pre-onset-1 feel. 8/15 is the new band. ⚠ These are FLAT across every
+                         # trunk bone, and the user's own observation is that they should not be:
+                         # "too easy on Spine2, can be good for Spine0". Same shove displaces the
+                         # CHEST further than the WAIST because the body pivots at the hips, so a
+                         # flat threshold ragdolls off a chest push that a waist push would only
+                         # stagger. Per-node reaction scaling is DESIGNED, not built — see below.
+pushStepStaggerRate 0   # v11 rule 3 (user 2026-09-06 23:30): 0 = NO speed gate on the stagger. "at 10 u it's a shove, so the NPC should do a stumble. 10 u means she bends backward, that's unstable." SET BACK TO 10 to restore the v9.9 speed test hot if too many firm leans stumble.  (was 10)
+pushStepRagdollU  20.0   # 2026-09-06: back to the user's approved 20 now that a push can ESCALATE mid-walk (pushStepEscalate); 15 was the 09-03 workaround for the gap.  # v10.3 (user): 'add distance to the ragdoll' (was 20)  # v10.3b (user): back to 20 - the 30 was judged on five FALSE lift-ragdolls
+                         # ⚠ Still subject to the ESCALATION GAP (report 28 §3): the tiers live
+                         # inside the !PlannerActive guard, so once a gentle push starts a walk,
+                         # a push that BUILDS can never promote to a stagger or a knockdown. Only
+                         # the first engage's magnitude decides. Raising these thresholds makes
+                         # that gap MORE visible, not less — the fix is to evaluate the tiers
+                         # outside the guard.
+pushStepReactCoolS 1.5  # v9.5: per-actor cooldown between reactions
+pushStepRagSettleS 0.6  # v9.7: police her body speed this long after a knockdown (the launch guard)
+pushStepEscalate  1     # v9.8 (2026-09-06): tiers re-evaluated every frame DURING a walk (a building push promotes to stagger/knockdown); a stagger ends the walk. 0 = old behaviour  # v10.3 (2026-09-06 23:15): OFF - the during-walk tiers read the body-vs-intent gap, which the walk itself corrupts (a 2 u engage read 27 u 300 ms later); tiers fire at engage only until a pusher-depth signal exists  # v11 hot A/B 12:15 (sensor now honest)
+pushStepLatTrig   1     # v9.9 (2026-09-06 VR): the lateral gain (pushStepSideGain) also scales the depth that meets the ENGAGE bar and the STAGGER bar (sideways pushes under-reported: trunk stiffer sideways). Knockdown bar stays raw. 0 = raw depth (v9.8)
+pushStepRateWinS  0.10  # v9.9 (2026-09-06 VR): the reaction tiers judge speed over this window (s), not one frame (0.6u wobble at 75Hz read +45u/s: 'normal push became a shove'; a latched PEAK no longer bypasses the speed test). Engage bar keeps the one-frame rate.
+pushStepSpeedTrack 1    # v10.0 (2026-09-06 user in VR): the walk speed FOLLOWS the live push - a target from the live depth every frame, the commanded speed slews toward it (smooth ramp-up while the push continues, ramp-down the moment it stops). 0 = v6 envelope (engage-locked speed + timed ramps)
+pushStepSpeedUpU   60   # v10.0: how fast the walk may speed UP, game u/s per second (60 = 0->60 u/s in 1 s)
+pushStepSpeedDownU 50  # v10.0: how fast it may slow DOWN once the push stops (120 = 60->0 in 0.5 s; 'stop almost as soon as there is no push') # v14 (2026-09-08 user): "the ending ramp should be smooth" - 120 stopped her 60->0 in 0.5s; 50 = ~1.2s
+pushStepReactGraceS   0.30 # v10.1 (2026-09-06 VR): no stagger/ragdoll tier for this long after a walk engages - the walk's own onset made the sensor gap collapse and re-grow, and the window read that rebound as a shove 55-130 ms after engage
+pushStepStaggerFace   1    # v10.1 (user ruling): on a stagger turn her FIRST - face the player if the shove comes from the front or side and stumble BACK; face away if it comes from behind and stumble FORWARD. 0 = stagger in her current facing (the sideways shuffle in place)
+pushStepStaggerFaceDeg 110 # v10.1: aggressor within +/-this of her front counts as 'front or side'
+pushStepStaggerMagMin 0.5  # v10.1: staggerMagnitude floor (vanilla barely reads below 0.25; raise toward 0.5 for a bigger stumble)
+pushStepSpeedExp      2.0  # v10.1 (user: 'exponential to the push'): walk target = pushStepSpeedU x (depth/pushStepSpeedRefU)^exp; the ramp-up rate scales by the same factor. 1 = linear
+pushStepEngageWinRate 1    # v10.1 (user: 'the finger is still super prime'): the engage bar reads the WINDOWED growth rate, not one frame - a poke must show 100 ms of real growth to earn pushStepDispFastU. 0 = v9.x one-frame bar
+pushStepStaggerDirFlip 0   # v10.2 HOT: swap staggerDirection 0 <-> 0.5 if she stumbles the wrong way AFTER the facing turn (the animation's 'from' convention). 1 = flipped
+pushStepLiftRag 1    # v10.2 (user: 'lifted both her legs - nothing happened'): both FEET bodies above her floor by pushStepLiftFeetU for pushStepFallFrames frames with a player hand/weapon on her legs/trunk -> ragdoll. The old fall trigger reads the char controller, which stays on the floor when the ragdoll legs are lifted  # v13b USER: feet-off-the-ground ragdoll OFF until the push itself is tuned (was 1)
+pushStepLiftFeetU     12   # v10.2: how high both feet must be above her origin (game u)
+pushStepLiftSettleS   0.6  # v10.3: no lift verdict while she is walking or this long after a walk ended (walk-onset feet transient = five false lifts on 22:37)
+pushStepStaggerFaceSrc 0   # v10.3 (user ruling): 0 = face the PUSH's acting direction (aggressor = opposite the retreat; weapon from her left while you face her front = a side push); 1 = the player's position (v10.2, rejected)
+pushStepStaggerTurnMode 0  # v10.3 HOT: 0 = Actor::SetRotationZ (yaw verified to land); 1 = TESObjectREFR::SetAngle + Update3DPosition (the console/Papyrus path) if the 3D does not visibly follow mode 0; 2 = NO turn - vanilla directional stagger in her current facing
+
+# ═══ v11 STEP A (2026-09-07, report 32 §1 + §5 build order A) — the flat ladder + the rest-relative lift
+# The engage bar is now ONE flat number per bone (rate feeds the RAMP, not the gate). Measured from the
+# 09-07 08:32 session: converged idle noise 0.01–0.03 u p2p per slot, lowest real engage 2.10 u, and of
+# 8 refused pushes only one (3.51 u) newly engages at 2 u. RETIRED (still parsed, no longer read):
+# pushStepDispU / DispSlowU / DispFastU / RateFastU / BreastMul / HeadTrig / EngageWinRate / LiftFeetU.
+pushStepBarU 5.0            # v11: engage bar, ALL bones (the 3-group split was dropped 16:20)
+pushStepBarHeadU 5.0        # ABSOLUTE head bar (not a multiplier) until the head's 3-4 u body-vs-intent offset is found - report 32 §2.4  # v11 14:14 (user): +1.5u
+pushStepObjectPush 0        # ⛔ OFF: a held object as a push source walks her away during the 1 s equip dwell (DeviceGesture has no "dwell in flight" query yet)
+pushStepObjectBarMul 1.75   # when armed, the object bar = pushStepBarU x this (~3.5 u)
+pushStepLiftRestU 3       # v28 2026-09-10 (user: "3u is probably high enough and make sense"; was 8 - with v23's rise stacked on the bar, 8 meant 11u and 0 of 4 real sweeps fired). Feet lift measured from her OWN rest height. Carmella heelZ=8.0u -> her feet sit ~8.2-9.0 u above her ORIGIN at rest, so the old 12 u origin bar wanted ~4 u of REAL lift and never fired
+# --- v23 THE LIFT GATE (2026-09-09, designed from the 20:30-20:41 watch-only session: 63 would-fires,
+# 3 real lifts / 4 false). HEIGHT ALONE DOES NOT SEPARATE THEM - the sitting false positive reached
+# 27.9u, higher than a real lift's peak. What separates them: a real lift takes BOTH feet up TOGETHER
+# (|R-L| 1.7-2.0u) and they KEEP RISING; the false one was one foot parked 26u above the other, frozen
+# for 3.5s. The gait flags do NOT discriminate - both read [gait W1 R0 S0 M0].
+pushStepLiftSymU 8           # the two feet must be within this of each other
+pushStepLiftRiseU 3          # ...and both must have RISEN this far since the episode began
+pushStepLiftRestSpreadU 4    # rest-latch sanity (was a hard-coded 8; the one good latch spread 4.6)
+# --- v28 THE LIFT ZONE + RISE FROM CONTACT (2026-09-10, user: "Higher thigh contact is for a push/shove, anything
+# lower than mid thigh is for a leg lift, and if there is lift from com, it's a leg lift"). PUSH ARMING IS UNTOUCHED:
+# these only decide who may be blamed for her feet leaving the floor. MEASURED first: the one real between-the-legs
+# lift (12:09) touched "mid thigh" (child 4), which sits ~0.60 of the way hip->knee - a split by NAME would have lost it.
+pushStepLiftZoneRule 1         # 1 = only calf / foot / pelvis / LOWER-thigh contacts attribute a lift; 0 = any contact (v11)
+pushStepLiftThighSplit 0.5     # v29: the thigh ROD only (child 0, the bone core inside the rings) - where the hand sits along it, hip 0 -> knee 1; the rings count by identity (pushStepLiftThighMask)
+pushStepLiftRiseFromContact 1  # 1 = the RISE term counts from the lift contact; 0 = from the first above-bar frame (v23: 8+3 = 11u effective)
+# --- v29 THE COLLISION CAPSULE, ONE LEG, THE TRIP, THE FLOOR (2026-09-10). User: "Use the collision capsule, we own them" /
+# one leg "Yes, ~5 u" / "keep the walk, but ragdoll condition trump walk ... if she walk and her feet end up lifting higher than
+# the intended walk location, than ragdoll" / "can we do a floor level check ... make sure the getup animation is made from the
+# floor level". v28's "C4 ~0.60" note above was the compiled default capsule; the live C4 sits 0.41-0.56 (report 37).
+pushStepLiftEngineAttr 1      # 1 = the Havok collision capsule the hand / palm / weapon hit attributes a lift too (physics rate, not the 4 Hz list)
+pushStepLiftThighMask 112     # thigh capsules that credit a lift, bit N = child N: 112 = C4 mid + C5 lower + C6 knee (C1-C3 push); 96 = C4 push too
+pushStepLiftOneLegU 0         # ONE LEG OFF (user 2026-09-11: one leg up must not trip her - the other leg is on the floor and firm; only BOTH feet leaving the floor ragdolls). 5 = the v29 rule
+pushStepLiftWalkVerdict 1     # 1 = while walking / moving on her own the feet are judged against the ANIMATION and may fire (0 = no verdict while walking, v28)
+pushStepLiftWalkFrames 10     # frames a trip must hold while walking (strides and servo lag are brief)
+pushStepLiftGroundU 1.5       # FLOOR: after a knockdown or a seat both feet must be within this of rest (also the floor clamp)...
+pushStepLiftGroundS 0.2       # ...for this long before the lift can fire again
+pushStepLiftGroundMaxS 0.6     # v29e: the floor wait above expires this long after she is back on her feet, armed or not - it only ever had to
+                               # cover the GET-UP's own leg motion. Without it, keeping her feet in the air kept the lift DEAF (21:42:50: +36/+32u,
+                               # 35 qualifying frames, 'floor WAITING', ignored). 0 = no deadline (pre-v29e).
+pushStepLiftSitGuard 1        # 1 = never a lift verdict while sitting / sleeping / in furniture / swimming / mid-killmove
+pushStepFurnSitState 1        # v35 (2026-09-12) SIX-STATE RULE: "busy in furniture" = her BODY's sit state (2 WaitingForSitAnim, 3 IsSitting,
+                              # 4 WantToStand, 6 WaitingForSleepAnim, 7 IsSleeping, 8 WantToWake). The furniture HANDLE is a reservation and no
+                              # longer counts (it blinded push + feet-lift while she walked to a chair, and 70 s after she stood up).
+                              # Push / shove / feet-lift only. 0 = the old handle-or-any-state rule, exactly (A/B).
+pushStepFurnLean 1            # v36 LEAN RULE (user ruling 2026-09-12): "all lean are not pushable, but can be leg sweep". A lean = a lean-only marker
+                              # (wall / rail) OR a lean keyword (counter, bar counter, lean table, soldier wall, ZaZ wall/rail lean).
+                              # 0 = a lean is busy like a chair (no push, no sweep) | 1 = no push/shove, leg sweep YES | 2 = push AND sweep (v35).
+pushStepLiftComU 5            # v29b PELVIS BAR (user "Pelvis bar 5 u"; 22:47 log: a finger on her pelvis lifted both feet +3.3/+2.8 vs the 3 u bar):
+                              # a both-feet lift credited to a pelvis capsule needs both feet >= this up AND risen >= this; legs keep the 3 u bar; 0 = same as legs
+# --- v24 COMBAT GATE (2026-09-09, user: "Not in combat and other stuff like that thou"). An NPC who is
+# FIGHTING gets no push reactions at all: no walk-back, no stumble, no knockdown, no lift ragdoll. The
+# game is already arbitrating that fight and a shove reaction both reads wrong and steps on it.
+pushStepCombatGate 1         # 0 = off (reactions fire in combat too, the pre-v24 behaviour)
+# Killmoves / paired animations drive BOTH participants from one synchronised clip - knocking one down
+# mid-scene looks broken and can desync the pair.
+pushStepKillMoveGate 1
+pushStepLiftLogHz 1           # 2026-09-11: 1 Hz - 0 printed the lift watch EVERY frame (the during-walk data session is over)
+pushStepWalkFaceSplit 1     # rule 9 on the WALK too: front 220 deg -> face the push, walk backward; rear 140 deg -> face the retreat, walk forward (split angle = pushStepStaggerFaceDeg 110)
+pushSenseTriad 0            # v11 PROBE (2026-09-07): PUSHTRIAD node<->intent / body<->intent / node<->body per sense bone, 1 Hz idle / 20 Hz near. Read-only. SET TO 0 after the session  # OFF 14:14 - measurement complete (proof log banked in _research/logs)
+pushSenseZ 1                # v11 SENSE (2026-09-07): Z in the published magnitude - the 90-deg bend was 20 u back and 35 u DOWN; XY-only threw away the larger half. 0 = old XY magnitude
+pushSenseBaseFreezeU 1.5    # v11: the rest-lag baseline never learns while the horizontal gap exceeds this (PUSHTRIAD: the old proximity freeze released mid-bend and ate a 20 u push down to 0.54)
+pushSenseBaseHoldS 2.0      # v11: ...nor for this long after the last contact/reaction, so the rebound is not absorbed either
+pushSenseStandDownS 2.5     # v11: after a stagger/ragdoll WE fire the sensor publishes zero and learns nothing - the stumble animation read as a 24 u push and re-fired the tier at the 1.5 s cooldown. Must outlast the animation
+pushStepTierChain 0         # v11 13:03 (user rule 4): the tiers read the TOUCHED bone. 1 = largest over the trunk chain (a waist push then ragdolls on the chest's swing) - A/B only
+pushStepTierHoldS 0.15      # v11 13:15 (user: 'strong push yes, but no more than 3u deep'): a tier fires only after its gap has stayed above the bar this long. A jolt (0->12->back in 300 ms) fails; a shove or a lean passes. 0 = first-frame fire
+pushStepHandTravelU 3.0     # v11 14:20 (user): 'wait 3u of hand shove before she start moving' - the walk may not START until the pushing HAND has moved this far since it first touched her (front/back). The body bar alone is crossed after ~1u of hand motion. Tiers untouched
+pushStepHandTravelSideU 0   # v11 14:20 (user): 'except sideway' - no hand-travel requirement for pushes > ~45 deg off her front/back axis
+pushStepAnchorSrc 1         # v11.1 (2026-09-07 evening, user: "when my hand touch her havok capsule, ANY capsule, the engine react. It detect a contact ... That's our trigger"): the hand-travel anchor is planted on the ENGINE's contact every physics step, not on the 4 Hz API snapshot (16:45:42 gap 13.02u / travel 0.00 = the 250 ms blind spot; stagger 155 ms later). 0 = the 16:32 behaviour (API anchor only)
+pushStepAnchorTrunkOnly 0  # v13d REVERTED (user): "It does not matter if i touch her arms or anywhere else, the displacement is calculated AT THE NODE." ANY capsule contact arms the push; the trunk JOINTS decide whether anything happened. 1 = trunk capsules only (the v13c mistake, kept for A/B)
+pushStepLiftGait 0          # v11.1 (user 16:45:48: a walking Sofia ragdolled from a thigh brush): the lift verdict and its rest latch ask the ACTOR (Actor::IsMoving + walking/running/sprinting flags), not only PPB's own walk. 0 = the 16:32 behaviour
+pushStepTravelMode 1        # ★★ v12 (user, 2026-09-07 evening, verbatim): "Player's hand contact, start calculating distance of push. Pass 3u, start walking sequence. Pass 10u, do stumble. That's it, no complicated gate, swing, state, just distance from origin on the XP32." At first contact PPB captures every sensed node's position IN HER FRAME (origin-relative + de-yawed, so walking and turning cancel); the push is the distance that node has travelled since. Bypasses the engage bar, hand-travel gate, press gate, rebound veto, hemisphere clamp, peak latch, rate terms, lateral factor and tier hold. 0 = the v11 gap sensor with every gate (hot A/B)
+pushStepTravelWalkU 10.0  # v14b (2026-09-08 user): TRIPLED from 5/15/25 - experiment     # v12: distance from origin that starts the walk # v14 (2026-09-08 user): 3/10/20 -> 5/15/25, "i want to push a bit more before the walk"
+pushStepTravelStumbleU 20.0  # v14b (2026-09-08 user): TRIPLED from 5/15/25 - experiment # v12: ... the stumble # v14 (2026-09-08 user): 3/10/20 -> 5/15/25, "i want to push a bit more before the walk"
+pushStepTravelRagdollU 35.0  # v14b (2026-09-08 user): TRIPLED from 5/15/25 - experiment # v12: ... the knockdown # v14 (2026-09-08 user): 3/10/20 -> 5/15/25, "i want to push a bit more before the walk"  # v14d (user): +5u to ALL ragdoll
+pushStepOriginHoldS 0.5     # v12: contact may lapse this long before the next touch counts as a NEW push (fresh origin)
+pushStepSoftExclude 0       # v13: OFF - under the whole-body reading the contact only says "the player is pushing"; the number comes from the six trunk JOINTS (rigid Havok bones), so there is nothing soft to exclude. 1 = a belly/breast contact cannot even ARM a push. ORIGINAL NOTE: ★ v12 (user): "belly and breast got FSMP physic, they MUST be excluded" - a soft-body surface yields long before her frame moves, so a contact there cannot start or feed a push. The capsules stay fully touchable (the touch API still reports them). 0 = belly/breast push again
+pushStepSelfMoveGate 0      # ★ v12a (19:06 belly push): while she moves under her OWN power her trunk bones travel 10-17u per stride in her own frame, so a push cannot be measured through her gait (the 17.29u "push" that stumbled her was Sofia walking). An animation-driven actor also refuses planner control, so only the animation-side stumble could ever fire. While self-moving: origin re-captured every frame, no walk, no tier. 0 = measure through her gait  # v13b: REDUNDANT under v13 - the reference IS the animation, so her gait already cancels; the gate only suppressed real pushes when IsMoving flickered on a standing follower (~33s of a 12-min session) (was 1)
+# --- v11 15:45 PER-BONE BARS (user): the same push moves a bone further the higher up the chain it sits.
+# LOW = COM 11 + Spine0 4 + thighs (the base knobs below) | MID = Spine1/Spine2 | HIGH = Neck/Head.
+# pushStepBarMidU 6           # engage bar, belly/chest   [v11 16:20: RETIRED - one set of bars for every bone; parsed but unread]
+# pushStepStaggerMidU 15      # stumble, belly/chest   [v11 16:20: RETIRED - one set of bars for every bone; parsed but unread]
+# pushStepRagdollMidU 25      # knockdown, belly/chest   [v11 16:20: RETIRED - one set of bars for every bone; parsed but unread]
+# pushStepBarHighU 6          # engage bar, neck/head   [v11 16:20: RETIRED - one set of bars for every bone; parsed but unread]
+# pushStepStaggerHighU 15     # stumble, neck/head   [v11 16:20: RETIRED - one set of bars for every bone; parsed but unread]
+# pushStepRagdollHighU 25     # knockdown, neck/head   [v11 16:20: RETIRED - one set of bars for every bone; parsed but unread]
+pushStepKnockSrcU 60        # v11: distance at which the knock's explosion origin is placed on the AGGRESSOR's side. Only the direction matters
+pushStepRagMaxVelU 120  # v9.7: speed ceiling during that window (game u/s)
+pushStepDispGain 3.5  # v4: walk distance = displacement x this (3u push -> ~10u step), capped by pushStepWalkU x region
+pushStepSensor 5      # 5 = v5 intent-gap sensor (body vs the animation's FK'd target); 4 = legacy body-vs-node for A/B
+pushStepSettleS 0.15  # v6 LAG: settle wait before a fresh measurement (was 0.8)
+pushStepRefracS 0.15  # v6 LAG: breath between a full stop and the next engage (was 0.5)
+pushStepSpeedRefU 2.0 # 2026-09-06 v10.1 (user: 'ramp it up faster, exponential to the push'): a sustained 2u gap = pushStepSpeedU; ~2.5u hits the max (was 3.0)  # v6: the push depth that earns exactly pushStepSpeedU of speed
+pushStepSpeedMinU 18  # 2026-09-06 (user in VR, v10 live speed): the gentlest sustained push is a slow shuffle (was 30)  # v7.4 note: soft engages must still visibly step
+pushStepSpeedMaxU 90  # 2026-09-06 (user in VR): 'too fast and deliberate' at 90 - the hardest sustained push now walks at 60  # v17 (user): x1.5 the previous ceiling
+pushStepRampInS 1.0   # v6: seconds to reach target speed (starts at 15%)
+pushStepRampOutS 0.4  # v7 (user): quick stop when the push ends  # v6: seconds to fade to a stop once the hand leaves
+pushStepExtendMul 3.0 # v6: sustained contact may extend the walk to budget x this (cap-fades are FINAL since v6.1) # v6: sustained contact may extend the walk to budget x this
+pushStepStopU 0.45    # v7.7 HYSTERESIS FIX: must sit BELOW the resume threshold (dispU 0.6) - 0.75>0.6 made stop/resume flutter at frame rate (log 12:31:49)
+pushStepMulChest 0.85 # v7.1 distance multiplier: push on the CHEST
+pushStepMulBelly 1.00 # ... belly
+pushStepMulWaist 1.10 # ... waist
+pushStepMulCom 1.25   # ... hips/COM ring
+pushStepMulThigh 1.25 # ... thigh (hip presses land here)
+pushStepRampFloor 0.15 # she starts at this fraction of target speed (0..1)
+pushStepResumeS 0.2   # contact this fresh + a real re-push resumes a fade
+pushStepExitSpeedU 2.0 # her AI gets control back below this speed
+pushStepNearU 1.5     # v7.7: the chest capsule FLEES a push (contact never registered until the bend saturated at 21u); 2.0 keeps attribution while catching a fleeing capsule
+pushStepDirOffDeg 0   # TEST: rotate her walk direction by N degrees (0 = obey the push)
+pushStepAccel 10.0    # movement override: how briskly she gets going (PLANCK ships 10)
+pushStepDecel 10.0    # ... how briskly she can slow (PLANCK ships 10)
+pushStepRotPct 2.5    # ... turning authority (PLANCK ships 2.5)
+pushStepAngAccel 10.0 # ... turning acceleration (PLANCK ships 10)
+pushStepWalkRun -1    # gait dial: -1 = her own walk/run threshold, else force a value
+pushStepVelGainS 0.25 # v7.5: stronger intent-reading (fast push trips even earlier)
+pushStepLeverF 0      # v8.6 (user ruling): NO rotation input - a push is XY translation; bend registers as translation at the HIGHER bones (neck/head via the chain)    # v7.5: measure the push at the far end of the segment (bend registers); 0 = old joint-only
+pushStepChain 0       # v7.6: spine neighbors of the touched bone may also trigger (0 = touched-only for A/B)  # v13b: the spine-neighbour vote is a v11 gap-sensor mechanism; TravelMax already reads every joint (also code-guarded now) (was 1)
+pushStepHemiDot -0.35   # v7.8: a push can never PULL - directions into the player's hemisphere are rejected (spring overshoot); -1 disables
+pushStepBreastMul 1.6   # v8.0/8.1: SOFT-surface presses (breast/belly/glute only) need dispU x this
+pushStepRampMinFrac 0.2 # v8.0: hard pushes shrink the 1s ramp-in to as little as this fraction
+pushStepRateVetoU 4.0   # v8.1: engage vetoed while the gap collapses faster than this (rebound echo)
+pushStepSideGain 1.0    # v8.2: lateral pushes count this x (trunk stiffer sideways; twist is lever-invisible)  # v11 hot A/B 12:15 (sensor now honest)
+pushStepMulHead 1.0   # v8.3 distance multiplier: HEAD push
+pushStepMulNeck 1.0   # v8.3 ... neck
+pushStepHeadTrig 1.5  # v8.3: head trigger needs dispU x this (face touches must stay inert)
+pushStepPressU 1.2    # v8.4: engage needs a contact actually TOUCHING (<= this); hovering resting hands only track
+pushStepIdleProbe 0   # v8.6 DIAGNOSTIC: log all 7 deviations at 1 Hz with nothing touching her  # v13b: OFF - PUSHSENSE IDLE + BODYJITTER spam (was 1)
+pushStepPeakWindowS 0.45 # v8.7: a latched push PEAK stays usable this long (fast pushes are impulses)
+# ★★ TRUE COLLISION-BOX CONTACT for a held object (2026-09-03, user ruling). 1 = rank and gate a
+# held item by its REAL Havok collision shape; 0 = the legacy point-plus-capped-pad.
+#   "the collision box of the object is what need to be used, not the mesh. If the collision box is
+#    bigger, that's what will contact with the NPC ... anywhere in that collision box is at the
+#    proper slot location, it need to equip that."
+# The legacy path could not see a big item AT ALL: a ~50u armour resting a corner on her chest has
+# its ORIGIN ~25u away, so the snapshot was empty and the equip gesture never fired (45 "no PPB
+# OBJECT contacts" lines in the 2026-09-03 log). Inflating the sphere instead is what made a yoke
+# engulf her whole body. A box is big where the item is big and small where it is small.
+# ⚠ With the box in use, objectPadMaxU and apiObjectRMaxU are BYPASSED (pad = 0) by construction.
+apiObjectBox   1
+apiPalmProbe   1        # 2026-09-06 (user in VR): HIGGS's own hand box IS the palm - probe 5 of each hand (PpbApi
+                        # CollectProbes). Muted in the FINGER pose and while that hand holds something. 0 = the four finger boxes only
+objectBoxMaxU  150      # refuse a half-extent bigger than this and fall back (garbage-shape guard,
+                        # NOT a tuning value — a real two-handed item is ~40u)
+objectPadMaxU 8.0       # v8.9: cap a held object's bound-radius inflation (a yoke's ~30u sphere engulfed her whole body); interior orifice capsules ignore it entirely
+pushStepBaseAlpha 0.03  # v8.8: how fast the sensor tracks her OWN idle servo lag (frozen while a hand is within 20u); the push is the CHANGE from it
+pushStepLeverGateU 0.35 # v7.9: lever rotation counts only after the joint itself moved this far (kills breast/belly torque ringing)
+                      # PushWalk is the REAL mechanism (found in PLANCK's own drag-stepping):
+                      # planner-direct-control stepping while pressed; the bump is only the
+                      # fallback for animation-driven actors.
+
+# ============================================================================================
+#  THE BRACE -- one bone goes infinite-mass while you push it (2026-08-29)
+# ============================================================================================
+# Push a hand into an NPC's TRUNK (spine0/spine1/spine2/com) deeper than braceDepthU and that
+# ONE bone flips MOTION_KEYFRAMED: infinite mass, immune to contacts and gravity, holding its
+# animated location -- while the other 17 bodies stay fully dynamic. The pushed surface stops
+# yielding; her neighbours hang off the braced bone through their joints. Release comes
+# braceHoldS after the last qualifying contact, with both velocities zeroed so the bone cannot
+# pop (doc 25 section 4.8). Re-asserted every drive tick (PLANCK restores DYNAMIC on re-adds).
+#
+# Stands down while: a scene is running, or HIGGS is grabbing the actor (a motorized grab
+# pulling an immovable bone is the recorded solver-strain freeze -- Report 18 section 5).
+#
+# Receipts in PPB.log:  "BRACE <id> ARMED spine2 -- 'Belly' pushed 1.9u deep..."
+#                       "BRACE <id> released spine2 after 2.3s (contact released)"
+brace 0             # 2026-08-29 in-game TEST: brace suspected as the 'hand sinks 1u then stutter' + false forward reading (keyframe snap); re-enable after the push test
+braceNearU 0.5      # arm when a trunk contact's surface distance is at/below this
+                    # (contact-based: a real press reads d=+0.3..1.2u because the
+                    #  dynamic capsule yields; requiring penetration never fired)
+braceHoldS 0.25     # seconds after the last contact before the bone is released
+
+# ============================================================================================
+#  ReDrive v2 -- PER-BONE DRIVE AUTHORITY via the engine's own boneWeights channel (2026-08-28)
+# ============================================================================================
+# Every ragdoll bone is pulled toward the animated pose by the keyframe controller. Havok
+# ships a native per-bone multiplier on that pull: BodyData::m_boneWeights ("The gains are
+# multiplied by these weights" -- the Havok 2010 SDK, which is on disk in tools/). PPB sets a
+# weight array on the controller immediately before each driveToPose call and restores it
+# after, exactly as the SDK's setBoneWeights documentation prescribes.
+#
+# WHY v2: the v1 design wrote the ControlData palette from the outer drive hook. Measured in
+# VR 2026-08-28: PLANCK re-stamps that palette AFTER us every frame, so the write was 100%
+# dead -- the spike test felt identical on both arms because nothing was ever applied. PLANCK
+# only READS boneWeights, so v2's weights multiply PLANCK's values instead of racing them.
+#
+#   < 1   the bone YIELDS -- the pull weakens, contacts win, the arm gives and stays put.
+#   = 1   stock. Exactly PLANCK's tuning. DEFAULT FOR ALL 18 -- enabling changes nothing.
+#   > 1   the bone HOLDS its animated pose harder.
+#
+# !! UPPER BOUND IS ENFORCED LIVE: the weight also multiplies hierarchyGain, a blend FRACTION
+# (PLANCK sets 0.6), and fraction x weight > 1 would extrapolate the drive target PAST the
+# pose. The DLL clamps every weight to 1/hierarchyGain (~1.67 under PLANCK) at apply time and
+# logs one "clamped" line when it does. So 3.0 in this file behaves as ~1.67 -- the file value
+# is kept as written so lowering hierarchyGain later automatically raises the ceiling.
+#
+# SAFETY: while HIGGS is holding an actor, that actor's weights STAND DOWN entirely (a HIGGS
+# grab motor + a modulated drive on one body is the recorded solver-NaN freeze, Report 18 s5).
+# One log line marks the stand-down; weights return when the grab ends.
+#
+# Receipts in PPB.log: "weights computed: N of 18 bones off 1.0" (per change),
+# "boneWeights SET on the controller" (first apply per actor -- THE success line),
+# "REFUSED at the controller" (layout mismatch -- report it, nothing was written).
+#
+# THE INTENDED SHAPE: high authority on COM/spine so the actor stays where the animation puts
+# her, falling DOWN each limb chain so the extremity gives first. Suggested gradient:
+#     Com 1.3  Spine0 1.2  Spine1 1.15  Spine2 1.1  Neck 1.0  Head 1.0
+#     UpperArm 0.8  Forearm 0.6  Hand 0.4
+#     Thigh 1.1  Calf 0.9  Foot 0.7
+reDrive 1
+
+reDriveCom 1.0
+reDriveSpine0 1.0
+reDriveSpine1 1.0
+reDriveSpine2 1.0
+reDriveNeck 1.0
+reDriveHead 1.0
+
+reDriveUpperArmR 0.5
+reDriveForearmR 0.5
+reDriveHandR 0.8
+reDriveUpperArmL 0.5
+reDriveForearmL 0.5
+reDriveHandL 0.8
+
+reDriveThighR 1.0
+reDriveCalfR 1.0
+reDriveFootR 1.0
+reDriveThighL 1.0
+reDriveCalfL 1.0
+reDriveFootL 1.0
+
+divProbe 0  # v13b: OFF - not tuning the divergence probe (was 1)
+divProbeEveryN 8        # run the compare every Nth drive, per actor
+divProbeGapU 0.5        # how far ABOVE its own baseline a bone must sit to count (GAME units)
+divProbeAlpha 0.25      # fast-ema smoothing (contact bounce is transient)
+divProbeHoldN 4         # consecutive ticks over threshold before it is called PERSISTENT
+divProbePlayerU 20.0    # a hand/weapon/object this close => the player caused it, ignore
+divProbeReportS 3.0     # seconds between report lines, per actor
+sceneMode 2
+bumperSceneOff 0
 # Excitement rank at/above which the bumper stops colliding. The rank DECAYS after a scene, so 1
 # covers the scene plus its settle. Raise for a tighter/later gate.
 bumperSceneExcite 1
@@ -1974,6 +2366,42 @@ planckLoosenOurs 1
 # Applied the moment this line changes (~1s) and READ BACK, so PPB.log records what PLANCK
 # actually holds, not what we asked for. Watch for the PLANCKLOOSEN receipt line.
 planckLoosenGlobal -1
+# --- LIVE PLANCK DRIVE GAINS (2026-09-09 extremity-jitter hunt) -------------------
+# PLANCK re-stamps these into the live controller data EVERY frame for EVERY driven body,
+# so a change here lands on the next frame - no restart, no ragdoll rebuild.
+# -1 = leave PLANCK alone.  >=0 = force that value.
+# planckGainHier: 0 = each bone aims at a MODEL-SPACE target (Havok: 'much stiffer and more
+#   stable'); 1 = each bone aims RELATIVE TO ITS PARENT'S PHYSICAL STATE, so servo error
+#   compounds root->leaf and the EXTREMITIES ring while the trunk stays calm.
+#   Havok's own default is 0.17. PLANCK ships 0.6. Try: 0.6 (stock) / 0.3 / 0.17 / 0.05 / 0.
+planckGainHier -1
+planckGainVel  -1        # PLANCK ships 0.6
+planckGainPos  -1        # PLANCK ships 0.05
+
+# 1 = ARMPROBE: per-second travel of her RIGHT ARM in four layers (node/body/anim/xp)
+armProbe 0
+# --- v25 THE FOOT PROBE (2026-09-09, user: "add the foot probe"). ARMPROBE measured the right arm all
+# session and proved the HAND vibrates (worst window: 19.07u of path to finish 0.23u away, ratio x85,
+# one 30.7u single-frame step). The FEET had no instrument at all. LEGPROBE is its twin, 1 Hz, four
+# slots: R Thigh / R Calf / R Foot are the leg CHAIN (read down it: the bone where path/net first
+# blows up is where the shake enters), and L Foot is the SYMMETRY CONTROL - a root-level cause such as
+# HEELFIX's postPhysics root compensation moves BOTH feet, a per-body cause moves one.
+# It also prints `arot`, the channel ARMPROBE lacks: the DRIVE TARGET's own angular path vs its net
+# angle. anim/xp are parent-local TRANSLATIONS = a constant bone length (which is why the arm log
+# reads anim path 0.00u forever); rotation is where a limb's motion lives. Big arot path + small arot
+# net = the animation pose is itself shaking. Calm arot under a wild node/body = physics, not the drive.
+legProbe 0                    # 2026-09-11: OFF - the leg-jitter hunt it was built for is SOLVED (SSGI, report 36) and it was 287,904 of 299,064 log lines (96%, 122 MB / 43 min)
+
+# Havok ControlData m_velocityDamping - scales each body velocity every frame BEFORE
+# the controller runs. SDK default 0.0 and nothing else in the stack writes it.
+# -1 = do not touch.  0..1 = force.  Try 0.1 first; too high = limbs feel sluggish.
+driveDamping -1
+
+# DIAGNOSTIC. 1 = keyframe every ragdoll body (not solved: infinite mass, no gravity,
+# no contacts). Shake STOPS = it is made in the physics solve. Shake STAYS = the pose
+# handed to the solve already shakes. She cannot be pushed or ragdolled while this is 1.
+forceKeyframe 0
+
 
 # ══ PELVIS SENSOR CAPSULES (2026-07-29) — COM C21..C31 ═══════════════════════════════════
 # Internal proximity sensors, dialled with the trf/collision visualizer. All start DISABLED
@@ -2180,10 +2608,10 @@ capHeadC24R 0.8800
 # Receipts in PPB.log: "WAND: chain resolved", "WAND CREATE", ~1 Hz "WAND base=..." while
 # playerWandLog 1. All hot (~1 s poll). part 9 by design -- collides with the player's own
 # hands (parts 3/4/5) and NPC flesh, skips every special-cased part; see Tuning.h.
-playerWand 1
+playerWand 0  # v13b: OFF while tuning the push - one less player collider that can contact her (was 1)
 playerWandR 0.9
 playerWandPart 9
-playerWandLog 0
+playerWandLog 0  # v13b: OFF (was 1)
 
 # ── PRIVATE COLLISION GROUP (2026-08-18) — the grab-through fix ───────────────────────────
 # HIGGS kills any contact between a body it HOLDS and a non-HIGGS body in the PLAYER's group
@@ -2209,7 +2637,7 @@ handBoxNullUserData 2
 # capsule grazed from outside can never pass. Stands down while a scene owns the actor.
 # NPCs only (the player is excluded at the per-actor seam, by design).
 orificeEnable 1
-orificeLog 0
+orificeLog 0  # v13b: OFF (was 1)
 
 
 # Orifice gape widened 10% (user, 2026-08-21 — 'really tight, like the finger's mesh
@@ -2485,7 +2913,7 @@ capHandC7BX 0.000
 capHandC7BY 0.000
 capHandC7BZ 2.000
 capHandC7R 0.500
-capThighC7Enable 0
+capThighC7Enable 0.0000
 capThighC7AX 0.000
 capThighC7AY 0.000
 capThighC7AZ 0.000
@@ -2493,7 +2921,7 @@ capThighC7BX 0.000
 capThighC7BY 0.000
 capThighC7BZ 2.000
 capThighC7R 0.500
-capThighC8Enable 0
+capThighC8Enable 0.0000
 capThighC8AX 0.000
 capThighC8AY 0.000
 capThighC8AZ 0.000
@@ -2501,7 +2929,7 @@ capThighC8BX 0.000
 capThighC8BY 0.000
 capThighC8BZ 2.000
 capThighC8R 0.500
-capCalfC5Enable 0
+capCalfC5Enable 0.0000
 capCalfC5AX 0.000
 capCalfC5AY 0.000
 capCalfC5AZ 0.000
@@ -2509,7 +2937,7 @@ capCalfC5BX 0.000
 capCalfC5BY 0.000
 capCalfC5BZ 2.000
 capCalfC5R 0.500
-capCalfC6Enable 0
+capCalfC6Enable 0.0000
 capCalfC6AX 0.000
 capCalfC6AY 0.000
 capCalfC6AZ 0.000
@@ -2517,7 +2945,7 @@ capCalfC6BX 0.000
 capCalfC6BY 0.000
 capCalfC6BZ 2.000
 capCalfC6R 0.500
-capFootC4Enable 0
+capFootC4Enable 0.0000
 capFootC4AX 0.000
 capFootC4AY 0.000
 capFootC4AZ 0.000
@@ -2525,7 +2953,7 @@ capFootC4BX 0.000
 capFootC4BY 0.000
 capFootC4BZ 2.000
 capFootC4R 0.500
-capFootC5Enable 0
+capFootC5Enable 0.0000
 capFootC5AX 0.000
 capFootC5AY 0.000
 capFootC5AZ 0.000
@@ -2594,7 +3022,7 @@ capComC37BZ 5.9313
 capComC37R 0.9000
 
 # LEG CHORD  front (9.09, 4.68, 48.95) / back (12.44,-5.22, 49.54) -> NPC R Thigh [RThg]; chord len 10.4681u mesh == 10.4681u local
-capThighC9Enable 0
+capThighC9Enable 0.0000
 capThighC9AX 0.1620
 capThighC9AY 5.6870
 capThighC9AZ 10.3930
@@ -2612,3 +3040,270 @@ capUpperC5BX -0.5400
 capUpperC5BY -3.1870
 capUpperC5BZ 12.6250
 capUpperC5R 0.4500
+
+# ============================================================================================
+#  GESTURE DEVICE LAYER  (moved in from the VRTE DD-ZaZ add-on, 2026-08-27)
+# ============================================================================================
+# Put a device on by pressing it to the body site it belongs on; take one off by grabbing the
+# same worn piece with BOTH hands and pulling; work a plug loose with a fingertip.
+#
+# These knobs used to live in the add-on's VRTE_DDZaZ.ini. The gesture code moved into PPB
+# (it runs entirely on PPB's contact data), so its configuration moved with it. The values
+# below were copied from the live add-on ini, so the feel you dialled in is preserved.
+# All hot-reload at ~1 Hz, same as everything else in this file.
+#
+#   enabled            master for the whole gesture layer
+#   equipEnabled       the press-to-equip half
+#   equipDepthU        how deep into an orifice the device must be (units)
+#   equipTouchU        how close to a SURFACE site the device must be (units)
+#   equipDwellS        how long it must be held there - this is what makes it deliberate
+#   equipGraceS        grace after the dwell in which a release still counts
+#   equipMatchSite     1 = a device only equips at the site its class belongs to
+#   equipNotify        on-screen confirmations
+#   equipGeneric       1 = plain (non-DD) armor can be equipped by gesture too
+#   plugPullS          how long a fingertip must work a plug before it comes loose
+#   plugToHand         1 = the freed plug goes into the extracting hand, 0 = to the ground
+#   ddSettleS          wait for DD's own equip chain to finish before verifying
+#   undressEnabled     the two-hand pull
+#   undressPullU       how far the later hand must travel to count as a pull
+#   undressGrabMaxU    how far apart the two hands may be and still be on one piece
+#   undressSnapMinU    minimum separation before a pull is even armed
+#   undressNotify      on-screen messages for refusals ("you are missing the key")
+#   returnFailedGifts  put a device that did NOT equip back in the world, never in her inventory
+#   logLevel           gesture-layer log verbosity
+enabled            1
+equipEnabled       1
+equipDepthU        0.0
+equipTouchU 0.75
+equipDwellS        1.0
+equipGraceS        0.4
+equipMatchSite     1
+equipNotify 0   # 2.2.0: no floating "X equipped" / refusal lines (user: don't spam the player). 1 = show.
+equipGeneric       1
+plugPullS          1.0
+plugToHand         1
+ddSettleS          0.75
+undressEnabled     1
+undressPullU       25
+undressGrabMaxU    16
+undressSnapMinU    8
+undressNotify 0   # 2.2.0: no floating "X removed" / "locked over it" lines. 1 = show.
+returnFailedGifts  0
+logLevel 0
+equipForce1U 1.0      # equip force grade: press this deep (u) = 'firm' (grade 1)
+equipForce2U 3.0      # ... this deep = 'forced' (grade 2); below force1 = 'gentle' (0)
+
+# ── PLAYER HEAD BOX (2026-09-03) ─────────────────────────────────────────────────────
+# One keyframed box riding the VRIK-posed 3rd-person head node, so leaning your face into
+# an NPC PUSHES her (she yields and steps back) instead of the player clipping through her.
+# It can never STOP your head -- a keyframed body has infinite mass and its position is
+# 100% commanded, and layer 56 never meets a character controller. Yielding is the fix.
+# Half-extents and offsets are GAME UNITS in the head node's frame: +Y forward (toward the
+# face), +Z up the skull, +X her right. The node origin sits at the NECK JOINT, so the
+# offsets below walk the box up into the skull -- DIAL THESE BY EYE with the visualizer.
+headBox        1      # master. 1 = on.
+headBoxHalfXU  5.5    # half-width  (~7.9 cm)  2026-09-03: user "feels smaller than a head" —
+headBoxHalfYU  6.0    # half-depth  (~8.6 cm)  was 3.5/4.5/4.5 (7x9x9u, ~60% of a skull). Now
+headBoxHalfZU  7.0    # half-height (~10 cm)   11x12x14u, matching the NPC cranium capsule r 5.52.
+headBoxOffXU   0.0    # centre offset, lateral
+headBoxOffYU   0.0    # 2026-09-06 VR: user 'move the collision box 3u forward' = delta +3 from -3.0 (headset-relative; negative = back)
+                      # centre: the HMD sits on your face, your head's middle is behind it. With
+                      # half-depth 6.0 the box front face lands ~3u ahead of the headset = the nose,
+                      # which is the "push her with my nose" feel. Re-dialled from 18.0, which was a
+                      # bone-rider value and would put the box a foot in front of your face now.
+headBoxOffZU   0.0    # ... up from the HEADSET. 0 = eye level, which IS head centre height.
+headBoxPart    10     # filter part bits (sanitized; 10 by design)
+headBoxMaxVel  3.0    # m/s -- THE ANTI-LAUNCH CLAMP. Above it the box teleports and re-keys
+                      # to ~0 residual, so a fast walk-in depenetrates instead of delivering
+                      # an impulse. Deliberately far tighter than handBoxMaxVel (25).
+headBoxLog 0      # ~1 Hz HEADBOX line (pose, word, node-vs-HMD distance)  # v13b: OFF (was 1)
+
+# ★★ THE RIDER (2026-09-03). 1 = ride the HEADSET (UprightHmdNode), 0 = the VRIK head bone.
+# The bone is a BODY part: VRIK solves the skeleton from your headset with the feet on the floor
+# and the character's proportions fixed, so sitting it lands near your eyes and standing it tops
+# out at the character's height and you get the box at chin level. No fixed offset can correct a
+# gap that changes with posture. The headset IS the head. Riding it also makes the VRIK hide
+# compensation inert by construction (nothing hid the headset).
+headBoxRider   1
+# -- MOUTH PROBE (2026-09-06, user): a short segment on the head box's FRONT face, below eye level - 'the player's mouth'.
+#    Sensing only (the head box is the collider); a mouth-led contact is named HEAD:mouth (vs face/head).
+mouthProbe       1
+mouthProbeOffXU  0.0   # lateral, head frame
+mouthProbeOffZU  -4.5  # below the box centre (eye level) - the mouth
+mouthProbeOutU   0.0   # proud of the front face; the user's '1u' idea = 1.0 (a contact already registers 1u out via apiTouchU)
+mouthProbeHalfWU 1.5   # half-width of the mouth segment
+mouthProbeR      1.2   # radius
+mouthProbeSource 1  # KISS (2026-09-12): 1 = pose the mouth probe on the FULL-ROTATION headset (+0x570, CommonLibVR
+mouthProbeLeverU 2  # KISS: steering arm - how far the mouth sits in FRONT of the eyes (u). Anatomy, not
+                    # the head box depth. No effect at level gaze. Raise it if kissing a TALLER NPC misses.
+                    # mislabels it GamepadNode) with offsets in real headset units; 0 = the old pose (yaw rider +0x580,
+                    # offsets x 3rd-person bone scale) - the A/B lever. Falls back to 0 by itself if +0x570 fails its check.
+mouthKissLips 1     # KISS: a kiss also fires PPB_MouthLips as "R|LIPS|HEAD". LIPS ONLY - can never open her mouth.
+mouthKissLipU 2.2   # KISS: mouth probe -> her upper-lip capsule (head C1) surface gap that counts as a kiss (u)
+mouthKissExitU 3.2  # KISS END gate (v34, 2026-09-12): a kiss STARTS under mouthKissLipU and ENDS only past this. The first
+                    # VR kiss flickered 6x in 8 s at 1.69..2.19u with one threshold. Kiss-raised LIPS only; floored at mouthKissLipU.
+mouthProbeLog 0     # (2026-09-12 kiss verified - off) KISS DIAGNOSTIC: KISSPROBE line every 2 s while her lip is within 12u - gaps to C1/C2/C3 and
+                    # forward.z of both headset nodes (look DOWN: if +0x580 stays ~0, it is yaw-only).
+furnProbe 0         # (furniture rule verified - off; ships 0) READ-ONLY FURNPROBE line per driven NPC within 1000u: sit state, occupied furniture
+                    # + nearest marker distance/type (sit/sleep/lean), knock/rag/AI/killmove, package, and the attached verdict -
+                    # on every change + 1 s heartbeat while furniture is involved. Research for the furniture/lean push gate.
+
+
+# ── RAGFRAME (2026-09-03) — the ragdoll-onset receipt. READ-ONLY, writes nothing. ─────
+# Arms a per-frame receipt around a push knockdown: ~10 frames before (kept in a ring) and
+# ragFramePost after. One instrumented knockdown names the launch mechanism -- see
+# Report/Ragdoll Research Module/05 section 3 for how to read it.
+ragFrame 0      # 1 = arm  <-- ON for the stage-0 test session  # v13b: OFF - 31-frame dumps per knockdown (was 1)
+ragFramePost   20     # frames logged after F0
+
+# ── THE ONSET SELECTOR — how PPB asks for the knockdown (Ragdoll Research 04/05/07) ──
+# Two of the three are ALSO the candidate fixes for the launch, so run all three on the same
+# kind of push with ragFrame 1 and compare the receipts:
+#   0 = graph "Ragdoll"  (BASELINE) 0.2s cross-fade; PLANCK keeps driving into it for ~13
+#       frames with motors at 500, gravity zeroed and no floor on layer 8, until its own
+#       watchdog fires PushActorAway(0) >= 159 ms later.
+#   1 = ENGINE-FIRST KnockExplosion(actor, pos, 0) — knock state + IsInRagdollState on the
+#       EVENT frame, so PLANCK stamps getUpMaxForce 0, returns before zeroing gravity, and
+#       applies its x0.3 hit multiplier from frame 0. Predicted MILDER under H10 and H3.
+#   2 = "RagdollInstant" — no transition effect, so the driven sweep disappears.
+#       Predicted MUCH MILDER under H10 only. That is what makes it discriminating.
+pushStepOnset  1
+
+# ══ UNSUPPORTED -> RAGDOLL (2026-09-03, user spec) ═════════════════════════════════════════
+# "If BOTH feet leave the ground, that NPC ragdoll and fall, end of the line." The signal is the
+# engine's own: bhkCharacterController::surfaceInfo.supportedState (kUnsupported 0 / kSliding 1 /
+# kSupported 2) — the authority that decides whether she is standing, not an inference from foot
+# IK bones. It fires OUTSIDE the !PlannerActive guard, so it works during a push-walk (which is
+# exactly when she gets lifted) and it TRUMPS the push.
+# Player-caused only: it needs a recent trunk contact from a HAND or a drawn WEAPON. The head is
+# deliberately not a qualifier (2026-09-03 ruling) and neither are the arms — "why would someone
+# fall from getting their arms pushed? The arms will simply move out of the way."
+pushStepFallRag 0     # master. Ships 0; ON here for the VR test.  # v13b USER: the other feet path (char-controller UNSUPPORTED -> ragdoll) OFF with it (was 1)
+pushStepFallFrames 4     # consecutive UNSUPPORTED frames before it fires (~0.08s at 75Hz).
+                         # Raise toward 38 for the "half second buffer" if it fires too eagerly.
+pushStepFallGraceS 1.0   # a player contact this recent = the player is the cause.
+
+# ══ OPTION A + HOLD POOL (2026-09-06, user: "their regular armor is the one we just equipped") ═══
+# equipOutfitTag: after a confirmed ORDINARY equip on an NPC, tag the new piece as an item of her
+#   default outfit (the engine's own ExtraOutfitItem inventory tag) and untag the piece it displaced,
+#   so the engine's re-dress treats OUR piece as her outfit. No base record is touched. Survives cell
+#   loads and reloads; NOT `resetinventory` (that rebuilds from the record).
+# equipRemoveDisplaced: additionally remove the displaced piece from her inventory. OFF until VR says
+#   the untag alone is not enough to stop the engine re-dressing her in it.
+# equipHoldPool: hold a GENERIC NPC in PPB_HoldPoolQuest (0x806) so a cell respawn cannot reset her.
+#   Unique NPCs and anyone another quest already holds are skipped. The ESP record was written 2026-09-06.
+# equipSaHandoff: after an ordinary equip / plain rip, ask SeverActions whether it CONTROLS her outfit
+#   (registered follower, not outfit-excluded, active preset or lock on) and if so re-save her worn set
+#   into that preset / lock. No SeverActions = no-op.
+# ★ 2026-09-06 (user): Tier 0 (preventUnequip) + the hold pool ARE the design. equipOutfitTag stays 0 —
+#   parked until VR shows a generic re-dressing herself after rip -> dress (report 31 §2.3).
+equipOutfitTag       0
+equipRemoveDisplaced 0
+equipHoldPool        1
+equipSaHandoff       1
+# outfitGuard: hook Actor::HasOutfitItems so a hold-pool NPC stripped naked is NOT re-issued her outfit by the
+#   engine on the next 3D load / AI evaluation. Installs only when the runtime prologue decodes cleanly (log: OUTFITGUARD).
+outfitGuard          1
+pushStepVoteN 6             # v13a: how many tracked joints VOTE on the push magnitude, in order COM, Spine0, Spine1, Spine2, Neck, Head. 3 = the trunk BASE only. Measured on one slight chest push: COM 1.4 / spine0 2.4 / spine1 5.2 / spine2 8.4 / neck 9.5 / head 9.8 - the head reads 7x the COM because it is the far end of the lever, so letting it vote made every push a stumble. All eight are still measured and printed  # v14c (2026-09-08 user): "activate the head and the Spine2" - COM,Spine0,Spine1,Spine2,Neck,Head all vote 1:1
+# --- v14 THE LEVER (2026-09-08, user: "the bar decide the movement, the lever is for deciding the ramp and speed
+# ... detecting how fast it goes from 0 to 5, so make a ramp goes accordingly. The starting ramp should be
+# aggressive, the ending ramp should be smooth."). The lever = the CROSSING RATE: how fast her worst voting joint
+# travelled the WALK BAR's distance from its animation point. Same number as the bar, so it re-normalises when the
+# bar moves. Replaces eff (displacement + rate x 0.25), whose curve pinned speed AND distance at 2.39u of travel --
+# below the 5u bar, so every walk was maximum speed and maximum distance.
+pushStepLever 1              # master. 0 = the pre-v14 eff mapping (hot A/B)
+pushStepCrossRefU 30.0       # crossing rate (u/s) that earns FULL speed + distance. 5u in 0.17s. Lower = easier to max
+pushStepCrossExp 1.0         # curve on the normalised lever. 1 = linear; >1 = only a hard shove gets the top of the band
+pushStepCrossMinFrac 0.40    # the gentlest push still walks this fraction of the distance cap (0.40 x 16u = 6.4u)
+pushStepCrossFloorU 0.5      # v14a: the crossing clock re-arms while her travel is under this. Without it the lever divided the bar by time-since-FIRST-CONTACT, so a hand resting 2s then shoving hard graded as the gentlest lean (adversarial review 2026-09-08, 2 lenses)
+# --- v14d PER-NODE BARS (2026-09-08, user: "add 3u to COM and Spine0, to all three ladder"). Every node is
+# still measured 1:1 on its own movement from its own animation point. NOTHING is scaled or multiplied. This
+# only lets a node be held to its OWN threshold: the offset is added to walk, stumble AND ragdoll for that
+# node. Pushing the pelvis translates her whole body so every node reads alike; pushing the chest pivots her
+# about the hips so the head travels much further than the base. Hot -- dial any node in VR.
+pushStepOffCom 3.0           # COM: +3 on all three rungs
+pushStepOffSpine0 3.0        # Spine0 (waist): +3 on all three rungs
+pushStepOffSpine1 0.0
+pushStepOffSpine2 0.0
+pushStepOffNeck 0.0
+pushStepOffHead 0.0
+# --- v29c PER-NODE RUNGS (user 2026-09-11: "the ladder is 10/20/35, let's make it 10/30/40 for head and neck. keep everything
+# else as is"). pushStepOff<node> above shifts ALL THREE rungs together; these set ONE rung for ONE node, ABSOLUTE.
+# 0 = the shared ladder + pushStepOff<node>, exactly as before. The walk rung is still pushStepOff<node>'s business, and the
+# during-walk terms are still added on top of an override. Measured 2026-09-11: the HEAD decided 18 of 20 reactions (one
+# ragdoll read COM 1.9 / spine0 4.5 / spine1 7.6 / spine2 13.5 / neck 27.9 / HEAD 34.2) - it is the end of the lever.
+pushStepBarStumbleCom 0        # 0 = shared stumble rung (20) + pushStepOffCom (3) = 23
+pushStepBarStumbleSpine0 0     # 0 = 20 + 3 = 23
+pushStepBarStumbleSpine1 0     # 0 = 20
+pushStepBarStumbleSpine2 0     # 0 = 20
+pushStepBarStumbleNeck 30      # user 2026-09-11: neck ladder 10/30/40
+pushStepBarStumbleHead 30      # user 2026-09-11: head ladder 10/30/40
+pushStepBarRagCom 0            # 0 = shared ragdoll rung (35) + pushStepOffCom (3) = 38
+pushStepBarRagSpine0 0         # 0 = 35 + 3 = 38
+pushStepBarRagSpine1 0         # 0 = 35
+pushStepBarRagSpine2 0         # 0 = 35
+pushStepBarRagNeck 40          # user 2026-09-11
+pushStepBarRagHead 40          # user 2026-09-11
+# --- v29d EQUIP SETTLE (user 2026-09-11: "An equip event prevent ragdoll or stumble … check the new height .25sec after the equip,
+# and it's now the new floor. Same for all the other node we check for that. Don't want her start to walk back or something.").
+# 20:46:00.461: hand-equipping heeled boots with a hand on her thigh raised BOTH feet ~8u -> LIFTED BOTH FEET off a rest latched barefoot.
+pushStepEquipSettleS 0.25      # seconds after an equip/removal PPB performs: no lift, stumble, ragdoll or walk; then her height IS the new floor (0 = off)
+# --- v16 THE WALK WINDOW (2026-09-08, user: "is it possible to recognize that the NPC is still being
+# pushed while she walk?"). The travel origin used to be captured ONCE at walk-engage, so her own
+# backward-walk animation and its servo lag accumulated into the reading - the head crossed the stumble
+# bar 0.30-0.41s after engage on three walks in a row, every one firing the instant pushStepReactGraceS
+# expired. She was stumbling out of her own walk. Re-capturing on a cadence means the number answers
+# "how much has the player pushed her BEYOND what the walk is already doing".
+pushStepWalkReCapS 0.4       # re-stamp the origin every N seconds while she is walking. 0 = off (pre-v16)
+# --- v16 (user: "i like the current setting for starting, but once it started walking, if it's too
+# sensible, it is a problem"). Added to EVERY voting node's three bars while she is DRIVING, on top of
+# that node's own offset. Engage sensitivity and walk sensitivity are now separate dials.
+pushStepOffWalkAdd 0.0       # try 5 if she still stumbles too readily mid-walk. Hot.
+# --- v17 STEER THE WALK (2026-09-08, user: "the push of my sword wasn't completely in the same direction
+# as the walk travel, and cause of the offset, she end up stumbling as i was pushing sideway from her
+# walk"). MEASURED: all 6 during-walk stumbles that session had the push bearing swung 36-188 degrees off
+# the engage bearing. The walk direction and her facing were locked at engage; now they follow the live
+# push, rate-limited. Her facing keeps whichever rule she engaged with (walk backward vs walk forward).
+pushStepDirTrack 1           # 0 = engage-locked direction (pre-v17 behaviour, hot A/B)
+pushStepDirTrackDeg 120      # max degrees/sec the walk may turn toward the live push. Lower = lazier turn
+pushStepDirTrackMinU 2.0     # ignore the live direction below this travel (just after a re-capture it is noise)
+# --- v18 NO DISTANCE CAP (2026-09-09, user: "That max 48u is wrong. Delete that. No max. What decide
+# max is the time of the push." / "when i say ramp down, i mean a dynamic ramp not a static one. This is
+# also the cause of all those stumble toward the end of the walk back."). MEASURED: at 90 u/s the 16u
+# budget was spent 0.49s after engage and the 48u hard cap 0.40s after that, leaving ~1.8s of
+# unresponsive coast marked "final - no resume" while the player was still pushing. The displacement
+# piled up with no walk left to relieve it - that is where the end-of-walk stumbles came from.
+# With this ON the walk ends only when the push ends (pressure quiet for pushStepStopS), the fade is
+# never final, and a renewed push resumes it. Deceleration is then the live follower tracking the push
+# down (pushStepSpeedDownU), not a distance running out. pushStepWalkU / pushStepExtendMul stay parsed
+# and are ignored while this is 1.
+pushStepNoDistCap 1          # 0 = the old budget + hard-cap behaviour (hot A/B)
+# --- v19 RAGDOLL ESCALATION (2026-09-09, user: "she can't seem to ragdoll anymore once she start
+# walking ... she do one or two step, i can ragdoll her, but after that, it seem she is locked out").
+# MEASURED: 13 staggers at 20-27u vs 2 ragdolls at 42/44u, every fire on the HEAD, with walking
+# displacement reaching 109u - so the 35u bar was never out of reach. The reading climbs CONTINUOUSLY,
+# so she crosses the stumble bar on the way to the knockdown bar; the stagger fires first and its flat
+# 1.5s cooldown then blocks the knockdown she is earning. Only pushes fast enough to jump the whole
+# band between two evaluations got through (+180 and +99 u/s - both of the ones that did).
+pushStepRagEscalate 1        # a knockdown may pre-empt a stagger's cooldown. 0 = flat cooldown (pre-v19)
+pushStepRagEscalateMinS 0.15 # ...but only after the stagger has stood this long (stops a same-frame double fire)
+# --- v20 PER-NODE WALK OFFSETS (2026-09-09, user: "augment the threshold of some node once the walk
+# start"). While she walks her own gait rotates her about the hips and every node reads high, by an
+# amount that scales with height up the spine. MEASURED p90 lift, 99 standing vs 120 walking samples:
+#   COM +3.5  Spine0 +6.8  Spine1 +13.8  Spine2 +23.9  Neck +41.7  Head +47.1
+# Standing the head is the QUIETEST node (p90 3.4); walking it sits +47 above its animation point from
+# the gait alone - past the stumble bar AND the knockdown bar before the player has touched her.
+# Added to that node's THREE rungs while driving, on top of its standing offset.
+# ⛔ ALL THREE RUNGS on purpose: this compensates a contaminated READING. Lift only the stumble bar and
+# the knockdown bar stays under the gait lift, so she would ragdoll from walking instead of stumbling.
+# At these values every node lands 4-5u below its own walk bar at walking p90.
+pushStepWalkOffCom 0
+pushStepWalkOffSpine0 0
+pushStepWalkOffSpine1 0
+pushStepWalkOffSpine2 0
+pushStepWalkOffNeck 0
+pushStepWalkOffHead 0
+# --- v28 RELEASE REACH (2026-09-10, user: "If i hold a piece of gears on a body long enought to equip, but than move away
+# and drop that piece of gears, will it still equip? That's wrong, it need to drop on the table"). At the moment you let go,
+# the device is re-measured against the capsule that EARNED the gesture: surface gap <= this -> equip; farther -> it falls.
+equipReleaseReachU 6           # game units; 0 = check off (pre-v28: an earned gesture equipped wherever you dropped it within 5 s)

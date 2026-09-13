@@ -75,6 +75,14 @@ namespace HandBox {
     // World CENTER of any box — the per-box identity that makes FINGER/PALM/FIST source
     // classification possible (each box is our own object; we always know which is which).
     bool BoxCenterWorldU(int hand, int box, float outU[3]);
+    // 2026-09-07 (report 33 §8.3): which hand owns this hkpRigidBody — 0 R, 1 L, -1 not one of the
+    // 8 finger boxes (the head box, the wand, anything else on our sub-layer). The engine-contact
+    // stamp carries the player body's pointer; a part-4 body that is not a hand box gets NO hand and
+    // is dropped — fail closed. Main thread only (reads the rig tables).
+    int  HandOfBody(const void* hkpBody);
+    // v11.1b: the finger boxes' live sub-layer PART (handBoxSubLayer, sanitized) — one relaxed integer load, safe from
+    // the collision thread. Diag's contact stamp compares against this instead of a literal 4.
+    std::uint32_t BoxPartLive();
 
     // ── PLAYER GENITAL WAND geometry (2026-08-23) ───────────────────────────────────────
     // The wand is 2 keyframed Havok segments riding GenBase→Gen03→Gen06, half-extents
@@ -87,4 +95,21 @@ namespace HandBox {
     // count written, 0 when no wand exists right now. Gated on the BODY being live, not merely
     // on the snapshot resolving — a probe must never claim reach the collider does not have.
     int  WandProbeSegments(float aOutU[2][3], float bOutU[2][3], float* rOutU);
+
+    // ── PLAYER HEAD BOX geometry (2026-09-03) ───────────────────────────────────────────
+    // One keyframed box riding the VRIK-posed 3rd-person "NPC Head [Head]" node. It CANNOT be
+    // stopped by anything (keyframed = infinite mass, position 100% commanded) and it never
+    // meets a character controller (layer 56 excludes CharController 30) — what it does is PUSH
+    // her PLANCK-driven dynamic ragdoll bodies, so she yields instead of the player clipping
+    // into her. Published to the touch scan as a SEGMENT + RADIUS along the box's local +Y
+    // (back-of-skull -> face), exactly the geometry the body occupies. Returns false when no
+    // head box exists right now — gated on the BODY, not merely on the snapshot resolving.
+    bool HeadProbeSegment(float aOutU[3], float bOutU[3], float* rOutU);
+    // ★ MOUTH (2026-09-06): a short horizontal segment on the head box's FRONT face, mouthProbeOffZU
+    // below eye level, mouthProbeOutU proud. Sensing only — the head box is the collider. false when
+    // no head box exists or the knob is off.
+    bool MouthProbeSegment(float aOutU[3], float bOutU[3], float* rOutU);
+    // ★ KISS DIAGNOSTIC (2026-09-12): this frame's forward.z of both headset nodes and whether the
+    // mouth probe actually posed on the full-rotation one. Main thread; reads the last snapshot.
+    bool HeadForwardZ(float* uprightFwdZ, float* fullFwdZ, bool* posedOnFull);
 }

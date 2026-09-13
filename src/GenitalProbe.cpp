@@ -322,4 +322,62 @@ namespace GenitalProbe {
         }
         return !it->second.covered;
     }
+
+    // ── ★★ THE FUTA GATE (2026-09-12) — EVIDENCE, not a claim ────────────────────────────
+    // IsExposed() above is a MALE gate and must never be used on a female: this file's own
+    // header records the measurement — "females read slot 52 FLAT in both states (TNG gates
+    // them behind TNG_Gentlewoman)" — so neither half of it discriminates on a female.
+    //
+    // The user's objection, and it is the right one: a biped slot is a CLAIM, not evidence. If
+    // some unrelated mod equips a slot-52 item on a female — or her skin record happens to
+    // carry slot 52 — a slot-based gate would hand a vanilla naked female a full GEN rig, and
+    // PPB would start publishing "shaft" contacts on an actor who has no schlong. That is the
+    // phantom-rig class this file was written to kill, returning through a new door.
+    //
+    // So ask for the THING ITSELF: is there visible geometry parented under the Gen chain?
+    //   * vanilla naked female  -> the bones exist (PPB ships them on every skeleton) but
+    //                             nothing hangs off them -> 0 shapes -> no rig.
+    //   * slot-52 belt/accessory-> skinned to Pelvis/COM, NOT parented under Genitals01..06
+    //                             -> 0 shapes under the chain -> no rig.
+    //   * futa with a built mesh -> shapes under the chain -> rig.
+    //   * futa wearing trousers  -> the shapes are there but kHidden -> no rig, and this
+    //                             handles the DRESS state without the slot-52 half that is
+    //                             measured unreliable on females.
+    // Strictly stronger than the male gate, and it needs no slot at all.
+    //
+    // Cost: a depth-8 walk from at most 10 named nodes, behind the same TTL as IsExposed. It
+    // is called on the rig probe's ~2 s cadence, never per frame.
+    bool HasVisibleGenGeometry(RE::Actor* actor, int* outVisible, int* outHidden,
+                               char* outName, int nameCap)
+    {
+        if (outVisible) *outVisible = 0;
+        if (outHidden)  *outHidden  = 0;
+        if (outName && nameCap > 0) outName[0] = '\0';
+        if (!actor) return false;
+        auto* root = actor->Get3D();
+        if (!root) return false;
+
+        constexpr std::uint64_t kTtlMs = 500;
+        struct GCached { std::uint64_t ms; int vis; int hid; char nm[64]; };
+        static std::map<std::uint32_t, GCached> s_gcache;
+        const auto nowMs = (std::uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+                               std::chrono::steady_clock::now().time_since_epoch()).count();
+        const std::uint32_t id = actor->GetFormID();
+        auto it = s_gcache.find(id);
+        if (it == s_gcache.end() || nowMs - it->second.ms > kTtlMs) {
+            if (s_gcache.size() > 512) s_gcache.clear();   // same cell-churn guard as above
+            Signals s{};
+            for (int i = 0; i < kGenNodeCount; ++i)
+                if (auto* n = root->GetObjectByName(RE::BSFixedString(kGenNodes[i])))
+                    WalkGeom(n, 0, s);
+            GCached g{ nowMs, s.geomNear - s.geomHidden, s.geomHidden, {} };
+            if (g.vis < 0) g.vis = 0;                      // defensive; WalkGeom cannot invert these
+            std::snprintf(g.nm, sizeof(g.nm), "%s", s.geomName);
+            it = s_gcache.insert_or_assign(id, g).first;
+        }
+        if (outVisible) *outVisible = it->second.vis;
+        if (outHidden)  *outHidden  = it->second.hid;
+        if (outName && nameCap > 0) std::snprintf(outName, (size_t)nameCap, "%s", it->second.nm);
+        return it->second.vis > 0;
+    }
 }

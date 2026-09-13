@@ -71,6 +71,60 @@ namespace {
         return std::sqrt(dx*dx + dy*dy + dz*dz);
     }
 
+    // ══ CAPSULE-SEGMENT vs ORIENTED BOX (2026-09-03) ════════════════════════════════════════════
+    // The distance a held item's REAL collision shape is from one of her capsules. Signed: negative
+    // means the capsule axis is inside the box, and the magnitude is how deep — the same convention
+    // every other probe here uses, so nothing downstream needs to know which probe answered.
+    //
+    // Method: push the capsule segment into the box's own frame and solve segment-vs-AABB there.
+    // The box rotation is orthonormal, so its inverse is its transpose — six dot products, no
+    // matrix inversion. Then minimise over the segment: the unsigned distance to a convex set is
+    // convex along an affine path, so a ternary search converges on the GLOBAL minimum with no
+    // local-minimum risk (a plain "sample the two endpoints" misses a mid-segment contact, which
+    // is exactly the case that matters — an armour edge crossing her chest).
+    inline float PtAabbSdU(const float p[3], const float h[3]) {
+        float d[3], o[3];
+        for (int i = 0; i < 3; ++i) { d[i] = std::fabs(p[i]) - h[i]; o[i] = d[i] > 0.f ? d[i] : 0.f; }
+        const float ol = std::sqrt(o[0]*o[0] + o[1]*o[1] + o[2]*o[2]);
+        // outside -> true euclidean distance; inside -> the least-negative face depth
+        return ol > 0.f ? ol : (std::max)(d[0], (std::max)(d[1], d[2]));
+    }
+    inline float SegObbDistU(const float a[3], const float b[3],
+                             const float c[3], const float R[9], const float h[3])
+    {
+        // world -> box-local. R's ROWS are the box axes, so the transpose is an axis-wise dot.
+        float la[3], lb[3];
+        const float da[3] = { a[0]-c[0], a[1]-c[1], a[2]-c[2] };
+        const float db[3] = { b[0]-c[0], b[1]-c[1], b[2]-c[2] };
+        for (int i = 0; i < 3; ++i) {
+            la[i] = R[0*3+i]*da[0] + R[1*3+i]*da[1] + R[2*3+i]*da[2];
+            lb[i] = R[0*3+i]*db[0] + R[1*3+i]*db[1] + R[2*3+i]*db[2];
+        }
+        const auto at = [&](float t, float o[3]) {
+            for (int i = 0; i < 3; ++i) o[i] = la[i] + (lb[i] - la[i]) * t;
+        };
+        // unsigned distance, the quantity that is convex in t (the signed one is not)
+        const auto gU = [&](float t) {
+            float p[3]; at(t, p);
+            float o[3];
+            for (int i = 0; i < 3; ++i) { const float d = std::fabs(p[i]) - h[i]; o[i] = d > 0.f ? d : 0.f; }
+            return std::sqrt(o[0]*o[0] + o[1]*o[1] + o[2]*o[2]);
+        };
+        float lo = 0.f, hi = 1.f;
+        for (int k = 0; k < 24; ++k) {                 // ~1e-7 on [0,1]
+            const float m1 = lo + (hi - lo) / 3.f, m2 = hi - (hi - lo) / 3.f;
+            if (gU(m1) <= gU(m2)) hi = m2; else lo = m1;
+        }
+        float p[3]; at((lo + hi) * 0.5f, p);
+        float best = PtAabbSdU(p, h);
+        // ⚠ Penetration guard: once the axis is inside, gU is flat at 0 over an interval and the
+        // ternary search lands anywhere in it, so the reported DEPTH would be arbitrary. Sampling
+        // the ends and the middle makes the depth honest and monotone. Cheap: three evaluations.
+        const float ts[3] = { 0.f, 0.5f, 1.f };
+        for (float t : ts) { at(t, p); const float s = PtAabbSdU(p, h); if (s < best) best = s; }
+        return best;
+    }
+
     // Closest distance between two segments (Ericson, clamped) — the weapon-blade probe.
     inline float SegSegDistU(const float p1[3], const float q1[3],
                              const float p2[3], const float q2[3])
@@ -115,8 +169,10 @@ namespace {
     // ── probe sources this tick ─────────────────────────────────────────────
     // 2026-08-23: kClsGenital joins as a 4th source — the player's own genitals are simply
     // one more thing that can touch, scanned and reported exactly like hand/weapon/object.
+    // 2026-09-03: kClsHead joins as a 5th source — the player's own head is simply one more
+    // thing that can touch, scanned and reported exactly like hand/weapon/object/genital.
     enum SourceClass : int { kClsHand = 0, kClsWeapon = 1, kClsObject = 2, kClsGenital = 3,
-                             kClsCount = 4 };
+                             kClsHead = 4, kClsCount = 5 };
     struct Probe {
         bool  live = false;
         bool  seg  = false;  // true: the probe is the SEGMENT p->q (weapon blade axis)
@@ -124,9 +180,24 @@ namespace {
         float q[3]{};        // segment end (seg only)
         float pad  = 0.f;    // extra surface (object bound radius / weapon capsule radius)
         char  name[48]{};    // weapon/object base name
+        // ★ 2026-09-03: the held object's REAL collision box. When set, this OUTRANKS both seg
+        // and point — it is the only description that is honest about a big item, and `pad` is
+        // forced to 0 because a true box needs no inflation.
+        bool  box  = false;
+        float bc[3]{};       // box centre, world game units
+        float bR[9]{};       // row-major world rotation of the box frame
+        float bh[3]{};       // half extents along bR's rows
     };
+    // ★ 2026-09-06: FIVE hand probes. 0/1 = index proximal + distal TIPs, 2 = the 3-finger base
+    // slab, 3 = the 3-finger tip plate, 4 = HIGGS's OWN HAND BOX — the palm. User in VR: "HIGGS's
+    // box IS the palm, it always has been; all our fingers are just extensions of it." It is the
+    // collider that physically pushes her when the hand is open or fisted and it was never in this
+    // list: the 19:56 log has her trunk bent 10–19u with ZERO contacts. The CLASS is still VRIK's
+    // hand shape (ClassifyHand); the palm box only adds a LOCATION the class was blind to.
+    static constexpr int kSlabBox  = 4;
+    static constexpr int kHandBoxN = 5;
     struct HandProbes {
-        Probe boxes[4];      // 0/1 index proximal+distal TIPs, 2 fist slab, 3 palm plate (centers)
+        Probe boxes[kHandBoxN];   // box 4 is a BOX probe (bc/bR/bh); 0..3 are points
         Probe weapon;
         Probe object;
         bool  curled = false;   // index distal tip near the palm plate = fist
@@ -143,6 +214,7 @@ namespace {
         // that same grip (2026-07-31, user-caught: leg held in the axe hand while the other
         // hand tested — the axe reported cervix -16.9u for 13.6s, pure phantom).
         std::uint32_t grabActorId = 0;
+        int lastViaBox = -1;    // diagnostic: which of the 5 boxes led this hand's latest hit (apiLog hv=)
     };
     HandProbes g_hp[2];      // [0]=R, [1]=L (HandBox hand indexing)
 
@@ -202,6 +274,13 @@ namespace {
         std::uint8_t  unseen = 0;      // consecutive ticks the region was not the winner
         std::uint32_t actorId = 0;
         std::uint8_t  wand = 0;
+        // ★ THE BODY-PART SOURCES ARE THEIR OWN IDENTITY. `wand` is 0/1 for the two hands and
+        // MEANINGLESS for GENITAL and HEAD, which both park in row 0 — so without this a kiss on
+        // her cheek and the player's RIGHT HAND on her cheek folded into ONE digest contact and
+        // the longest-held source won, silently hiding the other. Hands keep merging across
+        // poses (finger -> fist must not restart a contact, which is the documented behaviour);
+        // only the not-a-hand sources get their own lane.
+        std::uint8_t  srcLane = 0;  // 0 = hands, else the SourceKind of a body-part source
         int           region = 0;   // for the report string + the dwell CLASS
         int           sub = 0;      // ★ the CAPSULE GROUP — this is the contact's IDENTITY
         std::uint64_t startMs = 0;
@@ -209,8 +288,15 @@ namespace {
         struct PartAcc { int slot, child; std::uint8_t left; float secs; };
         PartAcc       parts[kMaxPartAcc]{};
         int           nParts = 0;
-        float         srcSecs[8]{};                // accumulated seconds per SourceKind
-        char          genPart[8]{};                // "shaft"/"tip" for kSourceGenital: which part
+        // ⛔ SIZED BY THE ENUM, NEVER BY A LITERAL. This was `srcSecs[8]` when kSourceHead was
+        // appended as value 8: the `sk < 8` guard silently dropped every head contact, the
+        // all-zero table then resolved to index 0, and the DIGEST published a face contact as
+        // kSourceFinger on wand 0 — the wrong hand, the wrong body part, to every consumer.
+        // Failure class 1 (a filter encoding a stale assumption turns a positive into a
+        // confident WRONG answer). Any future source must extend kSourceCount, not this array.
+        float         srcSecs[PPBAPI::kSourceCount]{};   // accumulated seconds per SourceKind
+        char          genPart[8]{};                // "shaft"/"tip" (GENITAL) or "face"/"head"
+                                                   // (HEAD): which part of the toucher touched
                                                    // of him. Unlike weapon/object there is no live
                                                    // name to re-read at digest time, so it rides here.
         float         deepestU = 1e9f;             // most-negative distU seen this visit
@@ -281,6 +367,7 @@ namespace {
         case PPBAPI::kSourceWeapon: return "WEAPON";
         case PPBAPI::kSourceObject: return "OBJECT";
         case PPBAPI::kSourceGenital:return "GENITAL";
+        case PPBAPI::kSourceHead:   return "HEAD";
         }
         return "?";
     }
@@ -483,7 +570,12 @@ namespace {
                 p.weaponEdge  = (unsigned char)WeaponEdgeOfClass(c);
             }
         } else { p.weaponClass = 0; p.weaponEdge = 0; }
-        p.engineContact = fromEngine ? 1 : 0;
+        // ⛔ 2026-09-12: WEAPON contacts only. EngineHitFor keys on (actor, wand) alone, so a FINGER
+        // or HEAD contact on wand 0 inherited engineContact = 1 whenever the right weapon had a
+        // Havok hit on the same actor in the last 3 ticks — false provenance (master reference
+        // defect A2/B2, and it now reached the kiss). Fixed at this one chokepoint for every source.
+        // Removing a FALSE flag is a bug fix, not a contract change.
+        p.engineContact = (fromEngine && p.sourceKind == PPBAPI::kSourceWeapon) ? 1 : 0;
     }
 
     // Which orifice a sub-region belongs to (the published orificeKind byte). Derived from the
@@ -714,6 +806,18 @@ namespace {
                                          : HandBox::BoxCenterWorldU(hand, b, p);
                 hp.boxes[b].live = ok;
             }
+            // ★ PROBE 5 — HIGGS's OWN HAND BOX, THE PALM (2026-09-06). Read from HIGGS's body each
+            // frame (no new body, nothing created) and ranked as a BOX exactly like the held object.
+            {
+                Probe& sl = hp.boxes[kSlabBox];
+                GrabDiag::ObjBoxU ob{};
+                if (ObjectHold::ApiPalmProbeOn() && GrabDiag::HandSlabBoxU(hand == 1, ob)) {
+                    sl.box = true; sl.pad = 0.f;
+                    for (int i = 0; i < 3; ++i) { sl.bc[i] = ob.c[i]; sl.bh[i] = ob.h[i]; sl.p[i] = ob.c[i]; }
+                    for (int i = 0; i < 9; ++i) sl.bR[i] = ob.R[i];
+                    sl.live = true;
+                }
+            }
             // curl: index DISTAL tip riding at the palm plate = fist. The distance is kept
             // as a CALIBRATION RECEIPT — apiLog prints it on every hand START/END so the
             // fist threshold gets set from measured open-vs-fist numbers, not guessed:
@@ -730,6 +834,12 @@ namespace {
                 hp.vrikIndex  = vrik->getFingerPos(isLeft, 1);
                 hp.vrikMiddle = vrik->getFingerPos(isLeft, 2);
             }
+            // ★ A POKE IS THE TIP ONLY (user ruling 2026-09-06): in the FINGER pose the curled fingers'
+            // boxes and the palm box are muted — "it's usually for orifice or stuff, other contact
+            // could create issue". VRIK must POSITIVELY report the pose (index open, middle closed);
+            // with VRIK absent nothing is muted here (the class falls back to geometry anyway).
+            if (hp.vrikIndex > 0.55f && hp.vrikMiddle >= 0.f && hp.vrikMiddle < 0.45f)
+                hp.boxes[2].live = hp.boxes[3].live = hp.boxes[kSlabBox].live = false;
             // Weapon = the blade SEGMENT (hilt->tip + radius) read off HIGGS's weapon body.
             // The first probe was the body POSITION, which sits at the HILT — prodding with
             // the blade tip never registered (user-verified miss, 2026-07-30). The point
@@ -764,13 +874,42 @@ namespace {
                         // (VRTE report 23 s7.6). A long thin item must carry an AXIS. Round
                         // items fail the aspect test inside and keep the sphere, which is
                         // the honest description for them.
-                        if (GrabDiag::ObjectSegmentU(refr, hp.object.p, hp.object.q,
+                        // ★★ BOX FIRST (2026-09-03, user ruling). The item's REAL Havok collision
+                        // shape outranks both descriptions below it, because both of them place a
+                        // big item by its ORIGIN and then argue about how much to inflate it. The
+                        // box is where the item actually is. The segment is still filled in
+                        // alongside it (long axis of the box) so `CopyProbes` consumers — the
+                        // orifice drive reads p/q — keep working with no contract change.
+                        GrabDiag::ObjBoxU ob{};
+                        if (ObjectHold::ApiObjectBoxOn() && GrabDiag::ObjectBoxU(isLeft, ob)) {
+                            hp.object.box = true;
+                            hp.object.pad = 0.f;              // a true box needs no inflation
+                            for (int i = 0; i < 3; ++i) { hp.object.bc[i] = ob.c[i]; hp.object.bh[i] = ob.h[i]; }
+                            for (int i = 0; i < 9; ++i) hp.object.bR[i] = ob.R[i];
+                            int ax = 0;
+                            if (ob.h[1] > ob.h[ax]) ax = 1;
+                            if (ob.h[2] > ob.h[ax]) ax = 2;
+                            for (int i = 0; i < 3; ++i) {
+                                const float d = ob.R[i*3+ax] * ob.h[ax];
+                                hp.object.p[i] = ob.c[i] - d;
+                                hp.object.q[i] = ob.c[i] + d;
+                            }
+                            hp.object.seg = true;
+                        } else if (GrabDiag::ObjectSegmentU(refr, hp.object.p, hp.object.q,
                                                      &hp.object.pad)) {
                             hp.object.seg = true;
                         } else if (auto* d3 = refr->Get3D()) {
                             const auto& wb = d3->worldBound;
                             hp.object.p[0] = wb.center.x; hp.object.p[1] = wb.center.y;
                             hp.object.p[2] = wb.center.z; hp.object.pad = wb.radius;
+                            // ★ v8.9 CAP THE INFLATION (2026-08-30, user-reported yoke + collar).
+                            // The bound sphere of a big device is enormous - a Devious Heavy Steel
+                            // Yoke measured "d=-30.59u vs head.C2". Uncapped, EVERY capsule on her
+                            // body ties for closest, so the equip site is a lottery and the gesture
+                            // never resolves. The weapon path already caps its radius; objects did
+                            // not.
+                            const float padCap = ObjectHold::ObjectPadMaxU();   // v9.2: reach only; ranking is by dRaw
+                            if (padCap > 0.f && hp.object.pad > padCap) hp.object.pad = padCap;
                         } else {
                             const auto pos = refr->GetPosition();
                             hp.object.p[0] = pos.x; hp.object.p[1] = pos.y; hp.object.p[2] = pos.z;
@@ -798,7 +937,10 @@ namespace {
             // VRIK absent (-1) fails closed = the old full mute. apiSuppressHeldHand 2 =
             // strict full mute (the pre-exception behaviour) for consumers that want it.
             if (ObjectHold::ApiSuppressHeldHand() && (hp.weapon.live || hp.object.live)) {
-                hp.boxes[2].live = hp.boxes[3].live = false;      // slab + palm = grip noise
+                // 2026-09-06 (user): the code default is now STRICT (2) — "there is a reason the
+                // player is holding the apple, it's deliberate": the held thing reports, the hand
+                // does not. The 07-31 index exception survives only as knob value 1.
+                hp.boxes[2].live = hp.boxes[3].live = hp.boxes[kSlabBox].live = false;   // 3-finger boxes + the palm box
                 const bool idxOpen = hp.vrikIndex > 0.55f;
                 if (ObjectHold::ApiSuppressHeldHandStrict() || !idxOpen)
                     hp.boxes[0].live = hp.boxes[1].live = false;  // index pair
@@ -813,7 +955,8 @@ namespace {
         int   slot = 0, child = 0;
         bool  left = false;
         int   viaBox = -1;     // which hand box made the nearest contact (kClsHand only)
-    };
+        float rank = 1e9f;   // v9.2: TRUE surface distance, used only to pick the nearest capsule
+};
 
     // ── WEAPON CLASS / EDGE (2026-08-01) ────────────────────────────────────────────────
     // From the equipped record's animationType — the game's own classification, so it is right
@@ -954,6 +1097,141 @@ namespace {
         }
     }
 
+    // ── ENGINE-TRUTH HAND TOUCHES (2026-09-07, report 33 §8.3) — resolved EVERY FRAME ──────────
+    // The pointer -> (actor, slot, side) walk is the weapon path's, cached per body: bodies are
+    // stable until a ragdoll rebuild, so one FindNode re-check per touched body per frame replaces
+    // 24 x roster node walks. A cache hit that no longer matches falls back to the full search.
+    struct EngTouchRec { PpbApi::EngineTouch t; bool live; };
+    EngTouchRec g_engTouch[16]{};                    // v11.1b: one record per (actor, HAND) — two hands may touch one actor in a frame
+    struct BodyResCache { void* body; std::uint32_t actorId; int slot; bool left; };
+    BodyResCache g_bodyRes[32]{};
+    int          g_bodyResN = 0;
+    // v11.1b negative cache (review): a body the roster could NOT resolve — a corpse (DeadBip, never NoteDriven), an
+    // excluded actor, the 9th+ NPC — is not re-walked 24 x roster times every frame; the miss holds 8 frames or until
+    // the roster size changes.
+    struct BodyMiss { void* body; std::uint32_t frame; int rosterN; };
+    BodyMiss      g_bodyMiss[16]{};
+    int           g_bodyMissN = 0;
+    std::uint32_t g_engFrame  = 0;
+
+    inline double NowSec() {
+        return std::chrono::duration_cast<std::chrono::duration<double>>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+    }
+    inline bool TrunkSlotEng(int slot) { return slot == 3 || slot == 4 || slot == 5 || slot == 6 || slot == 7 || slot == 8 || slot == 11; }
+
+    bool ResolveNpcBody(void* body, const RosterEntry* roster, int nRoster,
+                        std::uint32_t& actorId, int& slot, bool& left)
+    {
+        for (int i = 0; i < g_bodyMissN; ++i) {                     // negative cache first
+            if (g_bodyMiss[i].body != body) continue;
+            if (g_engFrame - g_bodyMiss[i].frame < 8 && g_bodyMiss[i].rosterN == nRoster) return false;
+            g_bodyMiss[i] = g_bodyMiss[--g_bodyMissN];              // expired or the roster changed — try again
+            break;
+        }
+        // positive cache: validate with ONE node walk
+        for (int i = 0; i < g_bodyResN; ++i) {
+            if (g_bodyRes[i].body != body) continue;
+            for (int ai = 0; ai < nRoster; ++ai) {
+                RE::Actor* a = roster[ai].actor;
+                if (!a || a->GetFormID() != g_bodyRes[i].actorId) continue;
+                if (GrabDiag::SlotBodyRaw(a, g_bodyRes[i].slot, g_bodyRes[i].left) == body) {
+                    actorId = g_bodyRes[i].actorId; slot = g_bodyRes[i].slot; left = g_bodyRes[i].left;
+                    return true;
+                }
+            }
+            g_bodyRes[i] = g_bodyRes[--g_bodyResN];   // stale (rebuilt ragdoll / actor gone) — drop, re-search
+            break;
+        }
+        for (int ai = 0; ai < nRoster; ++ai) {
+            RE::Actor* a = roster[ai].actor;
+            if (!a) continue;
+            for (int s = 0; s < 12; ++s)
+                for (int side = 0; side < 2; ++side) {
+                    void* b = GrabDiag::SlotBodyRaw(a, s, side != 0);
+                    if (!b || b != body) continue;
+                    actorId = a->GetFormID(); slot = s; left = side != 0;
+                    if (g_bodyResN < 32) g_bodyRes[g_bodyResN++] = { body, actorId, slot, left };
+                    else                 g_bodyRes[0] = { body, actorId, slot, left };
+                    return true;
+                }
+        }
+        if (g_bodyMissN < 16) g_bodyMiss[g_bodyMissN++] = { body, g_engFrame, nRoster };
+        else                  g_bodyMiss[g_engFrame % 16] = { body, g_engFrame, nRoster };
+        return false;
+    }
+
+    void CollectEngineHandTouches(const RosterEntry* roster, int nRoster)
+    {
+        ++g_engFrame;
+        const double now = NowSec();
+        for (auto& r : g_engTouch)                       // age out (2 s) — a stale entry must never anchor
+            if (r.live && now - r.t.tS > 2.0) r.live = false;
+        // ── v11.1b census receipt: prints when the collision thread's count moved, at most every 5 s. This is how a
+        // classifier that has stopped matching is SEEN — the first build produced a whole session of `anchor api`.
+        {
+            static std::uint32_t s_lastPairs = 0; static double s_lastLog = -1e9;
+            std::uint32_t pairs = 0, la = 0, lb = 0, stamps = 0;
+            Diag::HandStampCensus(pairs, la, lb, stamps);
+            if (pairs != s_lastPairs && now - s_lastLog > 5.0) {
+                s_lastPairs = pairs; s_lastLog = now;
+                logger::info("ENGSTAMP census: {} layer-56 contact events so far; last pair: 56-side 0x{:08X} (part {} bit15 {}) "
+                             "vs 0x{:08X} (layer {} part {} bit15 {}); {} hand stamps written, roster {}",
+                             pairs, la, (la >> 8) & 0x1Fu, (la & 0x8000u) ? 1 : 0,
+                             lb, lb & 0x7Fu, (lb >> 8) & 0x1Fu, (lb & 0x8000u) ? 1 : 0, stamps, nRoster);
+            }
+        }
+        Diag::HandContact raw[Diag::kHandContactRing];   // the whole ring, so max never truncates the newest
+        const int n = Diag::DrainHandContacts(raw, Diag::kHandContactRing);
+        if (n <= 0 || nRoster <= 0) return;
+        // dedupe ACCEPTED (npcBody, hand) pairs and FAILED bodies separately (review): a stamp rejected for lack of a
+        // hand must not eat a later valid stamp on the same body this frame.
+        struct SeenOk { void* body; int hand; };
+        SeenOk seenOk[Diag::kHandContactRing]; int nOk = 0;
+        void*  seenFail[32]; int nFail = 0;
+        static int s_receipts = 0;                       // the first 8 resolutions speak, then silence
+        for (int i = 0; i < n; ++i) {
+            if (!raw[i].npcBody) continue;
+            bool skip = false;
+            for (int k = 0; k < nFail; ++k) skip |= (seenFail[k] == raw[i].npcBody);
+            if (skip) continue;
+            int hand = -1;
+            if      (raw[i].part == 3) hand = 0;
+            else if (raw[i].part == 5) hand = 1;
+            else                        hand = HandBox::HandOfBody(raw[i].playerBody);   // a PPB finger box; -1 = not ours
+            if (hand < 0) {                                                               // fail closed: no hand, no anchor
+                if (s_receipts < 8) { ++s_receipts;
+                    logger::info("ENGSTAMP drop: player body 0x{:X} (part {}, src {}) is not one of our hand boxes — no hand, no anchor",
+                                 (std::uintptr_t)raw[i].playerBody, raw[i].part, raw[i].src); }
+                continue;
+            }
+            for (int k = 0; k < nOk; ++k) skip |= (seenOk[k].body == raw[i].npcBody && seenOk[k].hand == hand);
+            if (skip) continue;
+            std::uint32_t actorId = 0; int slot = -1; bool left = false;
+            if (!ResolveNpcBody(raw[i].npcBody, roster, nRoster, actorId, slot, left)) {
+                if (nFail < 32) seenFail[nFail++] = raw[i].npcBody;
+                if (s_receipts < 8) { ++s_receipts;
+                    logger::info("ENGSTAMP drop: NPC body 0x{:X} is not on the {}-actor roster (corpse / excluded / out of range) — no anchor",
+                                 (std::uintptr_t)raw[i].npcBody, nRoster); }
+                continue;
+            }
+            if (nOk < Diag::kHandContactRing) seenOk[nOk++] = { raw[i].npcBody, hand };
+            EngTouchRec* rec = nullptr;
+            for (auto& r : g_engTouch) if (r.live && r.t.actorId == actorId && r.t.hand == hand) { rec = &r; break; }
+            if (!rec) for (auto& r : g_engTouch) if (!r.live) { rec = &r; break; }
+            if (!rec) rec = &g_engTouch[0];
+            // prefer a TRUNK stamp over a non-trunk one from the SAME frame (a hand cupping the shoulder while pressing
+            // the chest must not hide the chest from pushStepAnchorTrunkOnly — review)
+            if (rec->live && rec->t.tS == now && TrunkSlotEng(rec->t.slot) && !TrunkSlotEng(slot)) continue;
+            rec->t = { actorId, slot, (int)raw[i].child, left, hand, raw[i].src, now };
+            rec->live = true;
+            if (s_receipts < 8) { ++s_receipts;
+                logger::info("ENGSTAMP ok: actor {:08X} slot {}{} child {} <- hand {} ({}) — the engine saw the contact; PushStep anchors on it",
+                             actorId, slot, left ? "L" : "", (int)raw[i].child, hand ? "L" : "R",
+                             raw[i].src == 1 ? "weapon" : raw[i].src == 2 ? "finger box" : "HIGGS hand"); }
+        }
+    }
+
     void ScanActor(RE::Actor* actor, Hit out[2][kClsCount])
     {
         // Interior-sensor race — filled by the body-slot loop, applied as an override at
@@ -967,6 +1245,33 @@ namespace {
         const std::uint32_t aid = actor->GetFormID();
         const bool wpnOk[2] = { g_hp[0].weapon.live && g_hp[0].grabActorId != aid,
                                 g_hp[1].weapon.live && g_hp[1].grabActorId != aid };
+        // ── BREAST TOUCH PAD (2026-09-03, VRTE_API_Change_Request_BreastTouchReach) ──────────
+        // The breast radius model saturates at lmBrCupSat 10.40 while the flesh does not: the
+        // captured zero-slider neutrals are CBBE 9.97 / 3BA 9.63, so the clamp sits ~4% above the
+        // BASE BODY and every preset larger than that gets the same ~3.15u capsule against a
+        // mound that can be twice as deep. The finger therefore has to sink visibly into flesh
+        // before the surface test fires — and on a light cupping touch it may never fire at all.
+        //   This adds the missing reach on the CAPSULE side, keyed on the sub-region so it can
+        // only ever affect the two breast children. ⛔ It is subtracted from the GATE distance
+        // only, never from the RANK — see the branches below.
+        // ⚠ FEMALES ONLY — ALL of them, and ONLY them. The defect this compensates for is a
+        // property of the BREAST MODEL (r = lmBrRc + lmBrRm*cup, saturating at lmBrCupSat), and
+        // that model only ever sizes a female's C11/C12. A MALE's spine2 C11/C12 are dialled
+        // CHEST capsules — slot 6 has no male name override, so they are still called "BREAST
+        // R/L", and without this gate every man in the game would have picked up 1.5u of extra
+        // chest reach for a saturation defect that never applied to him.
+        //   "All female skeletons" means exactly that: human, draenei, argonian and khajiit
+        // females all resolve here. The BASE pad is unconditional for them (the capsule sits
+        // ~1.5u inside the skin even on a zero-slider body — that is what ghostBreastPadU
+        // measures); the SLOPE term needs a latched landmark measurement, so an unmeasured or
+        // rejected actor degrades to the base pad rather than to a garbage extrapolation.
+        const bool  brFemale  = !IsMaleActor(actor);
+        const float brPadBase = brFemale ? ObjectHold::ApiBreastPadU() : 0.f;
+        const float brCup     = brPadBase > 0.f ? GrabDiag::BreastCupOf(aid) : 0.f;
+        // above the clamp the radius stopped tracking the body; restore that part outside the fit
+        const float brPad     = (brPadBase <= 0.f) ? 0.f
+                              : brPadBase + ObjectHold::ApiBreastPadSlope() *
+                                            (std::max)(0.f, brCup - 10.40f);
         // ── PLAYER GENITAL WAND (2026-08-23): a 4th source, fetched once per actor. Empty
         // whenever he has no schlong or is dressed (the TNG slot-52 gate lives in the wand's
         // own lifecycle), so every loop below simply does nothing on those frames.
@@ -977,11 +1282,68 @@ namespace {
         // `viaBox` carries WHICH segment won — seg 0 = shaft, seg 1 = tip — so the contact can
         // name the part of him that did the touching, the same way a weapon names itself.
         const auto wandVs = [&](const float a[3], const float b[3], float r,
-                                int slotV, int chV, bool leftV, Hit& dst) {
+                                int slotV, int chV, bool leftV, Hit& dst, float capPadV) {
             for (int s = 0; s < nGw; ++s) {
-                const float d = SegSegDistU(a, b, gwA[s], gwB[s]) - r - gwR;
-                if (d < dst.dist) { dst.found = true; dst.dist = d; dst.slot = slotV;
-                                    dst.child = chV; dst.left = leftV; dst.viaBox = s; }
+                const float dRank = SegSegDistU(a, b, gwA[s], gwB[s]) - r - gwR;
+                if (dRank < dst.rank) { dst.found = true; dst.rank = dRank;
+                                        dst.dist = dRank - capPadV; dst.slot = slotV;
+                                        dst.child = chV; dst.left = leftV; dst.viaBox = s; }
+            }
+        };
+        // ── PLAYER HEAD BOX (2026-09-03): a 5th source, fetched once per actor. Empty whenever
+        // the head box is off, the player is beast-formed, or a scene is running (all gated in
+        // the box's own lifecycle), so every loop below simply does nothing on those frames.
+        // ONE segment, running back-of-skull -> face along the box's local +Y.
+        float hdA[3], hdB[3], hdR = 0.f;
+        const bool hasHead = HandBox::HeadProbeSegment(hdA, hdB, &hdR);
+        // ★ 2026-09-06: the MOUTH — a second head-class segment (front face, below eye level). When it is
+        // the nearer of the two the contact is named "mouth" (viaBox 2); the kiss finally has a name.
+        float mA[3], mB[3], mR = 0.f;
+        const bool hasMouth = hasHead && HandBox::MouthProbeSegment(mA, mB, &mR);
+        // Segment-vs-segment for the same reason the wand uses it: both sides are rods, and the
+        // FRONT of the head must be able to win on its own (that is the kiss). `viaBox` carries
+        // which HALF of the segment won — 1 = the face end, 0 = the rest of the skull — so the
+        // contact can name what touched without the consumer doing geometry.
+        const auto headVs = [&](const float a[3], const float b[3], float r,
+                                int slotV, int chV, bool leftV, Hit& dst, float capPadV) {
+            if (!hasHead) return;
+            // ★★ 2026-09-12: the head and mouth are CONTACT sources — they never go INSIDE her.
+            // Both segments subtract their own radius (the head's ~5.5u), honest against her skin but it
+            // meant a face pressed to hers could win the PALATE / THROAT race and publish "In mouth"
+            // (depth 2, orificeKind 3; VRTE ranks it 75), and reach the deep pelvic chain the same way.
+            // Rule = the published DEPTH LADDER, not child indices:
+            //   * depth >= Inside (palate, throat wall, deep floor, cervix, uterus, rectum) — never, either segment.
+            //   * pelvic OPENINGS (depth Opening on the COM: vaginal / anal opening) — the small MOUTH probe
+            //     only. A mouth at her vulva is real oral contact; the fat 5.5u skull segment "reaching" an
+            //     opening would be the same radius inflation this rule exists to stop.
+            // ⛔ The first cut of this used `slot 11 && child >= 22` — reviewed as over-blocking: it is sex-blind
+            //   (a MALE's C22 is the EXTERNAL "anal cover L", so a face on it reported his right cover), and it
+            //   took the openings away from the mouth, so oral contact read as "CLITORIS" or the ring instead.
+            //   SubRegionOfPart is already sex-routed, so the ladder gets both right for free.
+            // ⚠ Beast heads: their C9-C11 are not palate/throat, but SubRegionOfPart is not beast-aware, so they
+            //   still read as interior and are skipped — fails CLOSED (a crown touch reports the cranium).
+            const int  depthV        = SubRegionDepthOf(SubRegionOfPart(slotV, chV, !brFemale));
+            if (depthV >= PPBAPI::kDepthInside) return;
+            const bool pelvicOpening = (slotV == 11 && depthV == PPBAPI::kDepthOpening);
+            const float dRank = pelvicOpening ? 1e9f                      // the skull never scores an opening (Hit's own sentinel)
+                                              : SegSegDistU(a, b, hdA, hdB) - r - hdR;
+            if (dRank < dst.rank) {
+                dst.found = true; dst.rank = dRank; dst.dist = dRank - capPadV; dst.slot = slotV;
+                dst.child = chV; dst.left = leftV;
+                // which end of OUR segment is nearer the capsule's midpoint decides the label
+                const float mid[3] = { (a[0]+b[0])*0.5f, (a[1]+b[1])*0.5f, (a[2]+b[2])*0.5f };
+                const float dA = (hdA[0]-mid[0])*(hdA[0]-mid[0]) + (hdA[1]-mid[1])*(hdA[1]-mid[1]) +
+                                 (hdA[2]-mid[2])*(hdA[2]-mid[2]);
+                const float dB = (hdB[0]-mid[0])*(hdB[0]-mid[0]) + (hdB[1]-mid[1])*(hdB[1]-mid[1]) +
+                                 (hdB[2]-mid[2])*(hdB[2]-mid[2]);
+                dst.viaBox = (dB < dA) ? 1 : 0;           // 1 = the face end
+            }
+            if (hasMouth) {
+                const float dM = SegSegDistU(a, b, mA, mB) - r - mR;
+                if (dM < dst.rank) {
+                    dst.found = true; dst.rank = dM; dst.dist = dM - capPadV; dst.slot = slotV;
+                    dst.child = chV; dst.left = leftV; dst.viaBox = 2;   // 2 = the mouth
+                }
             }
         };
         // actor-level cull: any live probe within reach of the actor's center?  Segment
@@ -1004,8 +1366,8 @@ namespace {
         bool anyNear = false;
         for (int hand = 0; hand < 2 && !anyNear; ++hand) {
             const HandProbes& hp = g_hp[hand];
-            const Probe* all[6] = { &hp.boxes[0], &hp.boxes[1], &hp.boxes[2], &hp.boxes[3],
-                                    &hp.weapon, &hp.object };
+            const Probe* all[7] = { &hp.boxes[0], &hp.boxes[1], &hp.boxes[2], &hp.boxes[3],
+                                    &hp.boxes[kSlabBox], &hp.weapon, &hp.object };
             for (const Probe* pr : all)
                 if (pr->live && probeNear(pr, apf, kActorCullU)) { anyNear = true; break; }
         }
@@ -1014,6 +1376,14 @@ namespace {
             Probe pw{}; pw.live = true; pw.seg = true;
             std::memcpy(pw.p, gwA[s], sizeof pw.p); std::memcpy(pw.q, gwB[s], sizeof pw.q);
             if (probeNear(&pw, apf, kActorCullU)) anyNear = true;
+        }
+        // ...and so is the head. Same trap, same fix: a source absent from the cull is a source
+        // that can never score, however real its collider is (the 2026-08-23 wand lesson —
+        // "ask which LIST the consumer iterates").
+        if (!anyNear && hasHead) {
+            Probe ph{}; ph.live = true; ph.seg = true;
+            std::memcpy(ph.p, hdA, sizeof ph.p); std::memcpy(ph.q, hdB, sizeof ph.q);
+            if (probeNear(&ph, apf, kActorCullU)) anyNear = true;
         }
         if (!anyNear) return;
 
@@ -1029,8 +1399,8 @@ namespace {
                 bool slotNear = false;
                 for (int hand = 0; hand < 2 && !slotNear; ++hand) {
                     const HandProbes& hp = g_hp[hand];
-                    const Probe* all[6] = { &hp.boxes[0], &hp.boxes[1], &hp.boxes[2],
-                                            &hp.boxes[3], &hp.weapon, &hp.object };
+                    const Probe* all[7] = { &hp.boxes[0], &hp.boxes[1], &hp.boxes[2],
+                                            &hp.boxes[3], &hp.boxes[kSlabBox], &hp.weapon, &hp.object };
                     for (const Probe* pr : all) {
                         if (!pr->live) continue;
                         const float d = pr->seg ? SegSegDistU(a, b, pr->p, pr->q)
@@ -1041,6 +1411,8 @@ namespace {
                 for (int s = 0; s < nGw && !slotNear; ++s) {   // wand keeps the slot alive too
                     if (SegSegDistU(a, b, gwA[s], gwB[s]) < kSlotCullU) slotNear = true;
                 }
+                if (!slotNear && hasHead &&                   // ...and so does the head box
+                    SegSegDistU(a, b, hdA, hdB) < kSlotCullU) slotNear = true;
                 if (!slotNear) continue;
 
                 // palate cache for the throat wall's inside-test (C9 is read before C10)
@@ -1091,44 +1463,98 @@ namespace {
                                              : SegPointDistU(c9a, c9b, pt)) - c9r;
                         return dp < deepPal;
                     };
+                    // ★ THE CAPSULE-SIDE PAD, GATE ONLY. kSubBreast is exactly slot 6 children
+                    // 11/12 (SubRegionOfPart), so no new classification is needed and nothing
+                    // else on the body can be affected. Interior capsules are excluded on
+                    // principle — the v8.9 rule that a thing may only reach an orifice if its own
+                    // point is genuinely in there — though breasts are slot 6 and outside the
+                    // interior set by construction anyway.
+                    const float capPad = (brPad > 0.f && slot == 6 && (ch == 11 || ch == 12))
+                                         ? brPad : 0.f;
                     for (int hand = 0; hand < 2; ++hand) {
                         const HandProbes& hp = g_hp[hand];
-                        for (int bx = 0; bx < 4; ++bx) {
+                        for (int bx = 0; bx < kHandBoxN; ++bx) {
                             if (!hp.boxes[bx].live) continue;
-                            const float d = SegPointDistU(a, b, hp.boxes[bx].p) - r;
+                            // ⛔ RANK ON TRUE GEOMETRY, GATE ON REACH. The object branch has done
+                            // this since v9.2; the hand branch never had a pad at all, so it had
+                            // no split — and adding one naively would have let a padded breast
+                            // WIN the nearest-capsule race against the sternum and rib capsules
+                            // beside it, reporting "breast" for a touch on her chest. dRank is
+                            // bit-identical to the old `d`, so with capPad 0 nothing changes.
+                            const float dRank = (hp.boxes[bx].box      // 2026-09-06: the palm box is a BOX
+                                                 ? SegObbDistU(a, b, hp.boxes[bx].bc, hp.boxes[bx].bR, hp.boxes[bx].bh)
+                                                 : SegPointDistU(a, b, hp.boxes[bx].p)) - r;
+                            const float dGate = dRank - capPad;
                             Hit& h = out[hand][kClsHand];
-                            if (d < h.dist) { h.found = true; h.dist = d; h.slot = slot;
-                                              h.child = ch; h.left = left; h.viaBox = bx; }
+                            if (dRank < h.rank) { h.found = true; h.rank = dRank; h.dist = dGate;
+                                                  h.slot = slot; h.child = ch; h.left = left;
+                                                  h.viaBox = bx; }
                             if (isSensor && (!isThroat || nearPalate(hp.boxes[bx].p, nullptr))) {
                                 Hit& sh = sens[hand][kClsHand];
-                                if (d < sh.dist) { sh.found = true; sh.dist = d; sh.slot = slot;
-                                                   sh.child = ch; sh.left = left; sh.viaBox = bx; }
+                                if (dRank < sh.rank) { sh.found = true; sh.rank = dRank;
+                                                       sh.dist = dGate; sh.slot = slot;
+                                                       sh.child = ch; sh.left = left; sh.viaBox = bx; }
                             }
                         }
                         if (wpnOk[hand]) {
-                            const float d = (hp.weapon.seg
+                            // the weapon's OWN pad stays in the rank exactly as it always has —
+                            // that is shipped, tuned behaviour. Only capPad is gate-only.
+                            const float dRank = (hp.weapon.seg
                                                 ? SegSegDistU(a, b, hp.weapon.p, hp.weapon.q)
                                                 : SegPointDistU(a, b, hp.weapon.p))
                                             - r - hp.weapon.pad;
+                            const float dGate = dRank - capPad;
                             Hit& h = out[hand][kClsWeapon];
-                            if (d < h.dist) { h.found = true; h.dist = d; h.slot = slot;
-                                              h.child = ch; h.left = left; }
+                            if (dRank < h.rank) { h.found = true; h.rank = dRank; h.dist = dGate;
+                                                  h.slot = slot; h.child = ch; h.left = left; }
                             if (isSensor && (!isThroat ||
                                              nearPalate(hp.weapon.p, hp.weapon.seg ? hp.weapon.q : nullptr))) {
                                 Hit& sh = sens[hand][kClsWeapon];
-                                if (d < sh.dist) { sh.found = true; sh.dist = d; sh.slot = slot;
-                                                   sh.child = ch; sh.left = left; }
+                                if (dRank < sh.rank) { sh.found = true; sh.rank = dRank;
+                                                       sh.dist = dGate; sh.slot = slot;
+                                                       sh.child = ch; sh.left = left; }
                             }
                         }
                         if (hp.object.live) {
-                            const float d = SegPointDistU(a, b, hp.object.p) - r - hp.object.pad;
+                            // ★ v8.9 INTERIOR CAPSULES ARE NOT REACHABLE BY INFLATION (user:
+                            // "i equipped a collar on her... it says it touched her palate", with
+                            // the collar plainly outside her mouth). An object is inflated to its
+                            // bound radius, and that sphere swallows capsules INSIDE the head. A
+                            // thing can only touch the palate if its own point is genuinely in
+                            // there - so interior sub-regions use the RAW point distance.
+                            // Interior = past an orifice OPENING: mouth palate(9)/throat(10)/
+                            // deep floor(11) on the head, and the vaginal/anal chains (child >= 22)
+                            // on the COM. The lip ring (1) and the clitoris (21) are EXTERNAL
+                            // landmarks and stay reachable normally.
+                            const bool interior = (slot == 3 && (ch == 9 || ch == 10 || ch == 11)) ||
+                                                  (slot == 11 && ch >= 22);
+                            // ★ v9.2: RANK BY TRUE GEOMETRY, GATE BY REACH (2026-08-30).
+                            // dRaw = the object's real surface distance; dGate = dRaw minus its
+                            // reach (bound radius). Picking the nearest capsule by dGATE was the
+                            // real yoke bug - a 30u sphere makes every capsule tie, so the equip
+                            // site was a lottery - and capping the reach to fix THAT starved
+                            // small/paired devices ('Copper Wrist Cuffs': 0 contacts for a
+                            // minute). Ranking by dRaw picks the honest nearest capsule; the
+                            // published distance stays dGate so a held device still reaches.
+                            // ⛔ 2026-09-03: this used to be SegPointDistU ALWAYS, so the object's
+                            // segment (filled since 2026-08-19) was computed and never read — a
+                            // held item was ranked as a POINT AT ONE END of its own long axis.
+                            // The weapon branch above always branched correctly; this one did not.
+                            const float dRaw  = (hp.object.box
+                                                ? SegObbDistU(a, b, hp.object.bc, hp.object.bR, hp.object.bh)
+                                                : hp.object.seg
+                                                ? SegSegDistU(a, b, hp.object.p, hp.object.q)
+                                                : SegPointDistU(a, b, hp.object.p)) - r;
+                            const float dGate = interior ? dRaw
+                                                         : dRaw - hp.object.pad - capPad;
                             Hit& h = out[hand][kClsObject];
-                            if (d < h.dist) { h.found = true; h.dist = d; h.slot = slot;
-                                              h.child = ch; h.left = left; }
+                            if (dRaw < h.rank) { h.found = true; h.rank = dRaw; h.dist = dGate;
+                                                 h.slot = slot; h.child = ch; h.left = left; }
                             if (isSensor && (!isThroat || nearPalate(hp.object.p, nullptr))) {
                                 Hit& sh = sens[hand][kClsObject];
-                                if (d < sh.dist) { sh.found = true; sh.dist = d; sh.slot = slot;
-                                                   sh.child = ch; sh.left = left; }
+                                if (dRaw < sh.rank) { sh.found = true; sh.rank = dRaw;
+                                                      sh.dist = dGate; sh.slot = slot;
+                                                      sh.child = ch; sh.left = left; }
                             }
                         }
                     }
@@ -1136,9 +1562,19 @@ namespace {
                     // row 0 (`wand` is published as 0 for this kind). Interior sensors matter
                     // more for this source than any other — it is the one that goes inside.
                     if (nGw > 0) {
-                        wandVs(a, b, r, slot, ch, left, out[0][kClsGenital]);
+                        wandVs(a, b, r, slot, ch, left, out[0][kClsGenital], capPad);
                         if (isSensor && (!isThroat || nearPalate(gwA[0], gwB[nGw - 1])))
-                            wandVs(a, b, r, slot, ch, left, sens[0][kClsGenital]);
+                            wandVs(a, b, r, slot, ch, left, sens[0][kClsGenital], capPad);
+                    }
+                    // The head is not per-hand either, so it parks in row 0 alongside the wand
+                    // (`wand` is published as 0 for this kind). It joins the SENSOR priority race
+                    // for the same reason every source does — the palate/throat pair must be able
+                    // to outrank the cranium — but it can never reach an interior pelvic sensor
+                    // in practice, and the throat inside-test still gates it honestly.
+                    if (hasHead) {
+                        headVs(a, b, r, slot, ch, left, out[0][kClsHead], capPad);
+                        if (isSensor && (!isThroat || nearPalate(hdA, hdB)))
+                            headVs(a, b, r, slot, ch, left, sens[0][kClsHead], capPad);
                     }
                 }
             }
@@ -1171,31 +1607,47 @@ namespace {
                                  : kind == 1 ? PPBAPI::kSlotHair : PPBAPI::kSlotGen;
                 for (int hand = 0; hand < 2; ++hand) {
                     const HandProbes& hp = g_hp[hand];
-                    for (int bx = 0; bx < 4; ++bx) {
+                    // ⚠ these share the SAME Hit objects as the body loop above, so they must use
+                    // the same rank/gate discipline — otherwise a chord would be compared against
+                    // the body loop's PADDED distance (rejecting a genuinely nearer chord) and a
+                    // winning chord would leave a stale rank behind. No garment chord is a breast,
+                    // so the gate equals the rank here.
+                    for (int bx = 0; bx < kHandBoxN; ++bx) {
                         if (!hp.boxes[bx].live) continue;
-                        const float d = SegPointDistU(a, b, hp.boxes[bx].p) - r;
+                        const float dRank = (hp.boxes[bx].box
+                                             ? SegObbDistU(a, b, hp.boxes[bx].bc, hp.boxes[bx].bR, hp.boxes[bx].bh)
+                                             : SegPointDistU(a, b, hp.boxes[bx].p)) - r;
                         Hit& h = out[hand][kClsHand];
-                        if (d < h.dist) { h.found = true; h.dist = d; h.slot = pseudo;
-                                          h.child = ch; h.left = false; h.viaBox = bx; }
+                        if (dRank < h.rank) { h.found = true; h.rank = dRank; h.dist = dRank;
+                                              h.slot = pseudo; h.child = ch; h.left = false;
+                                              h.viaBox = bx; }
                     }
                     if (wpnOk[hand]) {
-                        const float d = (hp.weapon.seg
+                        const float dRank = (hp.weapon.seg
                                             ? SegSegDistU(a, b, hp.weapon.p, hp.weapon.q)
                                             : SegPointDistU(a, b, hp.weapon.p))
                                         - r - hp.weapon.pad;
                         Hit& h = out[hand][kClsWeapon];
-                        if (d < h.dist) { h.found = true; h.dist = d; h.slot = pseudo;
-                                          h.child = ch; h.left = false; }
+                        if (dRank < h.rank) { h.found = true; h.rank = dRank; h.dist = dRank;
+                                              h.slot = pseudo; h.child = ch; h.left = false; }
                     }
                     if (hp.object.live) {
-                        const float d = SegPointDistU(a, b, hp.object.p) - r - hp.object.pad;
+                        // same correction as the sensor branch above — box, then segment, then point
+                        const float dRaw  = (hp.object.box
+                                            ? SegObbDistU(a, b, hp.object.bc, hp.object.bR, hp.object.bh)
+                                            : hp.object.seg
+                                            ? SegSegDistU(a, b, hp.object.p, hp.object.q)
+                                            : SegPointDistU(a, b, hp.object.p)) - r;   // v9.2
+                        const float dGate = dRaw - hp.object.pad;
                         Hit& h = out[hand][kClsObject];
-                        if (d < h.dist) { h.found = true; h.dist = d; h.slot = pseudo;
-                                          h.child = ch; h.left = false; }
+                        if (dRaw < h.rank) { h.found = true; h.rank = dRaw; h.dist = dGate;
+                                             h.slot = pseudo; h.child = ch; h.left = false; }
                     }
                 }
                 // tails / hair / another actor's GEN chords are touchable by the wand too
-                if (nGw > 0) wandVs(a, b, r, pseudo, ch, false, out[0][kClsGenital]);
+                if (nGw > 0) wandVs(a, b, r, pseudo, ch, false, out[0][kClsGenital], 0.f);
+                // ...and by the head: resting your face against a tail or a wig is a real touch
+                if (hasHead) headVs(a, b, r, pseudo, ch, false, out[0][kClsHead], 0.f);
             }
         }
 
@@ -1343,6 +1795,7 @@ namespace {
         if (h.viaBox == 0 || h.viaBox == 1) return PPBAPI::kSourceFinger;
         if (h.viaBox == 3)                  return PPBAPI::kSourcePalm;
         if (h.viaBox == 2)                  return PPBAPI::kSourceFist;
+        if (h.viaBox == kSlabBox)           return PPBAPI::kSourcePalm;   // HIGGS's box led = an open hand (2026-09-06)
         return PPBAPI::kSourceHand;
     }
 
@@ -1354,7 +1807,10 @@ namespace {
         // three '|'. The sub-region is therefore an OPT-IN fifth field, off by default, so
         // nobody's parser changes under them. Native/Papyrus consumers get it regardless.
         const char* sub = ObjectHold::ApiSubRegionInEvent() ? SubRegionLabel(c.subRegion) : nullptr;
-        if (c.sourceKind == PPBAPI::kSourceWeapon || c.sourceKind == PPBAPI::kSourceObject)
+        // ⚠ GENITAL and HEAD carry a sourceName too ("shaft"/"tip", "face"/"head") and were
+        // both dropping it here — the discriminator that tells a kiss from a headbutt never
+        // reached a single consumer. Gate on "is there a name", not on a list of kinds.
+        if (c.sourceName[0])
             std::snprintf(out, cap, "%s|%s:%s|%s|%s%s%s", c.wand ? "L" : "R", kind,
                           c.sourceName, c.bodyPart, c.skeleton,
                           sub ? "|" : "", sub ? sub : "");
@@ -1413,13 +1869,16 @@ namespace {
                               c.weaponEdge == PPBAPI::kEdgeBlade  ? "Blade"  :
                               c.weaponEdge == PPBAPI::kEdgeBlunt  ? "Blunt"  :
                               c.weaponEdge == PPBAPI::kEdgePierce ? "Pierce" : "?");
+            static const char* const kViaName[kHandBoxN] = { "idx0", "idx1", "f3base", "f3tips", "PALM" };
+            const int via = g_hp[c.wand & 1].lastViaBox;   // this hand's latest hand-class hit
             logger::info("API {} {:08X} {} d={:.2f}u dur={:.2f}s src={}{} curl={:.1f}u "
-                         "vrik=I{:.2f}/M{:.2f}",
+                         "vrik=I{:.2f}/M{:.2f} hv={}",
                          phase == PPBAPI::kPhaseStart ? "START" : "END",
                          c.actorFormId, packed, c.distU, c.durationS,
                          c.engineContact ? "ENG" : "GEO", wpn,
                          g_hp[c.wand & 1].curlDistU,
-                         g_hp[c.wand & 1].vrikIndex, g_hp[c.wand & 1].vrikMiddle);
+                         g_hp[c.wand & 1].vrikIndex, g_hp[c.wand & 1].vrikMiddle,
+                         (via >= 0 && via < kHandBoxN) ? kViaName[via] : "-");
         }
     }
 
@@ -1465,6 +1924,10 @@ namespace PpbApi {
         int rosterN = g_rosterN;
         std::memcpy(roster, g_roster, sizeof(RosterEntry) * (size_t)rosterN);
         g_rosterN = 0;
+
+        // ★ 2026-09-07 (report 33 §8.3): the engine's own hand contacts, resolved EVERY frame, BEFORE
+        // the apiHz throttle below — this is the clock PushStep's hand-travel anchor lives on now.
+        CollectEngineHandTouches(roster, rosterN);
 
         // 2026-08-19: the ORIFICE DRIVE consumes the probe set (CopyProbes) and nothing else
         // from this tick, so it must be able to run with the contact engine off. Assemble the
@@ -1582,9 +2045,17 @@ namespace PpbApi {
                         p.sourceKind = PPBAPI::kSourceGenital;
                         std::snprintf(p.sourceName, sizeof p.sourceName, "%s",
                                       h.viaBox >= 1 ? "tip" : "shaft");
+                    } else if (cls == kClsHead) {
+                        // Same idiom: name the part of the HEAD that touched. "face" is the
+                        // front end of the box — the half that makes a kiss a kiss — "head" is
+                        // everything else (a forehead lean, the side of the skull, a headbutt).
+                        p.sourceKind = PPBAPI::kSourceHead;
+                        std::snprintf(p.sourceName, sizeof p.sourceName, "%s",
+                                      h.viaBox == 2 ? "mouth" : h.viaBox == 1 ? "face" : "head");
                     } else {
                         p.sourceKind = ClassifyHand(actor, hand, h);
                         p.sourceName[0] = '\0';
+                        g_hp[hand].lastViaBox = h.viaBox;      // apiLog hv= receipt
                     }
                     if (qualified) {
                         // the WHERE fields carry the MOST-TOUCHED capsule of this group
@@ -1617,16 +2088,20 @@ namespace PpbApi {
                         // preserved, exactly as asked.
                         const int reg = RegionOfPart(h.slot, h.child);
                         const int sub = SubRegionOfPart(h.slot, h.child, IsMaleActor(actor));
+                        const std::uint8_t lane =
+                            (p.sourceKind == PPBAPI::kSourceGenital ||
+                             p.sourceKind == PPBAPI::kSourceHead) ? p.sourceKind : 0;
                         DigestContact* dc = nullptr;
                         for (DigestContact& d : g_digest)
                             if (d.live && d.actorId == roster[ai].id && d.wand == hand &&
-                                d.sub == sub) { dc = &d; break; }
+                                d.sub == sub && d.srcLane == lane) { dc = &d; break; }
                         if (!dc) {
                             for (DigestContact& d : g_digest) if (!d.live) { dc = &d; break; }
                             if (dc) {
                                 *dc = DigestContact{};
                                 dc->live = true; dc->actorId = roster[ai].id;
                                 dc->wand = (std::uint8_t)hand; dc->region = reg; dc->sub = sub;
+                                dc->srcLane = lane;
                                 dc->startMs = now;
                             }
                         }
@@ -1648,8 +2123,12 @@ namespace PpbApi {
                             // per-source accumulation — the longest-held pose is the report,
                             // so finger->fist mid-touch does NOT restart or flip-flop
                             const std::uint8_t sk = p.sourceKind;
-                            if (sk < 8) dc->srcSecs[sk] += dt;
-                            if (sk == PPBAPI::kSourceGenital && p.sourceName[0])
+                            if (sk < PPBAPI::kSourceCount) dc->srcSecs[sk] += dt;
+                            // the sub-part name for the two nameless-at-emit kinds:
+                            // GENITAL "shaft"/"tip" and HEAD "face"/"head". Both are resolved
+                            // during the scan and would otherwise be lost by the digest fold.
+                            if ((sk == PPBAPI::kSourceGenital || sk == PPBAPI::kSourceHead) &&
+                                p.sourceName[0])
                                 std::snprintf(dc->genPart, sizeof dc->genPart, "%s", p.sourceName);
                         }
                     }
@@ -1664,8 +2143,12 @@ namespace PpbApi {
             int bi = -1; float bs = -1.f;
             for (int k = 0; k < dc.nParts; ++k)
                 if (dc.parts[k].secs > bs) { bs = dc.parts[k].secs; bi = k; }
-            int bk = PPBAPI::kSourceHand; float bks = -1.f;
-            for (int k = 0; k < 8; ++k) if (dc.srcSecs[k] > bks) { bks = dc.srcSecs[k]; bk = k; }
+            // ⚠ seed from what the contact ALREADY carries, not from a fixed kind: with a
+            // strictly-greater test an all-zero table used to resolve to index 0 and publish
+            // FINGER for a source that had never accumulated a single tick.
+            int bk = dc.pub.sourceKind; float bks = 0.f;
+            for (int k = 0; k < PPBAPI::kSourceCount; ++k)
+                if (dc.srcSecs[k] > bks) { bks = dc.srcSecs[k]; bk = k; }
             PpbTouchContact& p = dc.pub;
             p.actorFormId = dc.actorId; p.toucherFormId = 0x14;
             p.wand = dc.wand;
@@ -1689,8 +2172,11 @@ namespace PpbApi {
             } else if (bk == PPBAPI::kSourceObject) {
                 const char* nm = g_hp[dc.wand & 1].object.name;
                 if (nm[0]) std::snprintf(p.sourceName, sizeof p.sourceName, "%s", nm);
-            } else if (bk == PPBAPI::kSourceGenital) {
-                // no live name to re-read for this kind — carried in the digest as it folded
+            } else if (bk == PPBAPI::kSourceGenital || bk == PPBAPI::kSourceHead) {
+                // no live name to re-read for these kinds — carried in the digest as it folded.
+                // ⛔ 2026-09-12: HEAD was folded into genPart (above, :2106) and then WIPED here by
+                // the else branch, so digest events, callbacks and Papyrus GetContactSource never
+                // said "face" / "head" / "mouth" — the one word that tells a consumer it was a kiss.
                 if (dc.genPart[0])
                     std::snprintf(p.sourceName, sizeof p.sourceName, "%s", dc.genPart);
             } else p.sourceName[0] = '\0';
@@ -1757,12 +2243,35 @@ namespace PpbApi {
     // Edge-triggered: exactly one event per transition, so there is no dwell and no spam.
     // ── PROBE EXPORT (2026-08-19) — see PpbApi.h. Straight copy of what CollectProbes built
     // this tick; no filtering, so the consumer sees exactly what the contact engine sees.
+    // Internal twin of the interface's GetContacts — same digest snapshot, no round trip.
+    // The gesture layer (DeviceGesture.cpp) is inside PPB now and reads it directly.
+    int CopyContacts(PPBAPI::PpbTouchContact* out, int max)
+    {
+        if (!out || max < 1) return 0;
+        const Snapshot& s = g_snap[g_snapActive.load(std::memory_order_acquire)];
+        const int n = s.n < max ? s.n : max;
+        std::memcpy(out, s.c, sizeof(PpbTouchContact) * (size_t)n);
+        return n;
+    }
+
+    int EngineTouchList(EngineTouch* out, int max)
+    {
+        if (!out || max < 1) return 0;
+        int n = 0;
+        for (const auto& r : g_engTouch)
+            if (r.live && n < max) out[n++] = r.t;
+        return n;
+    }
+
     int CopyProbes(ProbeView* out, int max)
     {
         if (!out || max <= 0) return 0;
         int n = 0;
         for (int hand = 0; hand < 2; ++hand) {
             const HandProbes& hp = g_hp[hand];
+            // ⚠ DELIBERATELY the four FINGER boxes only — HIGGS's palm box (boxes[kSlabBox]) is a
+            // touch/push probe, NOT an orifice probe (user ruling 2026-09-06: orifice work is the
+            // finger's; in the FINGER pose the palm box is muted anyway). Add it here only on a ruling.
             const Probe* all[6] = { &hp.boxes[0], &hp.boxes[1], &hp.boxes[2], &hp.boxes[3],
                                     &hp.weapon, &hp.object };
             const int   cls[6]  = { kClsHand, kClsHand, kClsHand, kClsHand,
@@ -1805,7 +2314,72 @@ namespace PpbApi {
                 v.grabActorId = 0;            // a shaft is never the thing HIGGS is holding
             }
         }
+        // ── PLAYER HEAD BOX (2026-09-03) — same reasoning, appended after the wand ───────────
+        // One segment, back-of-skull -> face, with the box's inscribed radius in `pad`. Appended
+        // LAST so an older caller's smaller buffer degrades by dropping the head, never by
+        // truncating a hand.
+        {
+            float ha[3], hb[3], hr = 0.f;
+            if (n < max && HandBox::HeadProbeSegment(ha, hb, &hr)) {
+                ProbeView& v = out[n++];
+                v.p[0] = ha[0]; v.p[1] = ha[1]; v.p[2] = ha[2];
+                v.q[0] = hb[0]; v.q[1] = hb[1]; v.q[2] = hb[2];
+                v.pad  = hr;
+                v.seg  = 1;
+                v.cls  = kClsHead;
+                v.wand = 0;                   // not a hand
+                v.grabActorId = 0;            // a head is never the thing HIGGS is holding
+            }
+        }
+        // ── THE MOUTH (2026-09-06) — appended after the head, same class, same reasoning ──────────
+        {
+            float ma[3], mb[3], mr = 0.f;
+            if (n < max && HandBox::MouthProbeSegment(ma, mb, &mr)) {
+                ProbeView& v = out[n++];
+                v.p[0] = ma[0]; v.p[1] = ma[1]; v.p[2] = ma[2];
+                v.q[0] = mb[0]; v.q[1] = mb[1]; v.q[2] = mb[2];
+                v.pad  = mr;
+                v.seg  = 1;
+                v.cls  = kClsHead;
+                v.wand = 0;
+                v.grabActorId = 0;
+            }
+        }
         return n;
+    }
+
+    // ── v28 RELEASE REACH (2026-09-10) — see PpbApi.h ──────────────────────────────────────────────
+    // A MIRROR of ScanActor's OBJECT branch: interior capsules (head C9/C10/C11, COM C22+) use the raw
+    // distance; everything else subtracts the object's pad and the breast capsule pad. If that branch's
+    // formula ever changes, change this with it - DeviceGesture's release decision is only honest while
+    // the two agree.
+    bool HeldObjectGapU(RE::Actor* actor, int hand, int slot, bool left, int child,
+                        float* gapOut, float* rawOut, int* kindOut)
+    {
+        if (!actor || hand < 0 || hand > 1) return false;
+        const HandProbes& hp = g_hp[hand];
+        if (!hp.object.live) return false;
+        float a[3], b[3], r = 0.f;
+        if (!GrabDiag::ReadCapsuleWorldUSide(actor, slot, left, child, a, b, &r)) return false;
+        const bool interior = (slot == 3 && (child == 9 || child == 10 || child == 11)) ||
+                              (slot == 11 && child >= 22);
+        float capPad = 0.f;
+        if (slot == 6 && (child == 11 || child == 12) && !IsMaleActor(actor)) {
+            const float brPadBase = ObjectHold::ApiBreastPadU();
+            if (brPadBase > 0.f)
+                capPad = brPadBase + ObjectHold::ApiBreastPadSlope() *
+                                     (std::max)(0.f, GrabDiag::BreastCupOf(actor->GetFormID()) - 10.40f);
+            if (capPad < 0.f) capPad = 0.f;           // the scan applies it only when brPad > 0
+        }
+        const float dRaw = (hp.object.box
+                            ? SegObbDistU(a, b, hp.object.bc, hp.object.bR, hp.object.bh)
+                            : hp.object.seg
+                            ? SegSegDistU(a, b, hp.object.p, hp.object.q)
+                            : SegPointDistU(a, b, hp.object.p)) - r;
+        if (gapOut)  *gapOut  = interior ? dRaw : dRaw - hp.object.pad - capPad;
+        if (rawOut)  *rawOut  = dRaw;
+        if (kindOut) *kindOut = hp.object.box ? 2 : (hp.object.seg ? 1 : 0);
+        return true;
     }
 
     void EmitMouthStage(RE::Actor* actor, int stage, bool entered, int hand, float distU)
@@ -1819,12 +2393,17 @@ namespace PpbApi {
         static const char* kStage[3] = { "LIPS", "ENTER", "THROAT" };
         if (stage < 0 || stage > 2) return;
         char packed[32];
-        std::snprintf(packed, sizeof packed, "%s|%s", hand == 1 ? "L" : "R", kStage[stage]);
+        // ★ 2026-09-12: hand == 2 is the PLAYER'S MOUTH (a kiss; LIPS only by construction). The
+        // WAND token keeps its L/R contract and a third field is APPENDED rather than inventing an
+        // 'H' token that an L/R parser would misread: "R|LIPS|HEAD".
+        if (hand == 2) std::snprintf(packed, sizeof packed, "R|%s|HEAD", kStage[stage]);
+        else           std::snprintf(packed, sizeof packed, "%s|%s", hand == 1 ? "L" : "R", kStage[stage]);
         SKSE::ModCallbackEvent ev{ kName[stage], packed, entered ? 1.f : 0.f, actor };
         SKSE::GetModCallbackEventSource()->SendEvent(&ev);
         if (ObjectHold::ApiLogEnabled())
             logger::info("API MOUTH {:08X} {} {} hand={} d={:.2f}u", actor->GetFormID(),
-                         kStage[stage], entered ? "ON" : "OFF", hand == 1 ? "L" : "R", distU);
+                         kStage[stage], entered ? "ON" : "OFF",
+                         hand == 2 ? "HEAD" : (hand == 1 ? "L" : "R"), distU);
     }
 
     void ClearOnLoad()
@@ -1833,6 +2412,9 @@ namespace PpbApi {
         g_engN = 0;
         for (Contact& ct : g_contacts) ct.live = false;
         for (DigestContact& dc : g_digest) dc.live = false;
+        for (auto& r : g_engTouch) r.live = false;   // 2026-09-07: body pointers + FormIDs recycle across loads
+        g_bodyResN = 0;
+        g_bodyMissN = 0;
         g_rosterN = 0;
         PublishSnapshot();
     }
@@ -1840,7 +2422,14 @@ namespace PpbApi {
     // ── the native interface object ─────────────────────────────────────────
     class TouchInterfaceImpl : public PPBAPI::IPpbTouchInterface1 {
     public:
-        unsigned int GetBuildNumber() override { return 20100; }   // 2.1.0 (consumers gate on >= 20000)
+        // 20102 (2026-09-03): bumped from 20101 so a consumer can FEATURE-DETECT kSourceHead.
+        // Appending a source silently is exactly how a consumer ends up rendering "?" for a kind
+        // it has no branch for — the reason the versioning contract exists. Consumers still gate
+        // on >= 20000 for "males are driven"; >= 20102 means "source 8 (HEAD) can appear".
+        // 20103 (2026-09-12): the kiss is real — HEAD digest contacts now carry their "face" / "head" /
+        // "mouth" sourceName, a kiss can fire PPB_MouthLips as "R|LIPS|HEAD", the head never reaches
+        // an interior capsule, and engineContact is set on weapon contacts only.
+        unsigned int GetBuildNumber() override { return 20103; }
         bool IsDriven(unsigned int id) override {
             auto* a = RE::TESForm::LookupByID<RE::Actor>(id);
             return a && SkeletonOf(a) != nullptr;
@@ -1932,7 +2521,7 @@ namespace PpbApi {
         RE::BSFixedString N_GetContactSource(RE::StaticFunctionTag*, std::int32_t i) {
             const auto* c = At(i);
             if (!c) return "";
-            if (c->sourceKind == PPBAPI::kSourceWeapon || c->sourceKind == PPBAPI::kSourceObject) {
+            if (c->sourceName[0]) {
                 char buf[64];
                 std::snprintf(buf, sizeof buf, "%s:%s", SourceKindName(c->sourceKind), c->sourceName);
                 return buf;
