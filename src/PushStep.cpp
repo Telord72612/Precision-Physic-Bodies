@@ -130,6 +130,7 @@ struct WalkState {
     int    pressSlot[2]  = { -1, -1 };
     int    pressChild[2] = { 0, 0 };
     bool   pressLeft[2]  = { false, false };
+    double pressSentS    = -1e9;              // 2026-09-13: last PPB_PushPress for this NPC
     double waitLogS    = 0.0;                     // v11.1b: the `waiting` receipt's OWN throttle (it shared lastFallbackS and silenced every other refusal receipt)
     char   contactsDbg[96] = {};         // v8.5 forensics: this frame's qualifying contacts
     int    contactsN    = 0;
@@ -336,6 +337,7 @@ static const char* PushFurnitureBlock(RE::Actor* a, bool feetPath)
 static bool PushReactionsBlocked(RE::Actor* a, bool feetPath = false)
 {
     if (!a) return false;
+    if (PpbApi::IsExcludedActor(a)) return true;   // ★★★ 2026-09-13: children and mannequins never react to a push
     if (ObjectHold::PushStepCombatGate()   != 0.f && a->IsInCombat())   return true;
     if (ObjectHold::PushStepKillMoveGate() != 0.f && a->IsInKillMove()) return true;
     if (EquipSettleActive(a->GetFormID(), NowS())) return true;   // v29d: an equip is not a push
@@ -806,7 +808,32 @@ static constexpr float kNoDir = -1.0e9f;
 // ⛔ MAIN THREAD ONLY, and only for a reaction the game ACCEPTED: the stumble/knockdown send it from inside
 // QueueReaction's task after the graph/knock call returned ok, the walk queues it onto the task interface. A refused
 // knock sends nothing, so a consumer never narrates something the player did not see.
-struct PushWho { int wand = -1; int slot = -1; int child = 0; bool left = false; };
+struct PushWho {
+    int wand = -1; int slot = -1; int child = 0; bool left = false;
+    // ★ 2026-09-13 (VRTE integration review P2): a knockdown that follows this actor's stumble inside the reaction
+    // cooldown (pushStepReactCoolS) — the rag escalation pre-empts the cooldown, so ONE fall used to read as a shove
+    // line plus a dropped line. PPB cannot un-send the shove without delaying every stumble; it marks the knockdown.
+    bool afterShove = false;
+};
+
+// P2's own clocks (caller holds g_walkMx). Kept apart from g_reactCoolS / g_reactRagS on purpose: those two GATE the
+// tiers, and the lift / unsupported-fall knockdowns stamp only the first — reusing them would change the gating.
+static std::unordered_map<std::uint32_t, double> g_lastStumbleS;
+static std::unordered_map<std::uint32_t, double> g_lastKnockS;
+static void NoteReactionLocked(std::uint32_t id, double nowS, bool knockdown)
+{
+    auto& m = knockdown ? g_lastKnockS : g_lastStumbleS;
+    if (m.size() > 64) m.clear();
+    m[id] = nowS;
+}
+// True when this actor's LAST reaction was a stumble (not a knockdown) within pushStepReactCoolS. Read BEFORE stamping.
+static bool StumbledRecentlyLocked(std::uint32_t id, double nowS)
+{
+    const auto s = g_lastStumbleS.find(id);
+    if (s == g_lastStumbleS.end() || nowS - s->second > (double)ObjectHold::PushStepReactCoolS()) return false;
+    const auto k = g_lastKnockS.find(id);
+    return k == g_lastKnockS.end() || s->second > k->second;
+}
 
 // The hand that pressed most recently, and the capsule it pressed on.
 static PushWho PusherOf(const WalkState& w)
@@ -819,7 +846,8 @@ static PushWho PusherOf(const WalkState& w)
     return p;
 }
 
-static void SendPushReactionOnMain(RE::Actor* a, const char* kind, const PushWho& who)
+static void SendPushReactionOnMain(RE::Actor* a, const char* kind, const PushWho& who,
+                                   const char* eventName = "PPB_PushReaction")
 {
     auto* src = SKSE::GetModCallbackEventSource();
     if (!a || !src || !kind) return;
@@ -837,15 +865,15 @@ static void SendPushReactionOnMain(RE::Actor* a, const char* kind, const PushWho
         std::snprintf(leftS, sizeof leftS, "%d", who.left ? 1 : 0);
     }
     char buf[256];
-    std::snprintf(buf, sizeof buf, "%s|%s|%s|%s|%s|%s", kind, nmF,
-                  who.wand < 0 ? "" : (who.wand ? "L" : "R"), slotS, childS, leftS);
+    std::snprintf(buf, sizeof buf, "%s|%s|%s|%s|%s|%s|%d", kind, nmF,
+                  who.wand < 0 ? "" : (who.wand ? "L" : "R"), slotS, childS, leftS, who.afterShove ? 1 : 0);
     SKSE::ModCallbackEvent ev{};
-    ev.eventName = "PPB_PushReaction";
+    ev.eventName = eventName;
     ev.strArg    = buf;
     ev.numArg    = 0.f;
     ev.sender    = a;
     src->SendEvent(&ev);
-    logger::info("PUSHEVENT {:08X} PPB_PushReaction \"{}\"", a->GetFormID(), buf);
+    logger::info("PUSHEVENT {:08X} {} \"{}\"", a->GetFormID(), eventName, buf);
 }
 
 static void QueueReaction(std::uint32_t id, float relDeg, float mag, bool ragdoll, const char* kind,
@@ -860,6 +888,7 @@ static void QueueReaction(std::uint32_t id, float relDeg, float mag, bool ragdol
         auto* f = RE::TESForm::LookupByID(id);
         auto* a = f ? f->As<RE::Actor>() : nullptr;
         if (!a) return;
+        if (PpbApi::IsExcludedActor(a)) return;   // 2026-09-13: last line of defence (the unsupported-fall path has no gate)
         if (ragdoll) {
             // ── THE THREE ONSETS (2026-09-03, Ragdoll Research 04 §1c / 05 §4 / 07 §2.1) ──────
             // Two of these are the discriminating EXPERIMENTS and two are the candidate FIXES,
@@ -1894,8 +1923,11 @@ static int FireReactionTier(RE::Actor* actor, std::uint32_t id, const WalkState&
     float mag = (smag - stagU) / (std::max)(1.f, ragU - stagU);   // 0..1 across the band
     { const float mmin = ObjectHold::PushStepStaggerMagMin(); if (mag < mmin) mag = mmin; }   // v10.1 knob (was the 0.25 literal; below ~0.25 the vanilla anim barely reads)
     if (mag > 1.f)   mag = 1.f;
+    bool afterShove = false;   // P2 (2026-09-13): read before this reaction stamps the maps
     {
         std::scoped_lock lk(g_walkMx);
+        afterShove = doRag && StumbledRecentlyLocked(id, nowS);
+        NoteReactionLocked(id, nowS, doRag);
         if (auto it = g_walk.find(id); it != g_walk.end()) it->second.lastReactS = nowS;
         // ⛔ THE DUPLICATE-FIRE FIX (Ragdoll Research 05 §1/§5): the cooldown must outlive the
         // WalkState the ragdoll branch erases, so it gets its own map.
@@ -1915,7 +1947,9 @@ static int FireReactionTier(RE::Actor* actor, std::uint32_t id, const WalkState&
     const float faceHeading = (w.driving && (w.dirX * w.dirX + w.dirY * w.dirY) > 0.01f)
                             ? GetHeadingFromVector(RE::NiPoint3{ w.dirX, w.dirY, 0.f })
                             : GetHeadingFromVector(RE::NiPoint3{ mdx / mmag, mdy / mmag, 0.f });
-    QueueReaction(id, relD, mag, doRag, doRag ? "dropped" : "shove", PusherOf(w), faceHeading);
+    PushWho who = PusherOf(w);
+    who.afterShove = afterShove;
+    QueueReaction(id, relD, mag, doRag, doRag ? "dropped" : "shove", who, faceHeading);
     // ★ v11.1 (user ruling 2026-09-07 evening): the tiers stay on HER displacement; the hand's travel is PRINTED
     // on every fire so the next session can judge from data whether they should ever wait for it.
     float tierHandU = -1.f; const char* tierAnchor = "none";
@@ -1987,6 +2021,8 @@ void ClearOnLoad()
         g_engAnchor.clear();
         g_travel.clear();   // v12
         g_lift.clear();     // v29: FormIDs recycle across a load (floor / trip / leg-touch state is per actor)
+        g_lastStumbleS.clear();   // 2026-09-13 P2 clocks
+        g_lastKnockS.clear();
     }
     { std::scoped_lock lk(g_equipMx); g_equipSettle.clear(); }   // v29d
     GetUpProbeClear();   // v27: main-thread probe state + the animation-event ring (FormIDs recycle across a load)
@@ -2522,8 +2558,11 @@ bool OnMotionDrivenCheck(RE::Actor* actor)
                              nowS - lastTouch, attBuf, riseFrom, riseR0, riseR1);
             }
             if (liftWould && ObjectHold::PushStepLiftRagFires()) {
+                bool sweepAfterShove = false;   // P2
                 {
                     std::scoped_lock lk(g_walkMx);
+                    sweepAfterShove = StumbledRecentlyLocked(id, nowS);
+                    NoteReactionLocked(id, nowS, true);
                     if (g_reactCoolS.size() > 64) g_reactCoolS.clear();
                     g_reactCoolS[id] = nowS;
                     if (g_ragSettle.size() > 64) g_ragSettle.clear();
@@ -2539,7 +2578,7 @@ bool OnMotionDrivenCheck(RE::Actor* actor)
                              nowS - lastTouch, attBuf, riseFrom, riseR0, riseR1);
                 RagFrame::Arm(id, -1.f, tracked ? w.slot : 6, "lifted", 0.f, true);
                 QueueReaction(id, 0.f, 1.f, true, "sweeped",
-                              PushWho{ attWand, attSlot, attChild, attLeft });   // R6: the contact the lift was credited to
+                              PushWho{ attWand, attSlot, attChild, attLeft, sweepAfterShove });   // R6: the contact the lift was credited to
                 if (tracked && mc && PlannerActive(mc) && w.driving) {     // cannot be, by the walking gate — kept for safety
                     PlannerCtl(mc)->ClearPlannerDirectControl();
                     if (auto* task = SKSE::GetTaskInterface())
@@ -2645,6 +2684,42 @@ bool OnMotionDrivenCheck(RE::Actor* actor)
                 WalkState& ws = it->second;
                 if (aboveRag)  { if (ws.ragAboveS  <= 0.0) ws.ragAboveS  = nowS; heldRagS  = nowS - ws.ragAboveS;  } else ws.ragAboveS  = 0.0;
                 if (aboveStag) { if (ws.stagAboveS <= 0.0) ws.stagAboveS = nowS; heldStagS = nowS - ws.stagAboveS; } else ws.stagAboveS = 0.0;
+            }
+        }
+        // ★★ 2026-09-13 PPB_PushPress (VRTE integration review P1; user: "build"). The EARLY signal a consumer needs to
+        // hold a touch line that is really the start of a push: the reading the tiers use just crossed pushStepPressEventU
+        // (3 u, under the 10 u walk bar) while the player is pressing, she is not already walking, and she is not an NPC
+        // the push system leaves alone. Same payload layout as PPB_PushReaction ("press|name|hand|slot|child|left|0"),
+        // but its own event name, so a PushReaction consumer never mistakes it for a push that happened.
+        {
+            const float pressU = ObjectHold::PushStepPressEventU();
+            if (pressU > 0.f && tierGot && cmag >= pressU && !w.driving && (nowS - w.lastPressureS) <= 0.25 &&
+                (Ini::FeaturePushWalk() || Ini::FeaturePushStumble() || Ini::FeatureShoveRagdoll()) &&
+                !PushReactionsBlocked(actor)) {
+                bool sendPress = false;
+                PushWho pressWho;
+                {
+                    std::scoped_lock lk(g_walkMx);
+                    if (auto it = g_walk.find(id); it != g_walk.end()) {
+                        WalkState& ws = it->second;
+                        if (nowS - ws.pressSentS >= (double)ObjectHold::PushStepPressEventGapS() &&
+                            nowS - ws.lastReactS > (double)ObjectHold::PushStepReactCoolS()) {
+                            ws.pressSentS = nowS;
+                            sendPress     = true;
+                            pressWho      = PusherOf(ws);
+                        }
+                    }
+                }
+                if (sendPress) {
+                    logger::info("PUSHPRESS {:08X} reading {:.2f}u >= pushStepPressEventU {:.2f}u (s{}) — sending PPB_PushPress",
+                                 id, cmag, pressU, cslot);
+                    if (auto* task = SKSE::GetTaskInterface())
+                        task->AddTask([id, pressWho]() {
+                            if (auto* f = RE::TESForm::LookupByID(id))
+                                if (auto* a = f->As<RE::Actor>(); a && !PpbApi::IsExcludedActor(a))
+                                    SendPushReactionOnMain(a, "press", pressWho, "PPB_PushPress");
+                        });
+                }
             }
         }
         const double holdS = travelMode ? 0.0 : (double)ObjectHold::PushStepTierHoldS();   // v12: no hold — the distance IS the evidence
@@ -2769,8 +2844,11 @@ bool OnMotionDrivenCheck(RE::Actor* actor)
         }
         if (fall >= (int)ObjectHold::PushStepFallFrames() &&
             nowS - lastR > (double)ObjectHold::PushStepReactCoolS()) {
+            PushWho fallWho = PusherOf(w);
             {
                 std::scoped_lock lk(g_walkMx);
+                fallWho.afterShove = StumbledRecentlyLocked(id, nowS);   // P2
+                NoteReactionLocked(id, nowS, true);
                 if (g_reactCoolS.size() > 64) g_reactCoolS.clear();
                 g_reactCoolS[id] = nowS;
                 if (g_ragSettle.size() > 64) g_ragSettle.clear();
@@ -2780,7 +2858,7 @@ bool OnMotionDrivenCheck(RE::Actor* actor)
                          "{:.2f}s ago — she has nothing under her feet; ragdolling",
                          id, fall, nowS - w.lastPressureS);
             RagFrame::Arm(id, -1.f, w.slot, "unsupported", 0.f, true);
-            QueueReaction(id, 0.f, 1.f, true, "sweeped", PusherOf(w));   // the feet path (bFeetLift); ships off (pushStepFallRag 0)
+            QueueReaction(id, 0.f, 1.f, true, "sweeped", fallWho);   // the feet path (bFeetLift); ships off (pushStepFallRag 0)
             // a ragdoll and a driven walk must never overlap (the warp-into-walls bug)
             if (mc && PlannerActive(mc)) {
                 PlannerCtl(mc)->ClearPlannerDirectControl();

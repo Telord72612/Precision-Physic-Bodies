@@ -46,8 +46,9 @@ animation owns her movement can't be walked by the engine, so she stumbles or go
 Every outcome is its own switch — see *Feature switches* below.
 
 **The push event.** Each reaction is published to other mods as `PPB_PushReaction`, strArg
-`"<kind>|<NPC name>|<hand>|<slot>|<child>|<leftTwin>"`, sender = the NPC. The last four fields name
-the hand and capsule that did it. The kinds are:
+`"<kind>|<NPC name>|<hand>|<slot>|<child>|<leftTwin>|<afterShove>"`, sender = the NPC. The hand and
+capsule fields name what did it, and `afterShove` marks a knockdown that follows a stumble (one fall,
+not two). The kinds are:
 
 - `push`: she walked back
 - `shove`: she stumbled
@@ -55,7 +56,21 @@ the hand and capsule that did it. The kinds are:
 - `sweeped`: her legs were swept
 
 It is sent on the main thread, only after the game accepted the reaction, once per reaction. This is
-what lets VRTouchEvents narrate a push to SkyrimNet. See INTEGRATION.md §2b.
+what lets VRTouchEvents narrate a push to SkyrimNet. `PPB_PushPress` is the early signal: the push
+reading crossed a low bar under a live press, before any walk, so a narrating mod can hold a touch
+line that might be the start of a push. See INTEGRATION.md §2b.
+
+### Children and mannequins are never touched, pushed or dressed
+
+Skyrim.esm's own child races point at the **adult** skeleton files, so PPB's race catch-alls used to
+give children PPB bodies on any load order without a children overhaul: touch contacts, push,
+knockdown and hand equip all applied to them. Now:
+
+- **The race map's broad keys skip child races and mannequins.** These are `femaleModelContains`,
+  `maleModelContains`, `npc` and `npcName`. The launch log counts the skipped races. An explicit
+  `race =` line still applies (for a dedicated child skeleton later).
+- **Every interaction layer refuses them anyway:** touch contacts, push reactions, press signals and
+  gestures, whatever skeleton they ride.
 
 ### Hand gestures (moved into PPB from the VRTouchEvents DD-ZaZ AddOn)
 
@@ -89,7 +104,15 @@ The gestures run on PPB's contact stream, so the plugin that owns the sensor now
 - **Undress Ends carry a reason** (`done`, `letgo`, `actor`, `gone`, `gate` with the gate's sentence,
   `paused`, `disabled`). A pause or disable mid-pull sends its End. If a finished pull's removal
   fails, a second End says `ripfailed`.
-- `PPB_GestureGearEquipped` gains `ordinary` (plain clothing versus a ZaZ / Diary of Mine restraint).
+- `PPB_GestureGearEquipped` gains `ordinary` (plain clothing versus a ZaZ / Diary of Mine restraint)
+  and `locked`.
+- **Equip and removal checks wait longer (3.5 s),** so a slow Devious Devices chain is not reported
+  as a refusal while the device is going on.
+- **The locked-device message no longer lies.** When the key is held but Devious Devices still
+  refuses (a quest or block-generic device), it says *"That device will not come off."* instead of
+  *"you don't have the key"*.
+- **Without the DD/ZaZ AddOn,** a plug is refused under a worn chastity belt that does not permit
+  that orifice.
 - **An event bus for consumers:** `PPB_GestureUndressArm/End`, `PPB_GesturePlug`,
   `PPB_GestureDeviceEquipped`, `PPB_GestureGearEquipped`, `PPB_GestureClaim`, and inbound
   `PPB_GestureSetPaused` / `PPB_Native.SetGesturePaused`. Documented in `src/PpbTouchAPI.h`.
@@ -105,11 +128,12 @@ The gestures run on PPB's contact stream, so the plugin that owns the sensor now
 - **The kiss.** The mouth probe meeting her upper lip raises `PPB_MouthLips` with strArg
   `"R|LIPS|HEAD"`, `numArg` 1 at the start and 0 at the end. Entry is 2.2 u, exit 3.2 u, so it holds
   steady instead of flickering on and off. A kiss is lips only and can never open her mouth.
-- `GetBuildNumber()` → **20105**:
+- `GetBuildNumber()` → **20106**:
   - 20102: the head source
   - 20103: the kiss
   - 20104: the push event
   - 20105: refusals, grips, End reasons, pusher fields
+  - 20106: children/mannequins excluded, `PPB_PushPress`, `afterShove`, `locked`, longer checks
 
 ### Genitals
 

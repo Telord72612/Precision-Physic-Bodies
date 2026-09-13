@@ -3248,6 +3248,9 @@ pushStepBarRagHead 40          # user 2026-09-11
 # and it's now the new floor. Same for all the other node we check for that. Don't want her start to walk back or something.").
 # 20:46:00.461: hand-equipping heeled boots with a hand on her thigh raised BOTH feet ~8u -> LIFTED BOTH FEET off a rest latched barefoot.
 pushStepEquipSettleS 0.25      # seconds after an equip/removal PPB performs: no lift, stumble, ragdoll or walk; then her height IS the new floor (0 = off)
+# --- 2026-09-13 PPB_PushPress (VRTE review P1): the EARLY "this press may become a push" event, so a consumer can hold its touch line.
+pushStepPressEventU 3.0        # the push reading (same number as the walk bar, 10) must reach this under a live press. 0 = never send
+pushStepPressEventGapS 2.0     # at most one PPB_PushPress per NPC per this many seconds
 # --- v16 THE WALK WINDOW (2026-09-08, user: "is it possible to recognize that the NPC is still being
 # pushed while she walk?"). The travel origin used to be captured ONCE at walk-engage, so her own
 # backward-walk animation and its servo lag accumulated into the reading - the head crossed the stumble

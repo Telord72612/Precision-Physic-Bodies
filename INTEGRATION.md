@@ -19,7 +19,7 @@ live capsule geometry, or to avoid the Papyrus VM.
 
 ## What changed in 2.2.0 — read this if you already integrated
 
-`GetBuildNumber()` now returns **20105**. `PpbTouchContact` is still the frozen 160-byte POD and the
+`GetBuildNumber()` now returns **20106**. `PpbTouchContact` is still the frozen 160-byte POD and the
 vtable is unchanged: nothing you already call moved.
 
 | build | change | what it means for you |
@@ -34,6 +34,11 @@ vtable is unchanged: nothing you already call moved.
 | 20105 | **`PPB_GestureUndressGrip` / `GripEnd`** | ONE hand's grab landed on a worn piece, in the same frame as the grab's contact, so you can hold "grab" narration before a two-hand undress arms. See **§2c**. |
 | 20105 | **`PPB_GestureUndressEnd` says why** | Two fields appended: `reason` (`done` / `letgo` / `actor` / `gone` / `gate` / `paused` / `disabled` / `ripfailed`) and the gate's sentence. A pause or disable mid-pull now sends its End; a finished pull whose removal fails sends a second End with `ripfailed`. |
 | 20105 | **`PPB_GestureGearEquipped` +`ordinary`** | `1` = plain clothing/armour, `0` = a ZaZ / Diary of Mine style restraint without a Devious class. |
+| 20106 | **Children and mannequins are never covered** | Skyrim.esm's child races use the adult skeleton files, so on load orders without a children overhaul PPB used to drive children. Now no child-race or `ManakinRace` actor is ever a contact, a push event or a gesture target, whatever skeleton it rides. |
+| 20106 | **`PPB_PushPress`** | The early "this press may become a push" signal, sent before the walk engages, so you can hold a touch line. Same fields as `PPB_PushReaction`. See **§2b**. |
+| 20106 | **`afterShove` on knockdowns** | A seventh field on `PPB_PushReaction`: `1` on a `dropped` / `sweeped` that follows this NPC's `shove` within 1.5 s — one fall, not two events to narrate. |
+| 20106 | **`PPB_GestureGearEquipped` +`locked`** | A fifth field: `1` if the item carries a lock keyword. |
+| 20106 | **Refusal and rip checks wait longer** | `EquipRefused reason=refused` after a third look at 3.5 s; `UndressEnd reason=ripfailed` after a 3.5 s check (both were 2.5 s). |
 | — | **The gesture event bus** | `PPB_GestureUndressArm`, `PPB_GestureUndressEnd` (fires on cancel too, `done=0`), `PPB_GesturePlug` (`in`/`out`), `PPB_GestureDeviceEquipped`, `PPB_GestureGearEquipped`, `PPB_GestureClaim`; inbound `PPB_GestureSetPaused`. Exact field layouts at the top of `src/PpbTouchAPI.h`. The bus appends fields and never renumbers them. |
 | — | **`PPB_Native.SetGesturePaused(Bool)`** | Stand the gesture layer down while your scene places an actor's hands, so it doesn't read as a grab. |
 | — | **Feature switches** | A user can turn push/shove, its four outcomes, or the gestures off in `PPB.ini [Features]`. Touch contacts are never affected by these switches. |
@@ -178,13 +183,13 @@ player-alias script, or `OnInit()` plus `OnPlayerLoadGame()`. A quest script nev
 
 Touch contacts tell you a hand is **on** her. This event tells you what a push **did** to her. It is
 sent once per reaction, so it can be narrated directly: *"the player shoved Carmella"*. Build 20104
-added the event; build 20105 appended the pusher fields.
+added the event; 20105 appended the pusher fields; 20106 appended `afterShove`.
 
 | | |
 |---|---|
 | event | `PPB_PushReaction` |
 | `sender` | the **NPC** the reaction happened to. The pusher is always the player. |
-| `strArg` | `"<kind>\|<NPC name>\|<wand>\|<slot>\|<child>\|<leftTwin>"` |
+| `strArg` | `"<kind>\|<NPC name>\|<wand>\|<slot>\|<child>\|<leftTwin>\|<afterShove>"` |
 | `numArg` | `0` (reserved) |
 
 | field | meaning |
@@ -193,8 +198,33 @@ added the event; build 20105 appended the pusher fields.
 | `NPC name` | her display name; any `\|` in it is written as `/` |
 | `wand` | `R` / `L`: the hand that pressed (for `sweeped`, the contact the lift was credited to) |
 | `slot`, `child`, `leftTwin` | the capsule it pressed, the same address as in `PpbTouchContact` |
+| `afterShove` | `1` on a `dropped` / `sweeped` that follows this NPC's own `shove` within 1.5 s, else `0` |
 
 The four pusher fields are empty strings when no contact is on record.
+
+**One fall can arrive as two events.** A hard push crosses the stumble bar on its way to the
+knockdown bar, so a `shove` can be followed 0.15–1.5 s later by a `dropped`. PPB can't take the
+`shove` back without delaying every stumble, so it marks the knockdown with `afterShove=1`. If you
+narrate both, hold `shove` briefly and let an `afterShove=1` knockdown replace it.
+
+### `PPB_PushPress` — the early signal (build 20106)
+
+A palm on her chest is a touch *first*. It only becomes a push once her body actually moves, which
+takes a moment, and a mod narrating touches may already have spoken by then. `PPB_PushPress` is sent
+as soon as the push reading crosses a low bar (`pushStepPressEventU`, 3 u; the walk engages at 10 u)
+while the player is pressing:
+
+| | |
+|---|---|
+| event | `PPB_PushPress` |
+| `sender` | the NPC |
+| `strArg` | `"press\|<NPC name>\|<wand>\|<slot>\|<child>\|<leftTwin>\|0"`, the same layout as `PPB_PushReaction` |
+
+- **A press is not a push.** Most presses never become one. Use it only to *hold* a touch line from
+  that hand for about half a second; `PPB_PushReaction` says what actually happened.
+- **Never sent** while she is already walking, during the reaction cooldown, more than once per NPC
+  every `pushStepPressEventGapS` (2 s), or when she can't be pushed at all (switches off, combat,
+  kill move, furniture, leaning, a child or a mannequin).
 
 | `<kind>` | what happened |
 |---|---|
@@ -213,6 +243,7 @@ Event OnPpbPushReaction(String eventName, String strArg, Float numArg, Form send
     String[] f = StringUtil.Split(strArg, "|")
     String kind = f[0]                                  ; "push" / "shove" / "dropped" / "sweeped"
     ; f[1] = name, f[2] = "R"/"L", f[3] = slot, f[4] = child, f[5] = leftTwin (build >= 20105)
+    ; f[6] = afterShove "1"/"0" (build >= 20106)
 EndEvent
 ```
 
@@ -235,18 +266,19 @@ public:
             return RE::BSEventNotifyControl::kContinue;
 
         auto* npc = ev->sender ? ev->sender->As<RE::Actor>() : nullptr;   // the NPC it happened to
-        // "<kind>|<name>|<wand>|<slot>|<child>|<leftTwin>" — no field contains '|', so split on every one
-        std::string_view f[6];
+        // "<kind>|<name>|<wand>|<slot>|<child>|<leftTwin>|<afterShove>" — no field contains '|'
+        std::string_view f[7];
         std::string_view s = ev->strArg.c_str();
-        for (int i = 0; i < 6; ++i) {
+        for (int i = 0; i < 7; ++i) {
             const auto bar = s.find('|');
             f[i] = s.substr(0, bar);
             if (bar == std::string_view::npos) break;
             s.remove_prefix(bar + 1);
         }
-        const auto kind = f[0];          // push / shove / dropped / sweeped
-        const auto name = f[1];
-        const bool left = (f[2] == "L");  // "" when no contact is on record
+        const auto kind       = f[0];            // push / shove / dropped / sweeped
+        const auto name       = f[1];
+        const bool left       = (f[2] == "L");   // "" when no contact is on record
+        const bool afterShove = (f[6] == "1");   // this knockdown follows her shove: one fall
 
         if (npc && kind == "dropped") {
             // e.g. narrate "the player knocked <name> down"
@@ -300,7 +332,7 @@ contacts. Consumers must never re-derive a gesture: two detectors for one gestur
 | `slot` | a piece she wears holds a slot this one needs (`PPB.ini bSlotOccupiedRefuse`) | that piece |
 | `clothing` | a garment is over the device's site, or a device already holds one of its slots | the piece in the way |
 | `place` | held against a body part it does not go on for at least `equipDwellS` (1 s) during the hold, then let go there | empty |
-| `refused` | PPB asked for the equip and it did not go on (checked twice, ~2.5 s) | the piece in its slot when found, else empty |
+| `refused` | PPB asked for the equip and it did not go on (checked at 1.2, 2.5 and 3.5 s) | the piece in its slot when found, else empty |
 
 `zone` is where it was aimed (`slot` / `clothing`) or where it was held (`place`), e.g. `neck` or
 `feet`; it is empty for `refused`. `slotMask` is the held item's biped mask. A casual drop, a brush,
@@ -350,7 +382,7 @@ The End now ends with `|<reason>|<sentence>`:
 | `gate` | the DD/ZaZ removal gate refused; `sentence` is its reason |
 | `paused` | the gesture layer was paused mid-pull |
 | `disabled` | the gesture layer was disabled mid-pull |
-| `ripfailed` | a **second** End after a done=1: the piece did not actually come off (still worn 2.5 s later, or the removal was refused). Undo what done=1 narrated. |
+| `ripfailed` | a **second** End after a done=1: the piece did not actually come off (still worn 3.5 s later, or the removal was refused). Undo what done=1 narrated. |
 
 No End is sent across a save load.
 
@@ -524,9 +556,14 @@ if you integrated earlier:
 Male coverage is a host setting (`maleGeometry`, shipped on). A user who turns it off puts males
 back to `IsDriven() == false`, so still handle that answer.
 
-**Children and creatures are not covered**, nor is anyone on an unmapped custom skeleton. They
-answer `IsDriven() == false` and never appear in the contact stream. Route them to your own
-fallback — do not assume silence means "nothing happened".
+**Children, mannequins and creatures are not covered**, nor is anyone on an unmapped custom
+skeleton. They answer `IsDriven() == false` and never appear in the contact stream, the push events
+or the gesture events. Route them to your own fallback — do not assume silence means "nothing
+happened".
+
+⚠ **Before build 20106 children could appear.** Skyrim.esm's child races use the adult skeleton
+files, so on a load order without a children overhaul PPB's race catch-alls picked them up. If you
+support older PPB builds, guard child actors on your side (`Actor::IsChild()`).
 
 **The toucher is the player.** NPC-vs-NPC touch is a planned revision-2 feature; `toucherFormId`
 is `0x14` today and you should not hardcode that assumption in a way that breaks later.

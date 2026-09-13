@@ -614,6 +614,7 @@ bool IsFrameworkDevice(RE::TESObjectARMO* armo)
 // cuirass on slot 32 must not block a wrist cuff, only gloves do.
 // ⚠ A framework device NEVER blocks another (zad/zbf/DOM) — DD arbitrates its own layering.
 // Toggle: PPB.ini [Equip] bClothingGate (default ON; hot).
+RE::TESObjectARMO* WornChastityBelt(RE::Actor* a);   // defined with the plug extraction; P10 below
 const char* ClothingBlocker(std::uint32_t actorFid, int siteBit)
 {
     if (!Ini::GetBool("Equip", "bClothingGate", true)) return nullptr;
@@ -652,6 +653,17 @@ const char* ClothingBlocker(std::uint32_t actorFid, int siteBit)
         if (!worn) continue;
         if (IsFrameworkDevice(worn)) continue;          // devices never block devices
         return (worn->GetName() && worn->GetName()[0]) ? worn->GetName() : "her clothing";
+    }
+    // ★ 2026-09-13 (VRTE integration review P10): THE BELT, for the no-AddOn fallback only (this function is the else
+    // branch of the AddOn gate). "Devices never block devices" let a plug go in under a LOCKED chastity belt: DD's belt
+    // filter never runs for a scripted NPC equip, so DD inserted it and then refused its removal. A worn DD Belt now
+    // blocks a plug at an orifice the belt does not PERMIT (zad_PermitVaginal / zad_PermitAnal on the worn belt).
+    if (siteBit == kSiteVaginal || siteBit == kSiteAnal) {
+        if (auto* belt = WornChastityBelt(actor)) {
+            const char* permit = (siteBit == kSiteVaginal) ? "zad_PermitVaginal" : "zad_PermitAnal";
+            if (!FormHasKeyword(belt, permit))
+                return (belt->GetName() && belt->GetName()[0]) ? belt->GetName() : "her chastity belt";
+        }
     }
     return nullptr;
 }
@@ -1286,6 +1298,13 @@ void DoEquip(std::uint32_t actorFid, RE::TESBoundObject* base, RE::ObjectRefHand
     auto* form  = RE::TESForm::LookupByID(actorFid);
     auto* actor = form ? form->As<RE::Actor>() : nullptr;
     if (!actor || !base) return;
+    // ★★★ 2026-09-13 (VRTE integration review P7): never a child, a mannequin or the player. Children and mannequins
+    // already publish no contacts (PpbApi::IsExcludedActor), so no gesture can reach here for them — this is the hard stop.
+    if (actor->GetFormID() == 0x14 || PpbApi::IsExcludedActor(actor)) {
+        logger::info("[EQUIP] refused: 0x{:08X} is the player, a child or a mannequin — gesture equips never target them",
+                     actorFid);
+        return;
+    }
 
     auto* vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
     if (!vm) {
@@ -2717,7 +2736,9 @@ PendingRip g_pendingRip;
 // ★ 2026-09-13 (VRTE GearGestures R4): UndressEnd(done=1) is announced BEFORE the rip, so a rip that never lands
 // must be corrected. The rip check looks once, after the removal had time to finish — a plain UnequipObject is
 // QUEUED (queueEquip=true) and DD's removal is a Papyrus round trip plus the ddSettleS drop, so an immediate look
-// would read "still worn" for removals that are fine. 2.5 s is the same budget the equip verify uses.
+// would read "still worn" for removals that are fine. ★ 2026-09-13 (VRTE integration review P4): 3.5 s — VRTE's own
+// worn-check retries to 3.5 s, and a ripfailed sent earlier cancels its queued removal line, so an unlock landing in
+// (2.5, 3.5] was narrated by nobody. (Measured DD unlock ≈ 35 ms, so a real failure is simply reported 1 s later.)
 struct RipCheck {
     bool                active   = false;
     double              at       = 0.0;
@@ -2736,7 +2757,7 @@ void TickRipCheck(double now)
     auto* actor = form ? form->As<RE::Actor>() : nullptr;
     if (!actor || !rc.piece) return;                 // nothing left to check against — say nothing
     if (!IsWornNow(actor, rc.piece)) return;          // it came off: the done=1 was true
-    logger::info("[UNDRESS] RIP CHECK: '{}' is STILL WORN on 0x{:08X} 2.5 s after the pull - sending the corrective End",
+    logger::info("[UNDRESS] RIP CHECK: '{}' is STILL WORN on 0x{:08X} 3.5 s after the pull - sending the corrective End",
                  rc.piece->GetName()[0] ? rc.piece->GetName() : "unnamed piece", rc.actorFid);
     SendUndressEndFor(rc.actorFid, rc.piece, rc.part, false, "ripfailed", "it is still worn");
 }
@@ -2768,7 +2789,7 @@ void TickPendingRip(double now)
     }
     RipCheck& rc = g_ripCheck;                      // R4: did it actually come off?
     rc.active   = true;
-    rc.at       = now + 2.5;
+    rc.at       = now + 3.5;   // P4 (2026-09-13): was 2.5
     rc.actorFid = pr.actorFid;
     rc.piece    = pr.piece;
     std::snprintf(rc.part, sizeof rc.part, "%s", pr.part);
@@ -2946,6 +2967,7 @@ void TickUndress(double now)
     for (int h = 0; h < 2; ++h) {
         auto* obj = g_higgs->GetGrabbedObject(h == 1);
         auto* act = obj ? obj->As<RE::Actor>() : nullptr;
+        if (act && PpbApi::IsExcludedActor(act)) act = nullptr;   // 2026-09-13: a child / mannequin is never an undress target
         if (act != g_gripH[h].actor) {
             g_gripH[h] = HandGrip{};
             g_gripH[h].actor = act;
@@ -3246,7 +3268,7 @@ void TickVerify(int h, double now)
     if (rendered ? IsWornNow(actor, rendered) : IsWornNow(actor, pv.base)) {
         logger::info("[EQUIP] confirmed worn: '{}' on 0x{:08X}{}{}", pv.base->GetName(),
                      pv.actorFid, rendered ? " (rendered half checked)" : "",
-                     pv.tries ? " (on the second look)" : "");
+                     pv.tries == 1 ? " (on the second look)" : (pv.tries >= 2 ? " (on the third look)" : ""));
         {
             auto* aform  = RE::TESForm::LookupByID(pv.actorFid);
             auto* wearer = aform ? aform->As<RE::Actor>() : nullptr;
@@ -3304,12 +3326,14 @@ void TickVerify(int h, double now)
                 // keyword at all. Neither is outfit material, and neither should pool or hand off.
                 const bool ordinary = wearer && !(dc && dc->dd) && !IsDdInventoryDevice(pv.base) &&
                                       !(armo && IsFrameworkDevice(armo));
-                // strArg = "<name>|<slotMask>|<force>|<ordinary>"
+                // strArg = "<name>|<slotMask>|<force>|<ordinary>|<locked>"
                 // ★ 2026-09-13 (VRTE GearGestures R7): <ordinary> APPENDED - 1 = plain clothing/armour, 0 = a
                 // ZaZ / Diary of Mine / other framework restraint that has no Devious class keyword.
+                // ★ 2026-09-13 (VRTE integration review P8): <locked> APPENDED - a DD device whose class lookup failed
+                // lands in this arm, and its lock (computed above from both halves) used to be dropped.
                 char nmF[96];
                 FieldCopy(nmF, sizeof nmF, nm);
-                std::snprintf(buf, sizeof buf, "%s|%u|%d|%d", nmF, slotMask, force, ordinary ? 1 : 0);
+                std::snprintf(buf, sizeof buf, "%s|%u|%d|%d|%d", nmF, slotMask, force, ordinary ? 1 : 0, locked ? 1 : 0);
                 SendGestureEvent("PPB_GestureGearEquipped", buf, 0.f, wearer);
                 logger::info("[GEAR->VRTE] equipped '{}' slot={} ordinary={} on 0x{:08X}",
                              nm, slotMask, ordinary ? 1 : 0, pv.actorFid);
@@ -3368,13 +3392,18 @@ void TickVerify(int h, double now)
         return;
     }
 
-    // ── not worn YET. Look once more before undoing anything. ───────────────
-    if (pv.tries == 0) {
+    // ── not worn YET. Look again before undoing anything. ───────────────────
+    // ★ 2026-09-13 (VRTE integration review P3): a THIRD look. The budget was 2.5 s while the AddOn's gesture claim lasts
+    // 3.0 s and DD's OnEquipped chain is unbounded under VM load — a chain landing in (2.5, 3.0] became "refused" plus a
+    // drop while the device went on. Looks at 1.2 / 2.5 / 3.5 s now; the budget stays >= the claim window. A genuine
+    // refusal is simply announced 1 s later. (Measured: 5/5 banked DD equips confirmed at the first look.)
+    if (pv.tries < 2) {
         pv.active = true;          // RE-ARM rather than mutate a cleared record
-        pv.tries  = 1;
-        pv.at     = now + 1.3;     // ~2.5s total; DD's chain has always beaten this
-        logger::info("[EQUIP] '{}' not worn at the first check - looking again in 1.3s before "
-                     "calling it refused", pv.base->GetName());
+        const double wait = (pv.tries == 0) ? 1.3 : 1.0;
+        ++pv.tries;
+        pv.at     = now + wait;
+        logger::info("[EQUIP] '{}' not worn at check {} - looking again in {:.1f}s before calling it refused",
+                     pv.base->GetName(), pv.tries, wait);
         return;
     }
 

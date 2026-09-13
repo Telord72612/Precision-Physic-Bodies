@@ -1212,6 +1212,14 @@ namespace ObjectHold {
         // 20:46:00.461: hand-equipping heeled boots with a hand on her thigh raised BOTH feet ~8 u and fired
         // LIFTED — BOTH FEET (+8.5 / +8.1) against a rest latched barefoot. Seconds; 0 = off.
         float pushStepEquipSettleS     = 0.25f;
+        // ★★ 2026-09-13 PPB_PushPress (VRTE integration review P1; user: "build"). A chest push used to reach a consumer
+        // as a breast-touch line ~0.5 s before the walk engaged and PPB_PushReaction "push" arrived. PushPress is the
+        // EARLY physical signal: the push reading (the same travel number the walk bar reads) crossed this many units
+        // under a live player press — well below the walk bar (pushStepTravelWalkU 10) — so a consumer can hold its
+        // touch line. A press is NOT a push: most never become one. 0 = off.
+        // ⛔ NOT pushStepPressU — that is the v8.4 press gate (0.3 u, "a contact actually pressing").
+        float pushStepPressEventU      = 3.0f;
+        float pushStepPressEventGapS   = 2.0f;   // at most one PushPress per NPC per this many seconds
         // *** v16 THE WALK WINDOW (user 2026-09-08: "is it possible to recognize that the NPC is still
         // being pushed while she walk?"). The travel origin was captured ONCE, at walk-engage, so
         // everything after it accumulated - including her own backward-walk animation and its servo lag.
@@ -2470,6 +2478,8 @@ namespace ObjectHold {
     float    PushStepBarRagCom();  float PushStepBarRagSpine0();  float PushStepBarRagSpine1();
     float    PushStepBarRagSpine2();  float PushStepBarRagNeck();  float PushStepBarRagHead();
     float    PushStepEquipSettleS();   // v29d
+    float    PushStepPressEventU();    // 2026-09-13 PPB_PushPress bar (0 = off)
+    float    PushStepPressEventGapS(); // 2026-09-13 PPB_PushPress per-NPC minimum gap
     float    PushStepDirTrack();  float PushStepDirTrackDeg();  float PushStepDirTrackMinU();
     float    PushStepNoDistCap();
     float    PushStepRagEscalate();  float PushStepRagEscalateMinS();

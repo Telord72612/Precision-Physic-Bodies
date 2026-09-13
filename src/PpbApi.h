@@ -96,6 +96,11 @@ namespace PpbApi {
     // the pointer is consumed by OnFrame later in the SAME frame, the g_gt.best pattern).
     void NoteDriven(RE::Actor* actor);
 
+    // ★★★ 2026-09-13: children (race Child flag) and mannequins (ManakinRace) are OUT of every interaction layer —
+    // no touch contacts, no push reactions, no gestures — whatever skeleton they ride. Cheap: one race flag read and,
+    // for non-child races, one cached EditorID compare.
+    bool IsExcludedActor(RE::Actor* actor);
+
     // The tick: runs on the HIGGS PostVrikPostHiggs frame callback (main thread), throttled
     // to the apiHz knob. Scans, updates the contact table, fires mod events + callbacks,
     // publishes the Papyrus snapshot.

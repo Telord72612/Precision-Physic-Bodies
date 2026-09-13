@@ -243,10 +243,17 @@ EndEvent
 ```
 
 **The push event** (build ≥ 20104) tells you what a push *did* to an NPC, once per reaction.
-`PPB_PushReaction` has strArg `"<kind>|<NPC name>|<hand>|<slot>|<child>|<leftTwin>"` and `sender` =
-the NPC. The kind is `push` (walked back), `shove` (stumbled), `dropped` (shoved to the ground) or
-`sweeped` (legs swept); the last four fields (build ≥ 20105) name the hand and capsule that did it.
-It is only sent for a reaction the game actually played. Details are in
+`PPB_PushReaction` has strArg `"<kind>|<NPC name>|<hand>|<slot>|<child>|<leftTwin>|<afterShove>"`
+and `sender` = the NPC:
+- the kind is `push` (walked back), `shove` (stumbled), `dropped` (shoved to the ground) or `sweeped`
+  (legs swept);
+- the hand and capsule fields (build ≥ 20105) name what did it;
+- `afterShove` (build ≥ 20106) marks a knockdown that follows a stumble, so one fall isn't narrated
+  twice.
+
+It is only sent for a reaction the game actually played. `PPB_PushPress` (build ≥ 20106) is the early
+"this press may become a push" signal, sent before the walk engages so you can hold a touch line.
+Details are in
 [INTEGRATION.md §2b](INTEGRATION.md#2b-the-push-event--ppb_pushreaction).
 
 **Gesture events** tell you a hand just *did* something to a worn item:
@@ -457,8 +464,10 @@ to exclude hover.
 
 **PPB does not drive every NPC.** As of 2.0 it covers **both sexes** on mapped races: the human
 catch-alls (which cover elves, orcs and most custom races), Argonian, Khajiit, Draenei (female),
-plus anything the user adds to `PPB_Skeletons_Added_Race.ini`. **Children and creatures are never
-reported**, nor is anyone on an unmapped custom skeleton.
+plus anything the user adds to `PPB_Skeletons_Added_Race.ini`. **Children, mannequins and creatures
+are never reported**, nor is anyone on an unmapped custom skeleton. Children and mannequins are also
+never pushed and never gesture targets. (Before API build 20106, children on a load order without a
+children overhaul could be driven, because Skyrim.esm's child races use the adult skeleton files.)
 
 ⚠ Two things changed for consumers written against 1.x: the old "males always answer
 `IsDriven() == false`" rule is **gone** — gate any male fallback on `GetBuildNumber() >= 20000`

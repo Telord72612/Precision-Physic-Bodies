@@ -690,6 +690,21 @@ static void ApplySkeletonIni()
         for (auto& c : s) c = static_cast<char>(::tolower(static_cast<unsigned char>(c)));
         return s;
     };
+    // ★★★ 2026-09-13 CHILDREN ARE FLAGGED OUT (user: "fix the children race to be flagged out. We will make a special
+    // skeleton for them"). Skyrim.esm's own child races point at the ADULT skeleton files (ImperialRaceChild 02C659 =
+    // Character Assets\skeleton.nif / Character Assets Female\skeleton_female.nif), so the model-path catch-alls below
+    // repointed every child race on any load order without a children overhaul — and a driven child got touch contacts,
+    // push/knockdown and the gesture layer. The dev load order hid it (RSChildren gives children their own files).
+    // Rule: the BROAD keys (femaleModelContains / maleModelContains / npc / npcName) never map a child race or the
+    // mannequin race. An EXPLICIT `race =` / `maleRace =` line naming one still applies — that is the door for the
+    // future child skeleton — but touch, push and gestures stay OFF for children regardless (PpbApi::IsExcludedActor).
+    auto excludedRace = [](RE::TESRace* rc) -> bool {
+        if (!rc) return true;
+        if (rc->IsChildRace()) return true;                    // RACE_DATA::Flag::kChild
+        const char* ed = rc->GetFormEditorID();
+        return ed && _stricmp(ed, "ManakinRace") == 0;
+    };
+    int nChildSkipped = 0;
 
     std::string line, section;
     int nApplied = 0, nBad = 0, nSec = 0;
@@ -748,6 +763,9 @@ static void ApplySkeletonIni()
         if (key == "race") {
             auto* rc = RE::TESForm::LookupByEditorID<RE::TESRace>(val);
             if (!rc) { logger::info("SKELINI:   race '{}' NOT FOUND — skipped", val); ++nBad; continue; }
+            if (excludedRace(rc))
+                logger::info("SKELINI:   race {} is a CHILD / mannequin race — mapped because it is named explicitly; "
+                             "touch, push and gestures stay OFF for it", val);
             const char* was = setSkel(rc, section);
             logger::info("SKELINI:   race {} : '{}' -> section", val, was ? was : "?");
             ++nApplied;
@@ -759,6 +777,7 @@ static void ApplySkeletonIni()
                 const char* cur = rc->skeletonModels[RE::SEXES::kFemale].GetModel();
                 if (!cur || !*cur) continue;
                 if (lower(cur).find(needle) == std::string::npos) continue;
+                if (excludedRace(rc)) { ++nChildSkipped; continue; }   // 2026-09-13: children / mannequins never by catch-all
                 setSkel(rc, section);
                 ++hit;
             }
@@ -767,6 +786,9 @@ static void ApplySkeletonIni()
         } else if (key == "maleRace") {
             auto* rc = RE::TESForm::LookupByEditorID<RE::TESRace>(val);
             if (!rc) { logger::info("SKELINI:   maleRace '{}' NOT FOUND — skipped", val); ++nBad; continue; }
+            if (excludedRace(rc))
+                logger::info("SKELINI:   maleRace {} is a CHILD / mannequin race — mapped because it is named explicitly; "
+                             "touch, push and gestures stay OFF for it", val);
             const char* was = setSkelSex(rc, section, RE::SEXES::kMale);
             logger::info("SKELINI:   maleRace {} : '{}' -> section (MALE slot)", val, was ? was : "?");
             ++nApplied;
@@ -778,6 +800,7 @@ static void ApplySkeletonIni()
                 const char* cur = rc->skeletonModels[RE::SEXES::kMale].GetModel();
                 if (!cur || !*cur) continue;
                 if (lower(cur).find(needle) == std::string::npos) continue;
+                if (excludedRace(rc)) { ++nChildSkipped; continue; }   // 2026-09-13: children / mannequins never by catch-all
                 setSkelSex(rc, section, RE::SEXES::kMale);
                 ++hit;
             }
@@ -797,6 +820,12 @@ static void ApplySkeletonIni()
             auto* npc = dh->LookupForm<RE::TESNPC>(local, plugin);
             if (!npc || !npc->GetRace()) { logger::info("SKELINI:   npc '{}' NOT FOUND — skipped", val); ++nBad; continue; }
             auto* rc = npc->GetRace();
+            if (excludedRace(rc)) {
+                logger::info("SKELINI:   npc {} is on a CHILD / mannequin race — not mapped by an npc line "
+                             "(name the race explicitly with race = if that is really wanted)", val);
+                ++nChildSkipped;
+                continue;
+            }
             int shared = 0;
             for (auto* other : dh->GetFormArray<RE::TESNPC>())
                 if (other && other->GetRace() == rc) ++shared;
@@ -821,6 +850,7 @@ static void ApplySkeletonIni()
                 ++hits;
                 auto* rc = npc->GetRace();
                 if (!rc) continue;
+                if (excludedRace(rc)) { ++nChildSkipped; continue; }   // 2026-09-13: never a child / mannequin by name
                 if (std::find(mappedRaces.begin(), mappedRaces.end(), rc) != mappedRaces.end()) continue;
                 mappedRaces.push_back(rc);
                 int shared = 0;
@@ -842,8 +872,8 @@ static void ApplySkeletonIni()
             }
         } else { ++nBad; continue; }
     }
-    logger::info("SKELINI: '{}' — {} section(s), {} race assignment(s), {} bad line(s).",
-                 used, nSec, nApplied, nBad);
+    logger::info("SKELINI: '{}' — {} section(s), {} race assignment(s), {} bad line(s), {} child/mannequin race "
+                 "match(es) skipped.", used, nSec, nApplied, nBad, nChildSkipped);
 }
 
 static void ApplySkeletonMap()

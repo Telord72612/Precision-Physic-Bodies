@@ -127,7 +127,7 @@
 //          disabled   undressEnabled / equipEnabled / enabled was switched off while armed
 //          ripfailed  ⚠ a SECOND End after a done=1: the promised removal did not happen
 //                     (the actor went away, the gate refused on the re-ask, or the piece is
-//                     still worn 2.5 s later). Undo whatever done=1 narrated.
+//                     still worn 3.5 s later — 2.5 s on build 20105). Undo whatever done=1 narrated.
 //        ⛔ No End is sent across a save load: the layer resets silently at kPreLoadGame.
 //
 //   PPB_GesturePlug            "<in|out>|<name>|<class>|<siteMask>|<leftHand>"
@@ -155,10 +155,12 @@
 //        A device with a Devious class was put on by the equip gesture (confirmed worn).
 //        <force> 0 gentle / 1 firm / 2 forced, from the gesture's deepest press.
 //
-//   PPB_GestureGearEquipped    "<name>|<slotMask>|<force>|<ordinary>"
+//   PPB_GestureGearEquipped    "<name>|<slotMask>|<force>|<ordinary>|<locked>"
 //        Anything WITHOUT a Devious class was put on by the equip gesture (confirmed worn).
 //        <ordinary> (build >= 20105): 1 = plain clothing/armour, 0 = a ZaZ / Diary of Mine /
 //        other framework restraint (no Devious class keyword, but not ordinary gear either).
+//        <locked> (build >= 20106): 1 = the item carries a lock keyword on either half — a DD
+//        device whose class lookup failed lands in this event and keeps its lock here.
 //
 //   PPB_GestureEquipRefused    "<name>|<slotMask>|<reason>|<blocker>|<isDD>|<class>|<zone>"
 //                              numArg = hand (0 R / 1 L)                        (build >= 20105)
@@ -173,8 +175,9 @@
 //                    equipDwellS in total during the hold, touched her within the last second,
 //                    and was let go without earning the right site. A casual drop never fires it.
 //                    <blocker> is empty.
-//          refused   PPB asked for the equip and it did not go on (checked twice, ~2.5 s);
-//                    <blocker> = the piece in its slot when one is found, else empty
+//          refused   PPB asked for the equip and it did not go on (checked at 1.2 / 2.5 / 3.5 s
+//                    since build 20106 — twice, ~2.5 s, on 20105); <blocker> = the piece in its
+//                    slot when one is found, else empty
 //        <zone> = where it was aimed (slot / clothing) or where it was held (place), e.g.
 //        "neck", "feet"; empty for refused.
 //
@@ -202,12 +205,26 @@
 //  reaction, separate from the touch contacts: a contact says a hand is ON her, this says
 //  what the push DID to her. Same rules as the gesture bus above.
 //
-//   PPB_PushReaction           "<kind>|<NPC display name>|<wand R|L>|<slot>|<child>|<leftTwin>"
+//   PPB_PushReaction           "<kind>|<NPC display name>|<wand R|L>|<slot>|<child>|<leftTwin>|<afterShove>"
 //                              numArg 0 (reserved)
 //        sender = the NPC the reaction happened to. The pusher is always the player.
 //        Pusher fields (build >= 20105): the player's hand and the capsule address it last
 //        pressed (slot / child / leftTwin as in PpbTouchContact); for "sweeped", the contact the
 //        lift was credited to. Empty strings when no contact is on record.
+//        <afterShove> (build >= 20106): 1 on a "dropped" / "sweeped" that follows this NPC's own
+//        "shove" within pushStepReactCoolS (1.5 s) — the knockdown pre-empts the stumble's
+//        cooldown, so ONE fall arrives as shove then dropped 0.15-1.5 s apart. PPB cannot take
+//        the shove back without delaying every stumble; a consumer that narrates both should
+//        hold "shove" briefly and let an afterShove=1 knockdown replace it. Always 0 on shove/push.
+//
+//   PPB_PushPress              "press|<NPC display name>|<wand R|L>|<slot>|<child>|<leftTwin>|0"
+//                              numArg 0                                         (build >= 20106)
+//        The EARLY signal: the push reading crossed pushStepPressEventU (3 u, below the 10 u walk
+//        bar) under a live player press, on an NPC who can react. Use it to HOLD a touch line
+//        (a palm on her chest) that may be the start of a push, ~0.5 s. A press is NOT a push —
+//        most presses never become one; PPB_PushReaction says what actually happened. At most
+//        one per NPC per pushStepPressEventGapS (2 s), never while she is already walking, never in
+//        the reaction cooldown. Same field layout as PPB_PushReaction, so one parser reads both.
 //        <kind>:
 //          push     she started walking back from a push. Once per push walk, when it
 //                   engages — not per frame, and not again while the same walk continues.
@@ -225,6 +242,8 @@
 //        Nothing fires while the matching PPB.ini [Features] switch is off (bPushShove,
 //        bPushWalk, bPushStumble, bShoveRagdoll, bFeetLift), nor for NPCs the push system
 //        leaves alone (combat, kill move, busy in furniture; a leaner can only be "sweeped").
+//        ★ CHILDREN AND MANNEQUINS (build >= 20106): never a contact, a push event, a press or a
+//        gesture target — race Child flag / ManakinRace, whatever skeleton they ride.
 //        Requires GetBuildNumber() >= 20104.
 // ═══════════════════════════════════════════════════════════════════════════════════════
 

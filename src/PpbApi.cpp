@@ -322,9 +322,23 @@ namespace {
     // ── skeleton classification ─────────────────────────────────────────────
     // Mirrors PPBHook's oursPPB check: the FEMALE skeleton model path of the actor's race.
     // Male/creature/child races never point into \PPB\, so they classify as not driven.
+    // 2026-09-13: see PpbApi::IsExcludedActor (the public wrapper) — children and mannequins.
+    bool ChildOrMannequin(RE::Actor* a)
+    {
+        auto* base = a ? a->GetActorBase() : nullptr;
+        auto* race = base ? base->GetRace() : nullptr;
+        if (!race) return false;
+        if (race->IsChildRace()) return true;
+        static RE::TESRace* s_manakin = nullptr;
+        static bool         s_looked  = false;
+        if (!s_looked) { s_looked = true; s_manakin = RE::TESForm::LookupByEditorID<RE::TESRace>("ManakinRace"); }
+        return s_manakin && race == s_manakin;
+    }
+
     const char* SkeletonOf(RE::Actor* a)
     {
         if (!a || DismemberGuard::IsExcluded(a)) return nullptr;
+        if (ChildOrMannequin(a)) return nullptr;   // ★★★ 2026-09-13: never a touch-API actor, whatever its skeleton
         auto* base = a->GetActorBase();
         auto* race = base ? base->GetRace() : nullptr;
         if (!base || !race) return nullptr;
@@ -1903,9 +1917,12 @@ namespace {
 
 namespace PpbApi {
 
+    bool IsExcludedActor(RE::Actor* actor) { return ChildOrMannequin(actor); }
+
     void NoteDriven(RE::Actor* actor)
     {
         if (!actor || g_rosterN >= kMaxRoster) return;
+        if (ChildOrMannequin(actor)) return;   // 2026-09-13: not in the roster -> no engine touches, probes or contacts
         auto* pl = RE::PlayerCharacter::GetSingleton();
         if (!pl) return;
         const auto pp = pl->GetPosition(), ap = actor->GetPosition();
@@ -2433,7 +2450,9 @@ namespace PpbApi {
         // 20105 (2026-09-13): VRTE GearGestures request — PPB_GestureEquipRefused, PPB_GestureUndressGrip/GripEnd,
         // UndressEnd reason+sentence (and its paused/disabled/ripfailed Ends), GearEquipped <ordinary>,
         // PushReaction pusher fields.
-        unsigned int GetBuildNumber() override { return 20105; }
+        // 20106 (2026-09-13): VRTE integration review — children + mannequins excluded from every interaction layer,
+        // PPB_PushPress, PushReaction <afterShove>, GearEquipped <locked>, verify 3.5 s, rip check 3.5 s.
+        unsigned int GetBuildNumber() override { return 20106; }
         bool IsDriven(unsigned int id) override {
             auto* a = RE::TESForm::LookupByID<RE::Actor>(id);
             return a && SkeletonOf(a) != nullptr;

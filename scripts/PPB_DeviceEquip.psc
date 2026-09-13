@@ -100,7 +100,8 @@ Function DoUnequipDevice(Int actorId, Int wornId, Float leftHand, Float fromFing
     endif
     ; The user's difficulty rule, enforced FIRST and loudly.
     if rendered.HasKeyword(libs.zad_QuestItem) || rendered.HasKeyword(libs.zad_BlockGeneric)
-        Debug.Notification("It is locked on tight - you don't have the key.")
+        ; 2026-09-13 (VRTE integration review P9): a quest / block-generic device is not a key problem - no key opens it.
+        Debug.Notification("That device will not come off.")
         return
     endif
     ; ★ LOCKED DEVICES NEED THE KEY (user, 2026-08-24): "can we make a device
@@ -170,6 +171,10 @@ Function DoUnequipDevice(Int actorId, Int wornId, Float leftHand, Float fromFing
 
     if libs.UnlockDeviceByKeyword(a, classKw, false)
         a.SendModEvent("PPB_GestureUnlocked", idevice.GetFormID() as String, leftHand)
+    elseif fromFinger == 2.0
+        ; 2026-09-13 (VRTE integration review P9): 2.0 = the DD/ZaZ AddOn's gate already confirmed the key IS held, so
+        ; DD refused for another reason (quest / block-generic on the inventory half). "No key" would be false.
+        Debug.Notification("That device will not come off.")
     else
         Debug.Notification("It is locked on tight - you don't have the key.")
     endif
