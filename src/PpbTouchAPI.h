@@ -92,15 +92,43 @@
 //  player's hand, even when the player's hands did it). Fields are '|'-separated.
 //  Consumers must tolerate EXTRA trailing fields: this bus appends, it does not renumber.
 //
-//  ── OUTBOUND, the five PPB emits ─────────────────────────────────────────────────────
+//  Every text field is '|'-free (PPB writes a '|' inside a name as '/'), so a payload can be
+//  split on every '|'. Empty fields are empty strings, never missing.
+//
+//  ── OUTBOUND ─────────────────────────────────────────────────────────────────────────
+//   PPB_GestureUndressGrip     "<hand R|L>|<name>|<slotMask>|<isDD>|<class>|<capsule>"
+//                              numArg = hand (0 R / 1 L)                        (build >= 20105)
+//        ONE hand's HIGGS grab on this NPC landed on a worn piece — possibly the first half
+//        of a two-hand undress. Sent in the same frame as that grab's PPB_TouchStart (right
+//        after it), so a consumer can hold that hand's grab narration from the first frame.
+//
+//   PPB_GestureUndressGripEnd  "<hand R|L>|<name>|<slotMask>|<isDD>|<class>|<capsule>|<armed>|<reason>"
+//                              numArg = hand                                    (build >= 20105)
+//        Exactly one per Grip. <armed> 1 = the grip became part of an armed pull (UndressArm
+//        fired while it was held — UndressEnd carries the outcome; this GripEnd can arrive
+//        just before that End), 0 = it never did. <reason>: letgo (the hand let go or grabbed
+//        someone else) · moved (the hand left that piece for 0.6 s; never while armed) · gone
+//        (the piece is no longer worn) · paused · disabled.
+//
 //   PPB_GestureUndressArm      "<capsule>"
 //        Both hands have taken the same worn piece and a pull is armed. A consumer that
 //        narrates touches should SUPPRESS grab narration on this actor until End.
 //
-//   PPB_GestureUndressEnd      "<name>|<slotMask>|<done>|<isDD>|<capsule>|<class>"
-//        The pull resolved. ⚠ FIRES ON CANCEL TOO (done=0): a hand let go, the actor
-//        changed, the piece stopped being worn. The Arm/End PAIR is load-bearing — a
-//        consumer that only handles done=1 will silence that actor for the session.
+//   PPB_GestureUndressEnd      "<name>|<slotMask>|<done>|<isDD>|<capsule>|<class>|<reason>|<sentence>"
+//        The pull resolved. ⚠ FIRES ON CANCEL TOO (done=0). The Arm/End PAIR is load-bearing —
+//        a consumer that only handles done=1 will silence that actor for the session.
+//        <reason> (build >= 20105; empty on older builds):
+//          done       done=1 — the pull completed. The removal is queued a frame later.
+//          letgo      a hand released the grab without the snap-back
+//          actor      the grabbed actor changed mid-pull
+//          gone       the actor or the piece went away, or the piece stopped being worn
+//          gate       the DD/ZaZ removal gate refused; <sentence> = the gate's own words
+//          paused     the gesture layer was paused while armed (PPB_Native.SetGesturePaused)
+//          disabled   undressEnabled / equipEnabled / enabled was switched off while armed
+//          ripfailed  ⚠ a SECOND End after a done=1: the promised removal did not happen
+//                     (the actor went away, the gate refused on the re-ask, or the piece is
+//                     still worn 2.5 s later). Undo whatever done=1 narrated.
+//        ⛔ No End is sent across a save load: the layer resets silently at kPreLoadGame.
 //
 //   PPB_GesturePlug            "<in|out>|<name>|<class>|<siteMask>|<leftHand>"
 //        THE PLUG GESTURE, both edges, and only the gesture:
@@ -123,15 +151,38 @@
 //        block-generic device — is caught in PPB and emits nothing. So a rare "out" with no
 //        removal behind it is possible; pair it against the removal, do not assume it.
 //
-//   PPB_GestureDeviceEquipped  "<name>|<class>|<locked>|<quest>|<siteMask>|<slotMask>"
-//        A DD/ZaZ device was put on by the equip gesture.
+//   PPB_GestureDeviceEquipped  "<name>|<class>|<locked>|<quest>|<siteMask>|<slotMask>|<force>"
+//        A device with a Devious class was put on by the equip gesture (confirmed worn).
+//        <force> 0 gentle / 1 firm / 2 forced, from the gesture's deepest press.
 //
-//   PPB_GestureGearEquipped    "<name>|<slotMask>"
-//        Plain (non-DD) armor was put on by the equip gesture.
+//   PPB_GestureGearEquipped    "<name>|<slotMask>|<force>|<ordinary>"
+//        Anything WITHOUT a Devious class was put on by the equip gesture (confirmed worn).
+//        <ordinary> (build >= 20105): 1 = plain clothing/armour, 0 = a ZaZ / Diary of Mine /
+//        other framework restraint (no Devious class keyword, but not ordinary gear either).
+//
+//   PPB_GestureEquipRefused    "<name>|<slotMask>|<reason>|<blocker>|<isDD>|<class>|<zone>"
+//                              numArg = hand (0 R / 1 L)                        (build >= 20105)
+//        A hand equip that did NOT happen. NPC wearers only. The item falls where it was let go.
+//        <slotMask> = the held item's biped mask (a DD device: its worn half — same encoding
+//        as GearEquipped). <reason>:
+//          slot      a piece she wears holds a slot this one needs (PPB.ini bSlotOccupiedRefuse);
+//                    <blocker> = that piece
+//          clothing  the equip gate: a garment over the device's site, or a device already on
+//                    one of its slots; <blocker> = it
+//          place     it was pressed against a body part it does not go on for at least
+//                    equipDwellS in total during the hold, touched her within the last second,
+//                    and was let go without earning the right site. A casual drop never fires it.
+//                    <blocker> is empty.
+//          refused   PPB asked for the equip and it did not go on (checked twice, ~2.5 s);
+//                    <blocker> = the piece in its slot when one is found, else empty
+//        <zone> = where it was aimed (slot / clothing) or where it was held (place), e.g.
+//        "neck", "feet"; empty for refused.
 //
 //   PPB_GestureClaim           "<actor FormID>"
-//        Bookkeeping: the removal a consumer is about to see on TESEquipEvent was OUR
-//        gesture, not a menu. Sent immediately before the unequip.
+//        Bookkeeping: an equip or removal a consumer is about to see on TESEquipEvent is OUR
+//        gesture, not a menu. Sent immediately before the unequip AND before every equip
+//        attempt — including equips that later come back PPB_GestureEquipRefused "refused",
+//        so a Claim alone is not proof anything changed.
 //
 //  ── INBOUND, the one event PPB listens for ───────────────────────────────────────────
 //   PPB_GestureSetPaused       numArg 1/0
@@ -151,16 +202,21 @@
 //  reaction, separate from the touch contacts: a contact says a hand is ON her, this says
 //  what the push DID to her. Same rules as the gesture bus above.
 //
-//   PPB_PushReaction           "<kind>|<NPC display name>"      numArg 0 (reserved)
+//   PPB_PushReaction           "<kind>|<NPC display name>|<wand R|L>|<slot>|<child>|<leftTwin>"
+//                              numArg 0 (reserved)
 //        sender = the NPC the reaction happened to. The pusher is always the player.
+//        Pusher fields (build >= 20105): the player's hand and the capsule address it last
+//        pressed (slot / child / leftTwin as in PpbTouchContact); for "sweeped", the contact the
+//        lift was credited to. Empty strings when no contact is on record.
 //        <kind>:
 //          push     she started walking back from a push. Once per push walk, when it
 //                   engages — not per frame, and not again while the same walk continues.
 //          shove    a push made her STUMBLE (the stagger played).
 //          dropped  a SHOVE knocked her down (ragdoll).
 //          sweeped  her LEGS were swept — both feet lifted off the floor — and she went down.
-//        Split on the FIRST '|': everything after it is the name (a name could contain '|').
-//        Consumers must tolerate extra trailing fields; this event appends, it never renumbers.
+//        The name is '|'-free (PPB writes '|' as '/'), so split on every '|'. On build 20104
+//        the payload was only "<kind>|<name>". Tolerate extra trailing fields; this event
+//        appends, it never renumbers.
 //
 //        Sent on the MAIN thread, and only after the game ACCEPTED the reaction (a refused
 //        knockdown sends nothing), so every event matches something the player saw.

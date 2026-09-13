@@ -937,6 +937,10 @@ struct TouchTrack {
     int                 baseCount = 0;     // her count of the base BEFORE any stash
     RE::TESBoundObject* base      = nullptr;
     RE::ObjectRefHandle refr;
+    // R1 "place" (2026-09-13): time this hold spent pressed against a body part the device does not go on
+    std::uint32_t       wrongActor = 0;
+    float               wrongS     = 0.f;
+    int                 wrongZone  = 0;
 };
 TouchTrack g_touch[2];
 
@@ -1391,6 +1395,59 @@ void DoEquip(std::uint32_t actorFid, RE::TESBoundObject* base, RE::ObjectRefHand
     for (int k = 0; k < 8; ++k) pv.displaced[k] = displaced[k];
 }
 
+// A payload FIELD: never NULL, never contains '|' (a '|' in an item or NPC name would shift every later field).
+static void FieldCopy(char* out, std::size_t cap, const char* s)
+{
+    if (!out || cap == 0) return;
+    std::size_t i = 0;
+    for (; s && s[i] && i + 1 < cap; ++i) out[i] = (s[i] == '|') ? '/' : s[i];
+    out[i] = '\0';
+}
+
+// ★★ 2026-09-13 THE REFUSED EQUIP (VRTE change request GearGestures R1; user: "an equip event can fail due to the slot
+// being already used or the wrong location. if that happen, a short-lived event should be sent to the LLM").
+// Every refusal used to be log-only. One event, sender = the NPC the player tried to dress, numArg = hand (0 R / 1 L):
+//   PPB_GestureEquipRefused  "<name>|<slotMask>|<reason>|<blocker>|<isDD>|<class>|<zone>"
+//     reason  slot      bSlotOccupiedRefuse: a piece she wears holds a slot this one needs (blocker = that piece)
+//             clothing  the equip gate: a garment over the site, or a device on one of its slots (blocker = it)
+//             place     held against the WRONG body part for >= equipDwellS, then let go (see TickHand)
+//             refused   PPB asked for the equip and it did not go on (TickVerify; blocker = the piece in its slot, or "")
+//     slotMask the HELD item's biped mask (a DD device: its rendered half — same encoding as GearEquipped)
+//     zone     where it was aimed (slot / clothing) or where it was held (place); "" for refused
+static void SendEquipRefused(std::uint32_t actorFid, RE::TESBoundObject* base, int hand,
+                             const char* reason, const char* blocker, int zone)
+{
+    auto* af    = RE::TESForm::LookupByID(actorFid);
+    auto* actor = af ? af->As<RE::Actor>() : nullptr;
+    if (!actor || !base || actor->GetFormID() == 0x14) return;
+    const DevClass* dc = nullptr;
+    if (auto it = g_classCache.find(base->GetFormID()); it != g_classCache.end()) dc = &it->second;
+    RE::TESObjectARMO* armo = nullptr;
+    if (dc && dc->dd && dc->renderedFid) {
+        auto* rf = RE::TESForm::LookupByID(dc->renderedFid);
+        armo = rf ? rf->As<RE::TESObjectARMO>() : nullptr;
+    }
+    if (!armo) armo = base->As<RE::TESObjectARMO>();
+    const std::uint32_t slotMask = armo ? static_cast<std::uint32_t>(armo->GetSlotMask().underlying()) : 0u;
+    char cls[64] = {};
+    if (dc && dc->cls[0]) {
+        std::snprintf(cls, sizeof cls, "%s", dc->cls);
+    } else {
+        bool l = false, q = false;
+        DdDescribe(armo ? static_cast<RE::TESBoundObject*>(armo) : base, cls, sizeof cls, l, q);
+    }
+    const bool isDD = (dc && dc->dd) || IsDdInventoryDevice(base);
+    char nm[96], bl[96], cl[64];
+    FieldCopy(nm, sizeof nm, base->GetName());
+    FieldCopy(bl, sizeof bl, blocker);
+    FieldCopy(cl, sizeof cl, cls);
+    char buf[384];
+    std::snprintf(buf, sizeof buf, "%s|%u|%s|%s|%d|%s|%s", nm, slotMask, reason ? reason : "", bl, isDD ? 1 : 0, cl,
+                  zone ? ZoneName(zone) : "");
+    SendGestureEvent("PPB_GestureEquipRefused", buf, static_cast<float>(hand ? 1 : 0), actor);
+    logger::info("[EQUIP->VRTE] PPB_GestureEquipRefused \"{}\" hand{} on 0x{:08X}", buf, hand, actorFid);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // TickHand — pure consumer of PPB's digest snapshot (§14 rewrite, 2026-08-21).
 //
@@ -1454,6 +1511,7 @@ void TickHand(int h, float dt, double now)
                     std::snprintf(nbuf, sizeof nbuf, "She is already wearing %s.", blocker);
                     Notify(nbuf);
                 }
+                SendEquipRefused(ins.actorFid, ins.base, h, clothes ? "clothing" : "slot", blocker, ins.site);   // R1
                 if (tt.actorFid && tt.base) {
                     PendingEject& pe = g_eject[h];
                     pe.active    = true;
@@ -1480,6 +1538,14 @@ void TickHand(int h, float dt, double now)
             logger::info("[EQUIP] hand{} released '{}' at 0x{:08X} without a valid gesture — "
                          "watching for a stash to return it to the world",
                          h, tt.base->GetName(), tt.actorFid);
+            // ★ R1 "place" (2026-09-13): only a DELIBERATE wrong placement is a refusal — the device was pressed
+            // against a body part it does not go on (the `wrong` bucket: gate met, zone not accepted) for at least
+            // equipDwellS in total during this hold, it touched her within the last second, and the right-site
+            // dwell was NOT earned (an earned gesture carried away is not "it does not go there"). A casual drop,
+            // a brush on the way past, or a too-light press never fires it.
+            if (tt.wrongActor && tt.wrongActor == tt.actorFid && tt.wrongS >= g_cfg.equipDwellS &&
+                !(ins.actorFid && ins.dwell >= g_cfg.equipDwellS))
+                SendEquipRefused(tt.wrongActor, tt.base, h, "place", "", tt.wrongZone);
         }
         ins = InsertState{};
         tt  = TouchTrack{};
@@ -1558,6 +1624,13 @@ void TickHand(int h, float dt, double now)
     }
 
     if (!best) {
+        // R1 "place": bank how long THIS hold has pressed the device against a body part it does not go on.
+        if (wrong) {
+            TouchTrack& tw = g_touch[h];
+            if (tw.wrongActor != wrong->actorFormId) { tw.wrongActor = wrong->actorFormId; tw.wrongS = 0.f; }
+            tw.wrongS    += dt;
+            tw.wrongZone  = wrongZone;
+        }
         // Say why, in order of how close the player got.
         if (wrong) {
             static double s_lastWrong = 0.0;
@@ -1899,15 +1972,16 @@ UndressPair g_pair;
 // listens for these and translates, so VRTouchEvents never learns DD concepts and the SFW/NSFW
 // split the user set survives the move.
 //
-// FIVE events, sender = the NPC (the wearer):
+// Events, sender = the NPC (the wearer). ⚠ PpbTouchAPI.h is the CONTRACT — the exact field lists live there
+// (corrected 2026-09-13: this banner had drifted). In short:
+//   PPB_GestureUndressGrip / GripEnd   one hand's grab on a worn piece, and its end (R5, build 20105)
 //   PPB_GestureUndressArm      strArg "<capsule>"            -> consumer SUPPRESSES grab narration
-//   PPB_GestureUndressEnd      strArg "<piece>|<slotMask>|<done>|<dd>|<capsule>"
-//                                                            -> un-suppress; narrate if done=1
-//   PPB_GestureDeviceEquipped  strArg "<name>|<cls>|<locked>|<quest>|<site>|<slot>"
-//                                                            -> wearer + onlooker lines
-//   PPB_GestureGearEquipped    strArg "<name>|<slotMask>"    -> one persistent event, wearer only
-//   PPB_GestureClaim           strArg "<actor FormID>"       -> bookkeeping: THIS removal was a
-//                                                               gesture, not a menu
+//   PPB_GestureUndressEnd      8 fields, ends "|<reason>|<sentence>"  -> un-suppress; narrate if done=1
+//   PPB_GestureDeviceEquipped  7 fields, ends "|<force>"     -> wearer + onlooker lines
+//   PPB_GestureGearEquipped    "<name>|<slotMask>|<force>|<ordinary>"  -> one persistent event, wearer only
+//   PPB_GestureEquipRefused    7 fields, numArg = hand       -> a hand equip that did not happen (R1, build 20105)
+//   PPB_GestureClaim           strArg "<actor FormID>"       -> bookkeeping: an equip or removal about to be
+//                                                               seen on TESEquipEvent is ours, not a menu
 //
 // ⚠ The Arm/End PAIR is load-bearing: End fires on CANCEL too (a hand let go, the actor changed,
 // the piece stopped being worn). Without it one aborted grab would silence that NPC's grab
@@ -1956,15 +2030,33 @@ const char* HandCapsuleName(int h, RE::Actor* actor)
 }
 
 // Close the undress out to VRTE. done=false is a CANCEL (un-suppress only).
-void SendUndressEnd(bool done)
+// ★ 2026-09-13 (VRTE GearGestures R3): two fields APPENDED, "<reason>|<sentence>":
+//   done       done=1, the pull completed (the rip is queued; a failed rip sends a corrective End, R4)
+//   letgo      a hand released the grab without the snap-back
+//   actor      the grabbed actor changed mid-pull
+//   gone       the actor or the piece went away, or the piece stopped being worn before it came off
+//   gate       the DD/ZaZ removal gate refused (sentence = the gate's own words)
+//   paused     PPB_Native.SetGesturePaused(True) / PPB_GestureSetPaused while armed (R2)
+//   disabled   undressEnabled / equipEnabled / enabled turned off while armed (R2)
+//   ripfailed  a SECOND End, after a done=1, when the promised removal did not happen (R4)
+// ⛔ No End is sent across a save load: kPreLoadGame resets the layer silently (the VM is not a safe place to be).
+void SendUndressEndFor(std::uint32_t actorFid, RE::TESObjectARMO* piece, const char* part, bool done,
+                       const char* reason, const char* sentence);
+void SendUndressEnd(bool done, const char* reason = "", const char* sentence = "")
 {
     if (!g_pair.actorFid) return;
-    auto* form  = RE::TESForm::LookupByID(g_pair.actorFid);
+    SendUndressEndFor(g_pair.actorFid, g_pair.piece, g_pair.part, done, reason, sentence);
+}
+void SendUndressEndFor(std::uint32_t actorFid, RE::TESObjectARMO* piece, const char* part, bool done,
+                       const char* reason, const char* sentence)
+{
+    if (!actorFid) return;
+    auto* form  = RE::TESForm::LookupByID(actorFid);
     auto* actor = form ? form->As<RE::Actor>() : nullptr;
-    const char* nm = (g_pair.piece && g_pair.piece->GetName() && g_pair.piece->GetName()[0])
-                         ? g_pair.piece->GetName() : "";
+    const char* nm = (piece && piece->GetName() && piece->GetName()[0])
+                         ? piece->GetName() : "";
     std::uint32_t slotMask = 0;
-    if (g_pair.piece) slotMask = static_cast<std::uint32_t>(g_pair.piece->GetSlotMask().underlying());
+    if (piece) slotMask = static_cast<std::uint32_t>(piece->GetSlotMask().underlying());
 
     // ★ THE CLASS, because the NAME is on the other half (2026-08-24, user:
     // "The undress not having the right name is weird, can that be fixed? It
@@ -1980,23 +2072,31 @@ void SendUndressEnd(bool done)
     // device dictionary it already has. Not the device's proper name, but the
     // right THING - which is what the history actually needs.
     char cls[64] = {};
-    if (g_pair.piece) {
+    if (piece) {
         bool l = false, q = false;
-        DdDescribe(g_pair.piece, cls, sizeof cls, l, q);
+        DdDescribe(piece, cls, sizeof cls, l, q);
     }
+    const char* pt = part ? part : "";
+    const char* rs = (reason && reason[0]) ? reason : (done ? "done" : "");
 
     // ⚠ SIXTH FIELD APPENDED, and that is safe here: VRTE's handler tests
     // `f.Length < 5`, so a longer payload still passes. (This is NOT the
     // 16-field VRTE_Contact payload, where f[15] is the escalation flag and
     // appending anything silently kills escalation mod-wide - report 22.)
-    char buf[256];
-    std::snprintf(buf, sizeof buf, "%s|%u|%d|%d|%s|%s",
-                  nm, slotMask, done ? 1 : 0,
-                  (g_pair.piece && IsDdWorn(g_pair.piece)) ? 1 : 0, g_pair.part, cls);
+    // 2026-09-13: fields 7-8 (reason, sentence) appended the same way; every text field is '|'-free.
+    char nmF[96], ptF[64], clF[64], snF[192];
+    FieldCopy(nmF, sizeof nmF, nm);
+    FieldCopy(ptF, sizeof ptF, pt);
+    FieldCopy(clF, sizeof clF, cls);
+    FieldCopy(snF, sizeof snF, sentence);
+    char buf[512];
+    std::snprintf(buf, sizeof buf, "%s|%u|%d|%d|%s|%s|%s|%s",
+                  nmF, slotMask, done ? 1 : 0,
+                  (piece && IsDdWorn(piece)) ? 1 : 0, ptF, clF, rs, snF);
     SendGestureEvent("PPB_GestureUndressEnd", buf, 0.f, actor);
-    logger::info("[UNDRESS->VRTE] End done={} piece='{}' cls='{}' slot={} part='{}'",
-                 done ? 1 : 0, nm[0] ? nm : "-", cls[0] ? cls : "-", slotMask,
-                 g_pair.part[0] ? g_pair.part : "-");
+    logger::info("[UNDRESS->VRTE] End done={} reason={} piece='{}' cls='{}' slot={} part='{}'{}{}",
+                 done ? 1 : 0, rs[0] ? rs : "-", nm[0] ? nm : "-", cls[0] ? cls : "-", slotMask,
+                 pt[0] ? pt : "-", snF[0] ? " | " : "", snF);
 }
 
 // piece -> not-before time; one rip must not chain-fire on the next frame
@@ -2234,10 +2334,14 @@ static const char* RemovalGateRefusal(RE::Actor* actor, std::uint32_t renderedFi
 
 // Take one worn piece off her: DD through its own framework (which enforces the
 // lock rule), anything else natively. `intoHand` puts it in the player's grip.
-void RipPiece(RE::Actor* actor, RE::TESObjectARMO* piece, bool left, bool intoHand,
-              const char* why)
+// ★ 2026-09-13 (VRTE GearGestures R4): returns false when the removal was NOT dispatched (no actor/piece, or the
+// removal gate refused — `refusedOut` then carries the gate's sentence). True means the unequip was handed to the
+// engine / DD's helper; whether it LANDED is checked a beat later by the rip check (TickRipCheck).
+bool RipPiece(RE::Actor* actor, RE::TESObjectARMO* piece, bool left, bool intoHand,
+              const char* why, const char** refusedOut = nullptr)
 {
-    if (!actor || !piece) return;
+    if (refusedOut) *refusedOut = nullptr;
+    if (!actor || !piece) return false;
     // ⛔ v15: ASK THE GATE BEFORE THE CLAIM BELOW. Every removal funnels through here, so this one
     // test covers the two-hand undress and the finger extraction alike — and it sits above
     // SendGestureEvent so a refused removal never announces itself (the 2026-08-27 rule: an event
@@ -2248,7 +2352,8 @@ void RipPiece(RE::Actor* actor, RE::TESObjectARMO* piece, bool left, bool intoHa
         if (g_cfg.undressNotify != 0.f) Notify(refused);
         logger::info("[UNDRESS] RIP refused by the DD/ZaZ removal gate ({}): {}",
                      why ? why : "?", refused);
-        return;
+        if (refusedOut) *refusedOut = refused;
+        return false;
     }
     // ★ Same claim as DoEquip, for the removal direction. Every removal this
     // AddOn performs by hand - a two-hand undress and a finger plug extraction
@@ -2309,6 +2414,7 @@ void RipPiece(RE::Actor* actor, RE::TESObjectARMO* piece, bool left, bool intoHa
             Notify(nb);
         }
     }
+    return true;
 }
 
 // ★ FINGER EXTRACTION (user design, 2026-08-22): an orifice with a plug in it
@@ -2604,8 +2710,36 @@ struct PendingRip {
     RE::TESObjectARMO*  piece    = nullptr;
     bool                left     = false;
     char                why[16]  = {};
+    char                part[48] = {};   // R4: the capsule the pair armed on, for a corrective End
 };
 PendingRip g_pendingRip;
+
+// ★ 2026-09-13 (VRTE GearGestures R4): UndressEnd(done=1) is announced BEFORE the rip, so a rip that never lands
+// must be corrected. The rip check looks once, after the removal had time to finish — a plain UnequipObject is
+// QUEUED (queueEquip=true) and DD's removal is a Papyrus round trip plus the ddSettleS drop, so an immediate look
+// would read "still worn" for removals that are fine. 2.5 s is the same budget the equip verify uses.
+struct RipCheck {
+    bool                active   = false;
+    double              at       = 0.0;
+    std::uint32_t       actorFid = 0;
+    RE::TESObjectARMO*  piece    = nullptr;
+    char                part[48] = {};
+};
+RipCheck g_ripCheck;
+
+void TickRipCheck(double now)
+{
+    RipCheck& rc = g_ripCheck;
+    if (!rc.active || now < rc.at) return;
+    rc.active = false;
+    auto* form  = RE::TESForm::LookupByID(rc.actorFid);
+    auto* actor = form ? form->As<RE::Actor>() : nullptr;
+    if (!actor || !rc.piece) return;                 // nothing left to check against — say nothing
+    if (!IsWornNow(actor, rc.piece)) return;          // it came off: the done=1 was true
+    logger::info("[UNDRESS] RIP CHECK: '{}' is STILL WORN on 0x{:08X} 2.5 s after the pull - sending the corrective End",
+                 rc.piece->GetName()[0] ? rc.piece->GetName() : "unnamed piece", rc.actorFid);
+    SendUndressEndFor(rc.actorFid, rc.piece, rc.part, false, "ripfailed", "it is still worn");
+}
 
 void TickPendingRip(double now)
 {
@@ -2616,14 +2750,28 @@ void TickPendingRip(double now)
     auto* actor = form ? form->As<RE::Actor>() : nullptr;
     if (!actor || !pr.piece) {
         logger::info("[UNDRESS] deferred rip dropped - the actor or the piece went away");
+        SendUndressEndFor(pr.actorFid, pr.piece, pr.part, false, "ripfailed",
+                          "the actor or the piece went away");   // R4
         return;
     }
     if (!IsWornNow(actor, pr.piece)) {
+        // Not a broken promise: the piece is off, which is what done=1 said. No corrective End.
         logger::info("[UNDRESS] deferred rip dropped - '{}' is no longer worn",
                      pr.piece->GetName()[0] ? pr.piece->GetName() : "unnamed piece");
         return;
     }
-    RipPiece(actor, pr.piece, pr.left, true, pr.why);
+    const char* refused = nullptr;
+    if (!RipPiece(actor, pr.piece, pr.left, true, pr.why, &refused)) {
+        SendUndressEndFor(pr.actorFid, pr.piece, pr.part, false, "ripfailed",
+                          refused ? refused : "the removal was refused");   // R4: the gate re-ask said no
+        return;
+    }
+    RipCheck& rc = g_ripCheck;                      // R4: did it actually come off?
+    rc.active   = true;
+    rc.at       = now + 2.5;
+    rc.actorFid = pr.actorFid;
+    rc.piece    = pr.piece;
+    std::snprintf(rc.part, sizeof rc.part, "%s", pr.part);
 }
 
 // Take the piece off and tell VRTE. Shared by the two ways the gesture can
@@ -2635,14 +2783,14 @@ void FireUndress(double now, const char* why)
     auto* actor = form ? form->As<RE::Actor>() : nullptr;
     if (!actor || !g_pair.piece) {
         logger::info("[UNDRESS] cannot complete ({}) - the actor or the piece is gone", why);
-        SendUndressEnd(false);
+        SendUndressEnd(false, "gone");
         g_pair = UndressPair{};
         return;
     }
     if (!IsWornNow(actor, g_pair.piece)) {
         logger::info("[UNDRESS] '{}' is no longer worn - sequence dropped",
                      g_pair.piece->GetName());
-        SendUndressEnd(false);
+        SendUndressEnd(false, "gone");
         g_pair = UndressPair{};
         return;
     }
@@ -2657,7 +2805,7 @@ void FireUndress(double now, const char* why)
             if (g_cfg.undressNotify != 0.f) Notify(refused);
             logger::info("[UNDRESS] pull refused by the DD/ZaZ removal gate before announcing ({}): {}",
                          why ? why : "?", refused);
-            SendUndressEnd(false);                 // nothing came off - VRTE un-mutes (SendUndressEnd reads g_pair: reset AFTER)
+            SendUndressEnd(false, "gate", refused);   // nothing came off - VRTE un-mutes (SendUndressEnd reads g_pair: reset AFTER)
             g_pair = UndressPair{};
             return;
         }
@@ -2674,14 +2822,125 @@ void FireUndress(double now, const char* why)
     pr.piece    = g_pair.piece;
     pr.left     = left;
     std::snprintf(pr.why, sizeof pr.why, "%s", why ? why : "pull");
+    std::snprintf(pr.part, sizeof pr.part, "%s", g_pair.part);
 
     SendUndressEnd(true);                     // VRTE narrates THIS one, now
     g_pair = UndressPair{};
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// ★★ 2026-09-13 THE EARLY GRIP SIGNAL (VRTE GearGestures R5; user: wait for PPB's early signal rather than delay
+// every clothed grab in VRTE). UndressArm needs BOTH hands, so the FIRST hand's grab reached VRTE as a grope
+// 0.32-0.87 s before PPB said anything (n=17). Now, per hand, the moment a HIGGS grab on an NPC lands on a worn
+// piece that PieceUnderHand resolves:
+//   PPB_GestureUndressGrip     "<hand R|L>|<name>|<slotMask>|<isDD>|<class>|<capsule>"   numArg = hand 0 R / 1 L
+// and EXACTLY ONE matching end per grip:
+//   PPB_GestureUndressGripEnd  "<hand R|L>|<name>|<slotMask>|<isDD>|<class>|<capsule>|<armed>|<reason>"
+//     armed   1 = this grip became part of an armed two-hand pull (UndressArm fired while it was held; UndressEnd
+//             is then the gesture's own outcome), 0 = it never did
+//     reason  letgo (the hand let go / grabbed someone else) · moved (the hand is no longer on that piece for 0.6 s,
+//             never while armed) · gone (the piece is no longer worn) · paused · disabled
+// Timing: computed from the same digest snapshot the touch API publishes, in the SAME frame, right after that frame's
+// PPB_TouchStart for the GRAB contact — never later than the contact itself. sender = the NPC.
+// ⛔ No GripEnd across a save load (the layer resets silently at kPreLoadGame).
+// ═══════════════════════════════════════════════════════════════════════════
+struct GripSignal {
+    std::uint32_t      actorFid = 0;       // 0 = no Grip announced on this hand
+    RE::TESObjectARMO* piece    = nullptr;
+    char               part[48] = {};
+    double             lostAt   = 0.0;     // first frame the hand was no longer on the piece (0 = on it)
+    bool               armed    = false;
+};
+GripSignal g_gripSig[2];
+
+static void SendGripEdge(int h, const GripSignal& gs, bool start, const char* reason)
+{
+    auto* form  = RE::TESForm::LookupByID(gs.actorFid);
+    auto* actor = form ? form->As<RE::Actor>() : nullptr;
+    char nm[96], cl[64], pt[48];
+    FieldCopy(nm, sizeof nm, gs.piece ? gs.piece->GetName() : "");
+    char cls[64] = {};
+    if (gs.piece) { bool l = false, q = false; DdDescribe(gs.piece, cls, sizeof cls, l, q); }
+    FieldCopy(cl, sizeof cl, cls);
+    FieldCopy(pt, sizeof pt, gs.part);
+    const std::uint32_t slotMask = gs.piece ? static_cast<std::uint32_t>(gs.piece->GetSlotMask().underlying()) : 0u;
+    const int isDD = (gs.piece && IsDdWorn(gs.piece)) ? 1 : 0;
+    char buf[384];
+    if (start)
+        std::snprintf(buf, sizeof buf, "%s|%s|%u|%d|%s|%s", h ? "L" : "R", nm, slotMask, isDD, cl, pt);
+    else
+        std::snprintf(buf, sizeof buf, "%s|%s|%u|%d|%s|%s|%d|%s", h ? "L" : "R", nm, slotMask, isDD, cl, pt,
+                      gs.armed ? 1 : 0, reason ? reason : "");
+    SendGestureEvent(start ? "PPB_GestureUndressGrip" : "PPB_GestureUndressGripEnd", buf,
+                     static_cast<float>(h ? 1 : 0), actor);
+    logger::info("[UNDRESS->VRTE] {} \"{}\" on 0x{:08X}", start ? "Grip" : "GripEnd", buf, gs.actorFid);
+}
+
+// End every announced grip (pause / disable paths). Safe to call when none are live.
+static void EndAllGripSignals(const char* reason)
+{
+    for (int h = 0; h < 2; ++h) {
+        if (g_gripSig[h].actorFid) SendGripEdge(h, g_gripSig[h], false, reason);
+        g_gripSig[h] = GripSignal{};
+    }
+}
+
+// R2: an armed pull torn down by a pause or a disable gets its End (done=0) before the state is dropped.
+static void AbortUndressFor(const char* reason)
+{
+    if (g_pair.active) SendUndressEnd(false, reason);
+    g_pair = UndressPair{};
+    EndAllGripSignals(reason);
+}
+
+// Runs every frame from TickUndress, after g_gripH[] learned which actor each hand grabs.
+static void TickGripSignals(double now)
+{
+    for (int h = 0; h < 2; ++h) {
+        GripSignal& gs  = g_gripSig[h];
+        RE::Actor*  act = g_gripH[h].actor;
+        if (gs.actorFid && (!act || act->GetFormID() != gs.actorFid)) {   // the hand let go (or grabbed someone else)
+            SendGripEdge(h, gs, false, "letgo");
+            gs = GripSignal{};
+        }
+        if (!act || act->GetFormID() == 0x14) continue;
+        auto* w = PieceUnderHand(h, act, g_snap, g_snapN, nullptr);
+        if (!gs.actorFid) {
+            if (!w) continue;
+            gs.actorFid = act->GetFormID();
+            gs.piece    = w;
+            std::snprintf(gs.part, sizeof gs.part, "%s", HandCapsuleName(h, act));
+            gs.armed    = (g_pair.active && g_pair.actorFid == gs.actorFid);
+            SendGripEdge(h, gs, true, "");
+            continue;
+        }
+        if (gs.piece && !IsWornNow(act, gs.piece)) {                       // it came off (or was taken off)
+            SendGripEdge(h, gs, false, "gone");
+            gs = GripSignal{};
+            continue;
+        }
+        if (w == gs.piece) { gs.lostAt = 0.0; continue; }
+        // While the pull is armed the hands MUST slide off the gear — that is not the grip ending.
+        if (gs.armed && g_pair.active && g_pair.actorFid == gs.actorFid) { gs.lostAt = 0.0; continue; }
+        if (w) {                                                           // now on a DIFFERENT worn piece
+            SendGripEdge(h, gs, false, "moved");
+            const bool wasArmed = gs.armed;
+            gs          = GripSignal{};
+            gs.actorFid = act->GetFormID();
+            gs.piece    = w;
+            std::snprintf(gs.part, sizeof gs.part, "%s", HandCapsuleName(h, act));
+            gs.armed    = wasArmed && g_pair.active && g_pair.actorFid == gs.actorFid;
+            SendGripEdge(h, gs, true, "");
+            continue;
+        }
+        if (gs.lostAt == 0.0) gs.lostAt = now;                             // same 0.6 s hold the undress uses
+        else if (now - gs.lostAt > 0.6) { SendGripEdge(h, gs, false, "moved"); gs = GripSignal{}; }
+    }
+}
+
 void TickUndress(double now)
 {
-    if (g_cfg.undressEnabled == 0.f) { g_pair = UndressPair{}; return; }
+    if (g_cfg.undressEnabled == 0.f) { AbortUndressFor("disabled"); return; }   // R2: End + GripEnd, then drop
 
     // ── grip state: which actor each hand is HIGGS-grabbing ─────────────────
     for (int h = 0; h < 2; ++h) {
@@ -2693,6 +2952,7 @@ void TickUndress(double now)
             g_gripH[h].since = now;
         }
     }
+    TickGripSignals(now);   // R5: one hand is enough for the early signal
     RE::Actor* actor = g_gripH[0].actor;
     if (!actor || g_gripH[1].actor != actor) {
         // ⛔⛔ THIS BLOCK USED TO CANCEL UNCONDITIONALLY, AND THAT WAS THE BUG.
@@ -2738,7 +2998,7 @@ void TickUndress(double now)
                          : !otherHeld  ? "both hands let go at once"
                                        : "the pulling hand let go too early",
                          puller ? "left" : "right", travel, g_cfg.undressSnapMinU);
-            SendUndressEnd(false);          // un-suppress: nothing came off
+            SendUndressEnd(false, "letgo");  // un-suppress: nothing came off
         }
         g_pair = UndressPair{};
         return;
@@ -2767,7 +3027,7 @@ void TickUndress(double now)
     // ═══════════════════════════════════════════════════════════════════════
     if (g_pair.active) {
         if (g_pair.actorFid != actor->GetFormID() || !g_pair.piece) {
-            SendUndressEnd(false);
+            SendUndressEnd(false, g_pair.piece ? "actor" : "gone");
             g_pair = UndressPair{};
             return;
         }
@@ -2931,6 +3191,8 @@ void TickUndress(double now)
     // off. A bare-breast grab has a ZERO-second dwell, so it would already have
     // been spoken by the time the pull completes.
     SendGestureEvent("PPB_GestureUndressArm", g_pair.part, 0.f, actor);
+    for (int gh = 0; gh < 2; ++gh)                         // R5: these grips are now part of an armed pull
+        if (g_gripSig[gh].actorFid == g_pair.actorFid) g_gripSig[gh].armed = true;
     logger::info("[UNDRESS] SEQUENCE STARTED on '{}' ({}, {}) - hands {:.1f}u apart; keep both "
                  "grabs held and pull the {} hand +{:.0f}u",
                  piece->GetName()[0] ? piece->GetName() : "unnamed piece",
@@ -3037,19 +3299,23 @@ void TickVerify(int h, double now)
                 // onlooker line, because someone else being handed a tunic is
                 // not news. Neutral statement of fact only; how she takes it is
                 // hers to decide (report 19 §1).
-                // strArg = "<name>|<slotMask>|<force>"
-                std::snprintf(buf, sizeof buf, "%s|%u|%d", nm, slotMask, force);
-                SendGestureEvent("PPB_GestureGearEquipped", buf, 0.f, wearer);
-                logger::info("[GEAR->VRTE] equipped '{}' slot={} on 0x{:08X}",
-                             nm, slotMask, pv.actorFid);
-                // ★ OPTION A + HOLD POOL (2026-09-06, user: "make it so their regular armor is
-                // the one we just equipped on them"). Ordinary gear only — DD devices persist
-                // themselves. Nothing here writes a base record.
                 // ORDINARY means ordinary: a DD inventory half whose class lookup failed reaches this arm
                 // with an empty cls (report 31 O4), and zad/zbf/DOM restraints carry no "Devious" class
                 // keyword at all. Neither is outfit material, and neither should pool or hand off.
                 const bool ordinary = wearer && !(dc && dc->dd) && !IsDdInventoryDevice(pv.base) &&
                                       !(armo && IsFrameworkDevice(armo));
+                // strArg = "<name>|<slotMask>|<force>|<ordinary>"
+                // ★ 2026-09-13 (VRTE GearGestures R7): <ordinary> APPENDED - 1 = plain clothing/armour, 0 = a
+                // ZaZ / Diary of Mine / other framework restraint that has no Devious class keyword.
+                char nmF[96];
+                FieldCopy(nmF, sizeof nmF, nm);
+                std::snprintf(buf, sizeof buf, "%s|%u|%d|%d", nmF, slotMask, force, ordinary ? 1 : 0);
+                SendGestureEvent("PPB_GestureGearEquipped", buf, 0.f, wearer);
+                logger::info("[GEAR->VRTE] equipped '{}' slot={} ordinary={} on 0x{:08X}",
+                             nm, slotMask, ordinary ? 1 : 0, pv.actorFid);
+                // ★ OPTION A + HOLD POOL (2026-09-06, user: "make it so their regular armor is
+                // the one we just equipped on them"). Ordinary gear only — DD devices persist
+                // themselves. Nothing here writes a base record.
                 if (ordinary) {
                     if (g_cfg.equipOutfitTag != 0.f) {
                         OutfitTag::Set(wearer, pv.base, true);
@@ -3139,6 +3405,7 @@ void TickVerify(int h, double now)
             std::snprintf(buf, sizeof buf, "%s will not go on.", pv.base->GetName());
         Notify(buf);
     }
+    SendEquipRefused(pv.actorFid, pv.base, pv.left ? 1 : 0, "refused", blocker ? blocker : "", 0);   // R1
     ReleaseToHand(actor, pv.base, pv.left, false);   // back on the ground, not stolen
 }
 
@@ -3334,10 +3601,14 @@ void OnFrame()
     // cleanup for a release that already happened. (SetPaused/Reset clears
     // them: a scene start must not fight scene inventory management.)
     for (int h = 0; h < 2; ++h) { TickEject(h, now); TickVerify(h, now); }
+    TickRipCheck(now);        // R4: cleanup for a pull that already completed — runs paused or not
 
     if (g_paused.load(std::memory_order_relaxed) ||
         g_cfg.enabled == 0.f || g_cfg.equipEnabled == 0.f) {
         for (int h = 0; h < 2; ++h) g_insert[h] = InsertState{};
+        // R2 (2026-09-13): an armed pull or an announced grip that this stand-down strands gets its End now.
+        if (g_pair.active || g_gripSig[0].actorFid || g_gripSig[1].actorFid)
+            AbortUndressFor(g_paused.load(std::memory_order_relaxed) ? "paused" : "disabled");
         return;
     }
 
@@ -3433,6 +3704,10 @@ void Reset()
         g_plugPull[h] = PlugPull{};
     }
     g_pair = UndressPair{};
+    g_gripSig[0] = GripSignal{};   // R5: silent here — Reset is the load path (no events across a load)
+    g_gripSig[1] = GripSignal{};
+    g_pendingRip = PendingRip{};
+    g_ripCheck   = RipCheck{};
     g_unlockDrop.active.store(false, std::memory_order_relaxed);
     g_safeDrop = PendingSafeDrop{};
     g_ripIntent = RipIntent{};
@@ -3468,7 +3743,10 @@ void SetPaused(bool paused)
     // The paused flag itself is atomic and takes effect immediately; only the teardown waits a
     // frame, and a frame of stale gesture state while pausing is harmless.
     // Same lesson as ledger P-2026-08-25-A: queue on the edge, act on the main thread.
-    if (auto* task = SKSE::GetTaskInterface()) task->AddTask([]() { Reset(); });
+    // R2 (2026-09-13): the queued teardown runs on the main thread, where SendEvent is safe — close an armed pull
+    // and any announced grip BEFORE Reset() drops them silently. (OnFrame's paused branch usually gets there first;
+    // whichever runs first clears the state, so exactly one End is sent.)
+    if (auto* task = SKSE::GetTaskInterface()) task->AddTask([]() { AbortUndressFor("paused"); Reset(); });
     else                                       Reset();   // no task interface: better than leaking state
 }
 

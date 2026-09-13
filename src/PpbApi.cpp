@@ -2430,7 +2430,10 @@ namespace PpbApi {
         // "mouth" sourceName, a kiss can fire PPB_MouthLips as "R|LIPS|HEAD", the head never reaches
         // an interior capsule, and engineContact is set on weapon contacts only.
         // 20104 (2026-09-12): PPB_PushReaction — "push" / "shove" / "dropped" / "sweeped" per reaction (PushStep.cpp).
-        unsigned int GetBuildNumber() override { return 20104; }
+        // 20105 (2026-09-13): VRTE GearGestures request — PPB_GestureEquipRefused, PPB_GestureUndressGrip/GripEnd,
+        // UndressEnd reason+sentence (and its paused/disabled/ripfailed Ends), GearEquipped <ordinary>,
+        // PushReaction pusher fields.
+        unsigned int GetBuildNumber() override { return 20105; }
         bool IsDriven(unsigned int id) override {
             auto* a = RE::TESForm::LookupByID<RE::Actor>(id);
             return a && SkeletonOf(a) != nullptr;

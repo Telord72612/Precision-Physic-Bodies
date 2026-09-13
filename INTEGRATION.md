@@ -19,7 +19,7 @@ live capsule geometry, or to avoid the Papyrus VM.
 
 ## What changed in 2.2.0 — read this if you already integrated
 
-`GetBuildNumber()` now returns **20104**. `PpbTouchContact` is still the frozen 160-byte POD and the
+`GetBuildNumber()` now returns **20105**. `PpbTouchContact` is still the frozen 160-byte POD and the
 vtable is unchanged: nothing you already call moved.
 
 | build | change | what it means for you |
@@ -28,8 +28,13 @@ vtable is unchanged: nothing you already call moved.
 | 20102 | **`kSourceCount = 9`** | If you keep per-source arrays, size them by this, never by a literal. PPB itself published every head contact as `FINGER` for a while because of an `[8]`. |
 | 20103 | **The kiss** | The mouth probe meeting her upper lip raises `PPB_MouthLips` with strArg `"R\|LIPS\|HEAD"`: a third field **appended** to the usual `WAND\|STAGE`, `numArg` 1 at the start and 0 at the end. Entry 2.2 u, exit 3.2 u (hysteresis), so a held kiss does not flicker. Lips only; a kiss never raises `ENTER` or `THROAT`. Split on `\|` and tolerate extra fields. |
 | 20103 | **HEAD names reach the digest stream** | `face` / `head` / `mouth` used to be dropped from the packed digest strings. Gate on `>= 20103` if you branch on them. |
-| 20104 | **The push event: `PPB_PushReaction`** | One mod event per push reaction, separate from touch contacts: `push` (walk back engaged), `shove` (stumble), `dropped` (shove knockdown), `sweeped` (leg sweep knockdown). strArg `"<kind>\|<NPC name>"`, sender = the NPC. See **§2b**. |
-| — | **The gesture event bus** | `PPB_GestureUndressArm`, `PPB_GestureUndressEnd` (fires on cancel too, `done=0`), `PPB_GesturePlug` (`in`/`out`), `PPB_GestureDeviceEquipped`, `PPB_GestureGearEquipped`, `PPB_GestureClaim`; inbound `PPB_GestureSetPaused`. Field layouts at the top of `src/PpbTouchAPI.h`. The bus appends fields and never renumbers them. |
+| 20104 | **The push event: `PPB_PushReaction`** | One mod event per push reaction, separate from touch contacts: `push` (walk back engaged), `shove` (stumble), `dropped` (shove knockdown), `sweeped` (leg sweep knockdown). sender = the NPC. See **§2b**. |
+| 20105 | **The pusher on `PPB_PushReaction`** | Four fields appended after the name: the player's hand and the capsule it pressed. Names are now `\|`-free, so split on every `\|` (20104 said "everything after the first `\|` is the name"). |
+| 20105 | **`PPB_GestureEquipRefused`** | A hand equip that did **not** happen, and why: `slot` taken, `clothing` in the way, wrong `place` on the body, or `refused` by the game. See **§2c**. |
+| 20105 | **`PPB_GestureUndressGrip` / `GripEnd`** | ONE hand's grab landed on a worn piece, in the same frame as the grab's contact, so you can hold "grab" narration before a two-hand undress arms. See **§2c**. |
+| 20105 | **`PPB_GestureUndressEnd` says why** | Two fields appended: `reason` (`done` / `letgo` / `actor` / `gone` / `gate` / `paused` / `disabled` / `ripfailed`) and the gate's sentence. A pause or disable mid-pull now sends its End; a finished pull whose removal fails sends a second End with `ripfailed`. |
+| 20105 | **`PPB_GestureGearEquipped` +`ordinary`** | `1` = plain clothing/armour, `0` = a ZaZ / Diary of Mine style restraint without a Devious class. |
+| — | **The gesture event bus** | `PPB_GestureUndressArm`, `PPB_GestureUndressEnd` (fires on cancel too, `done=0`), `PPB_GesturePlug` (`in`/`out`), `PPB_GestureDeviceEquipped`, `PPB_GestureGearEquipped`, `PPB_GestureClaim`; inbound `PPB_GestureSetPaused`. Exact field layouts at the top of `src/PpbTouchAPI.h`. The bus appends fields and never renumbers them. |
 | — | **`PPB_Native.SetGesturePaused(Bool)`** | Stand the gesture layer down while your scene places an actor's hands, so it doesn't read as a grab. |
 | — | **Feature switches** | A user can turn push/shove, its four outcomes, or the gestures off in `PPB.ini [Features]`. Touch contacts are never affected by these switches. |
 
@@ -169,17 +174,27 @@ player-alias script, or `OnInit()` plus `OnPlayerLoadGame()`. A quest script nev
 
 ---
 
-## 2b. The push event — `PPB_PushReaction` (build 20104)
+## 2b. The push event — `PPB_PushReaction`
 
 Touch contacts tell you a hand is **on** her. This event tells you what a push **did** to her. It is
-sent once per reaction, so it can be narrated directly: *"the player shoved Carmella"*.
+sent once per reaction, so it can be narrated directly: *"the player shoved Carmella"*. Build 20104
+added the event; build 20105 appended the pusher fields.
 
 | | |
 |---|---|
 | event | `PPB_PushReaction` |
 | `sender` | the **NPC** the reaction happened to. The pusher is always the player. |
-| `strArg` | `"<kind>\|<NPC display name>"` |
+| `strArg` | `"<kind>\|<NPC name>\|<wand>\|<slot>\|<child>\|<leftTwin>"` |
 | `numArg` | `0` (reserved) |
+
+| field | meaning |
+|---|---|
+| `kind` | `push` · `shove` · `dropped` · `sweeped` (below) |
+| `NPC name` | her display name; any `\|` in it is written as `/` |
+| `wand` | `R` / `L`: the hand that pressed (for `sweeped`, the contact the lift was credited to) |
+| `slot`, `child`, `leftTwin` | the capsule it pressed, the same address as in `PpbTouchContact` |
+
+The four pusher fields are empty strings when no contact is on record.
 
 | `<kind>` | what happened |
 |---|---|
@@ -195,13 +210,14 @@ EndEvent
 
 Event OnPpbPushReaction(String eventName, String strArg, Float numArg, Form sender)
     Actor npc = sender as Actor
-    Int bar = StringUtil.Find(strArg, "|")
-    String kind = strArg
-    If bar >= 0
-        kind = StringUtil.Substring(strArg, 0, bar)     ; "push" / "shove" / "dropped" / "sweeped"
-    EndIf
+    String[] f = StringUtil.Split(strArg, "|")
+    String kind = f[0]                                  ; "push" / "shove" / "dropped" / "sweeped"
+    ; f[1] = name, f[2] = "R"/"L", f[3] = slot, f[4] = child, f[5] = leftTwin (build >= 20105)
 EndEvent
 ```
+
+> ⚠ Check `f.Length` before reading `f[2]` onwards. The pusher fields can be empty, a split may
+> not return empty trailing fields, and an older PPB (20104) sends only `kind|name`.
 
 **From an SKSE plugin (C++)** — recommended if you already have one. The event is an SKSE mod event,
 not a slot on the touch interface, so catch it with a `ModCallbackEvent` sink. No PPB header is needed
@@ -219,10 +235,18 @@ public:
             return RE::BSEventNotifyControl::kContinue;
 
         auto* npc = ev->sender ? ev->sender->As<RE::Actor>() : nullptr;   // the NPC it happened to
-        std::string_view s = ev->strArg.c_str();                           // "<kind>|<name>"
-        const auto bar  = s.find('|');
-        const auto kind = s.substr(0, bar);                                 // push / shove / dropped / sweeped
-        const auto name = (bar == std::string_view::npos) ? std::string_view{} : s.substr(bar + 1);
+        // "<kind>|<name>|<wand>|<slot>|<child>|<leftTwin>" — no field contains '|', so split on every one
+        std::string_view f[6];
+        std::string_view s = ev->strArg.c_str();
+        for (int i = 0; i < 6; ++i) {
+            const auto bar = s.find('|');
+            f[i] = s.substr(0, bar);
+            if (bar == std::string_view::npos) break;
+            s.remove_prefix(bar + 1);
+        }
+        const auto kind = f[0];          // push / shove / dropped / sweeped
+        const auto name = f[1];
+        const bool left = (f[2] == "L");  // "" when no contact is on record
 
         if (npc && kind == "dropped") {
             // e.g. narrate "the player knocked <name> down"
@@ -245,7 +269,8 @@ the handler short: it runs inside PPB's send call.
 - **Main thread, and only for a reaction the game accepted.** A refused knockdown sends nothing.
 - **One event per reaction.** A knockdown is `dropped` or `sweeped`, never also `shove`. A push that
   walks her back and then builds sends `push`, then `shove` or `dropped`.
-- **Split on the first `|`.** Everything after it is the name. Tolerate extra trailing fields.
+- **Split on every `|`.** No field contains one. Tolerate extra trailing fields; on build 20104 the
+  payload was only `kind|name`.
 - **Nothing is sent when the reaction can't happen:** its `PPB.ini [Features]` switch is off
   (`bPushShove`, `bPushWalk`, `bPushStumble`, `bShoveRagdoll`, `bFeetLift`); she is in combat, a kill
   move, busy in furniture, or in an OStim/SexLab scene. A leaning NPC can only produce `sweeped`.
@@ -253,6 +278,81 @@ the handler short: it runs inside PPB's send call.
   side if you narrate it.
 - **The touch contacts for the same moment still arrive as usual.** Decide which of the two your mod
   narrates.
+
+---
+
+## 2c. Gesture events for narration — refusals and grips (build 20105)
+
+The gesture bus (field layouts in `src/PpbTouchAPI.h`) tells you what the player's hands **did** to
+an NPC's gear. Three events make it complete enough to narrate without re-deriving anything from
+contacts. Consumers must never re-derive a gesture: two detectors for one gesture drift.
+
+### `PPB_GestureEquipRefused` — the equip that did not happen
+
+| | |
+|---|---|
+| `sender` | the NPC the player tried to dress |
+| `numArg` | the hand: `0` right, `1` left |
+| `strArg` | `"<name>\|<slotMask>\|<reason>\|<blocker>\|<isDD>\|<class>\|<zone>"` |
+
+| `reason` | when | `blocker` |
+|---|---|---|
+| `slot` | a piece she wears holds a slot this one needs (`PPB.ini bSlotOccupiedRefuse`) | that piece |
+| `clothing` | a garment is over the device's site, or a device already holds one of its slots | the piece in the way |
+| `place` | held against a body part it does not go on for at least `equipDwellS` (1 s) during the hold, then let go there | empty |
+| `refused` | PPB asked for the equip and it did not go on (checked twice, ~2.5 s) | the piece in its slot when found, else empty |
+
+`zone` is where it was aimed (`slot` / `clothing`) or where it was held (`place`), e.g. `neck` or
+`feet`; it is empty for `refused`. `slotMask` is the held item's biped mask. A casual drop, a brush,
+or a too-light press never fires `place`. The item always falls where it was let go.
+
+Suggested use: a short-lived event on that NPC, replaced by a retry: *"Telord tried to put Hide Boots
+on Carmella, but her feet were already covered by Leather Boots."*
+
+### `PPB_GestureUndressGrip` / `PPB_GestureUndressGripEnd` — one hand on her clothes
+
+A two-hand undress arms only when the **second** hand grabs. Without this signal, the first hand's
+grab reaches you as an ordinary GRAB contact and can be narrated as a grope before the undress
+starts.
+
+| event | strArg | numArg |
+|---|---|---|
+| `PPB_GestureUndressGrip` | `"<R\|L>\|<name>\|<slotMask>\|<isDD>\|<class>\|<capsule>"` | hand |
+| `PPB_GestureUndressGripEnd` | the same six fields, then `\|<armed>\|<reason>` | hand |
+
+- **Timing:** `Grip` is sent in the **same frame** as that grab's `PPB_TouchStart`, immediately
+  after it, so you can hold that hand's grab narration from the first frame.
+- **Exactly one `GripEnd` per `Grip`.** `armed` = `1` if the grip became part of an armed pull; the
+  pull's own `PPB_GestureUndressEnd` then carries the outcome.
+- **`GripEnd` reasons:**
+  - `letgo`: the hand let go or grabbed someone else
+  - `moved`: the hand left that piece for 0.6 s; never while armed
+  - `gone`: the piece is no longer worn
+  - `paused` / `disabled`
+
+A completed pull reads:
+1. `Grip` (R)
+2. `Grip` (L)
+3. `UndressArm`
+4. `GripEnd` (armed=1), just before
+5. `UndressEnd` (done=1, reason=done)
+
+### `PPB_GestureUndressEnd` reasons
+
+The End now ends with `|<reason>|<sentence>`:
+
+| reason | meaning |
+|---|---|
+| `done` | the pull completed (done=1) |
+| `letgo` | a hand let go before the pull finished |
+| `actor` | the grabbed actor changed |
+| `gone` | the actor or piece went away |
+| `gate` | the DD/ZaZ removal gate refused; `sentence` is its reason |
+| `paused` | the gesture layer was paused mid-pull |
+| `disabled` | the gesture layer was disabled mid-pull |
+| `ripfailed` | a **second** End after a done=1: the piece did not actually come off (still worn 2.5 s later, or the removal was refused). Undo what done=1 narrated. |
+
+No End is sent across a save load.
 
 ---
 

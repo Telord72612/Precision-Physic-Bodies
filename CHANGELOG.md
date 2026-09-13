@@ -46,7 +46,8 @@ animation owns her movement can't be walked by the engine, so she stumbles or go
 Every outcome is its own switch — see *Feature switches* below.
 
 **The push event.** Each reaction is published to other mods as `PPB_PushReaction`, strArg
-`"<kind>|<NPC name>"`, sender = the NPC:
+`"<kind>|<NPC name>|<hand>|<slot>|<child>|<leftTwin>"`, sender = the NPC. The last four fields name
+the hand and capsule that did it. The kinds are:
 
 - `push`: she walked back
 - `shove`: she stumbled
@@ -79,6 +80,16 @@ The gestures run on PPB's contact stream, so the plugin that owns the sensor now
   her outfit. The detour fails closed: it installs only on a whitelisted prologue. SeverActions
   followers with an active outfit preset or lock get the change recorded into SeverActions.
 - **No on-screen messages** by default (`equipNotify 0`, `undressNotify 0`).
+- **Refusals are published** as `PPB_GestureEquipRefused`, with the reason (`slot`, `clothing`, `place`
+  for the wrong body part, `refused`), what blocked it, and where it was aimed, so a narrating mod can
+  say *"her feet were already covered"* instead of treating a failed equip as a touch.
+- **An early grip signal:** `PPB_GestureUndressGrip` / `GripEnd` fire when ONE hand grabs a worn
+  piece, in the same frame as the grab's contact, so the first half of an undress is not narrated as
+  a grope.
+- **Undress Ends carry a reason** (`done`, `letgo`, `actor`, `gone`, `gate` with the gate's sentence,
+  `paused`, `disabled`). A pause or disable mid-pull sends its End. If a finished pull's removal
+  fails, a second End says `ripfailed`.
+- `PPB_GestureGearEquipped` gains `ordinary` (plain clothing versus a ZaZ / Diary of Mine restraint).
 - **An event bus for consumers:** `PPB_GestureUndressArm/End`, `PPB_GesturePlug`,
   `PPB_GestureDeviceEquipped`, `PPB_GestureGearEquipped`, `PPB_GestureClaim`, and inbound
   `PPB_GestureSetPaused` / `PPB_Native.SetGesturePaused`. Documented in `src/PpbTouchAPI.h`.
@@ -94,7 +105,11 @@ The gestures run on PPB's contact stream, so the plugin that owns the sensor now
 - **The kiss.** The mouth probe meeting her upper lip raises `PPB_MouthLips` with strArg
   `"R|LIPS|HEAD"`, `numArg` 1 at the start and 0 at the end. Entry is 2.2 u, exit 3.2 u, so it holds
   steady instead of flickering on and off. A kiss is lips only and can never open her mouth.
-- `GetBuildNumber()` → **20104** (20102 = the head source, 20103 = the kiss, 20104 = the push event).
+- `GetBuildNumber()` → **20105**:
+  - 20102: the head source
+  - 20103: the kiss
+  - 20104: the push event
+  - 20105: refusals, grips, End reasons, pusher fields
 
 ### Genitals
 

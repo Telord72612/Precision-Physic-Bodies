@@ -126,6 +126,10 @@ struct WalkState {
     bool   pressObj     = false;
     bool   pressWand[2] = { false, false };       // v11.1b: which HANDS press this frame (wand 0 R / 1 L), re-decided per frame
     double lastPressWandS[2] = { -1e9, -1e9 };    // v11.1b: per-hand API pressure clock — the engine anchor's lapse partner
+    // 2026-09-13 (VRTE GearGestures R6): the capsule each hand last pressed on, for PPB_PushReaction's pusher fields
+    int    pressSlot[2]  = { -1, -1 };
+    int    pressChild[2] = { 0, 0 };
+    bool   pressLeft[2]  = { false, false };
     double waitLogS    = 0.0;                     // v11.1b: the `waiting` receipt's OWN throttle (it shared lastFallbackS and silenced every other refusal receipt)
     char   contactsDbg[96] = {};         // v8.5 forensics: this frame's qualifying contacts
     int    contactsN    = 0;
@@ -522,6 +526,7 @@ struct LiftState {
     // before, through lastAnyTouchS. The att* fields name the contact that attributed the lift (receipts).
     // (v28: epMin[] above is no longer display-only - the rise gate reads it when pushStepLiftRiseFromContact 1.)
     double lastAnyTouchS = 0.0;
+    int    attWand  = -1;      // 2026-09-13 (R6): the player's hand (0 R / 1 L) behind the attributing contact
     int    attSlot  = -1;
     int    attChild = 0;
     bool   attLeft  = false;
@@ -790,7 +795,10 @@ static constexpr float kNoDir = -1.0e9f;
 // ★★ 2.2.0 THE PUSH EVENT (user, 2026-09-12): "Player's push/shove/dropped/sweeped (NPC's name) each time it happens,
 // through the API — another event exposed, like the equip, but for push." One SKSE mod event, published alongside the
 // gesture bus in PpbTouchAPI.h (same contract, same append-only rule):
-//   PPB_PushReaction   strArg "<kind>|<NPC display name>"   numArg 0   sender = the NPC
+//   PPB_PushReaction   strArg "<kind>|<NPC display name>|<wand R|L>|<slot>|<child>|<leftTwin>"   numArg 0   sender = the NPC
+//   ★ 2026-09-13 (VRTE GearGestures R6, build 20105): the four PUSHER fields are APPENDED — the player's hand and the
+//   capsule it last pressed (a leg sweep: the contact the lift was credited to). Empty when no contact is on record.
+//   The name is '|'-free (a '|' becomes '/'), so the payload splits on every '|'.
 //     kind  push     a push walk ENGAGED (she starts stepping back) — once per engage, never per frame
 //           shove    a push STUMBLE played
 //           dropped  a SHOVE KNOCKDOWN played
@@ -798,13 +806,39 @@ static constexpr float kNoDir = -1.0e9f;
 // ⛔ MAIN THREAD ONLY, and only for a reaction the game ACCEPTED: the stumble/knockdown send it from inside
 // QueueReaction's task after the graph/knock call returned ok, the walk queues it onto the task interface. A refused
 // knock sends nothing, so a consumer never narrates something the player did not see.
-static void SendPushReactionOnMain(RE::Actor* a, const char* kind)
+struct PushWho { int wand = -1; int slot = -1; int child = 0; bool left = false; };
+
+// The hand that pressed most recently, and the capsule it pressed on.
+static PushWho PusherOf(const WalkState& w)
+{
+    PushWho p;
+    int h = -1;
+    for (int k = 0; k < 2; ++k)
+        if (w.lastPressWandS[k] > -1e8 && (h < 0 || w.lastPressWandS[k] > w.lastPressWandS[h])) h = k;
+    if (h >= 0) { p.wand = h; p.slot = w.pressSlot[h]; p.child = w.pressChild[h]; p.left = w.pressLeft[h]; }
+    return p;
+}
+
+static void SendPushReactionOnMain(RE::Actor* a, const char* kind, const PushWho& who)
 {
     auto* src = SKSE::GetModCallbackEventSource();
     if (!a || !src || !kind) return;
     const char* nm = a->GetDisplayFullName();
-    char buf[192];
-    std::snprintf(buf, sizeof buf, "%s|%s", kind, nm ? nm : "");
+    char nmF[128];
+    {
+        std::size_t i = 0;
+        for (; nm && nm[i] && i + 1 < sizeof nmF; ++i) nmF[i] = (nm[i] == '|') ? '/' : nm[i];
+        nmF[i] = '\0';
+    }
+    char slotS[8] = "", childS[8] = "", leftS[4] = "";
+    if (who.slot >= 0) {
+        std::snprintf(slotS, sizeof slotS, "%d", who.slot);
+        std::snprintf(childS, sizeof childS, "%d", who.child);
+        std::snprintf(leftS, sizeof leftS, "%d", who.left ? 1 : 0);
+    }
+    char buf[256];
+    std::snprintf(buf, sizeof buf, "%s|%s|%s|%s|%s|%s", kind, nmF,
+                  who.wand < 0 ? "" : (who.wand ? "L" : "R"), slotS, childS, leftS);
     SKSE::ModCallbackEvent ev{};
     ev.eventName = "PPB_PushReaction";
     ev.strArg    = buf;
@@ -815,14 +849,14 @@ static void SendPushReactionOnMain(RE::Actor* a, const char* kind)
 }
 
 static void QueueReaction(std::uint32_t id, float relDeg, float mag, bool ragdoll, const char* kind,
-                          float retreatHeading = kNoDir)
+                          PushWho who, float retreatHeading = kNoDir)
 {
     // v11: the sensor stands down for the reaction we are about to play (user, 2026-09-07 — the stumble
     // itself was re-triggering the tier). Ragdolls are additionally covered by the knock state in PPBHook.
     ArmIK::SenseStandDown(id, ObjectHold::PushSenseStandDownS());
     auto* task = SKSE::GetTaskInterface();
     if (!task) return;
-    task->AddTask([id, relDeg, mag, ragdoll, kind, retreatHeading]() {   // `kind` is always a string literal
+    task->AddTask([id, relDeg, mag, ragdoll, kind, who, retreatHeading]() {   // `kind` is always a string literal
         auto* f = RE::TESForm::LookupByID(id);
         auto* a = f ? f->As<RE::Actor>() : nullptr;
         if (!a) return;
@@ -900,7 +934,7 @@ static void QueueReaction(std::uint32_t id, float relDeg, float mag, bool ragdol
             }
             logger::info("PUSHREACT {:08X} RAGDOLL onset={} ({}) (accepted={})",
                          id, onset, what, ok ? 1 : 0);
-            if (ok) SendPushReactionOnMain(a, kind);     // 2.2.0: "dropped" / "sweeped"
+            if (ok) SendPushReactionOnMain(a, kind, who);     // 2.2.0: "dropped" / "sweeped"
             return;
         }
         // aggressor sits opposite the retreat bearing; normalise to the graph's 0..1
@@ -972,7 +1006,7 @@ static void QueueReaction(std::uint32_t id, float relDeg, float mag, bool ragdol
         const bool ok = a->NotifyAnimationGraph("staggerStart");
         logger::info("PUSHREACT {:08X} STAGGER mag {:.2f} dir {:.2f} (aggressor {:+.0f}° from her "
                      "front; graph event accepted={}){}", id, mag, dir01, agg, ok ? 1 : 0, faced);
-        if (ok) SendPushReactionOnMain(a, kind);         // 2.2.0: "shove"
+        if (ok) SendPushReactionOnMain(a, kind, who);    // 2.2.0: "shove"
     });
 }
 
@@ -1337,6 +1371,7 @@ void OnFrame()
                 Le.lastTouchS = nowS;
                 const int es = etl[i].slot;
                 if (es == 8 || es == 9 || es == 10) Le.legTouchS[etl[i].left ? 1 : 0] = nowS;
+                Le.attWand   = etl[i].hand ? 1 : 0;
                 Le.attSlot   = es;
                 Le.attChild  = etl[i].child;
                 Le.attLeft   = etl[i].left;
@@ -1401,6 +1436,7 @@ void OnFrame()
                     if (zs == 8 || zs == 9 || zs == 10) Lz.legTouchS[c[i].leftTwin ? 1 : 0] = nowS;
                     if (Lz.lastTouchS < nowS || c[i].distU < Lz.attDistU) {   // the nearest one this frame
                         Lz.attEngine = 0;
+                        Lz.attWand  = c[i].wand ? 1 : 0;
                         Lz.attSlot  = c[i].slot;
                         Lz.attChild = c[i].child;
                         Lz.attLeft  = c[i].leftTwin != 0;
@@ -1443,7 +1479,8 @@ void OnFrame()
             const double prevPressureS = w.lastPressureS;
             w.lastPressureS = nowS;
             if (object2) w.pressObj = true; else w.pressHand = true;    // v11 rule 7
-            { const int hw = c[i].wand ? 1 : 0; w.pressWand[hw] = true; w.lastPressWandS[hw] = nowS; }   // v11.1b per-hand clocks
+            { const int hw = c[i].wand ? 1 : 0; w.pressWand[hw] = true; w.lastPressWandS[hw] = nowS;   // v11.1b per-hand clocks
+              w.pressSlot[hw] = c[i].slot; w.pressChild[hw] = c[i].child; w.pressLeft[hw] = c[i].leftTwin != 0; }   // R6
             // ★ v12: the contact IS the trigger — capture the origin the first frame we see it (idempotent
             // while the contact holds; a lapse of pushStepOriginHoldS starts a new push).
             if (ObjectHold::PushStepTravelMode() != 0.f)
@@ -1579,7 +1616,8 @@ void OnFrame()
                 auto& we = g_walk[et[i].actorId];
                 we.lastPressureS = nowS;                // the actor is TRACKED from this frame on
                 we.slot          = sslotE;
-                { const int hwE = et[i].hand ? 1 : 0; we.pressWand[hwE] = true; we.lastPressWandS[hwE] = nowS; }
+                { const int hwE = et[i].hand ? 1 : 0; we.pressWand[hwE] = true; we.lastPressWandS[hwE] = nowS;
+                  we.pressSlot[hwE] = et[i].slot; we.pressChild[hwE] = et[i].child; we.pressLeft[hwE] = et[i].left; }   // R6
                 auto& tvE = g_travel[et[i].actorId];
                 if (tvE.lockSlot < 0) {
                     tvE.lockSlot = sslotE;   // receipt only — the JOINTS decide, not this
@@ -1877,7 +1915,7 @@ static int FireReactionTier(RE::Actor* actor, std::uint32_t id, const WalkState&
     const float faceHeading = (w.driving && (w.dirX * w.dirX + w.dirY * w.dirY) > 0.01f)
                             ? GetHeadingFromVector(RE::NiPoint3{ w.dirX, w.dirY, 0.f })
                             : GetHeadingFromVector(RE::NiPoint3{ mdx / mmag, mdy / mmag, 0.f });
-    QueueReaction(id, relD, mag, doRag, doRag ? "dropped" : "shove", faceHeading);
+    QueueReaction(id, relD, mag, doRag, doRag ? "dropped" : "shove", PusherOf(w), faceHeading);
     // ★ v11.1 (user ruling 2026-09-07 evening): the tiers stay on HER displacement; the hand's travel is PRINTED
     // on every fire so the next session can judge from data whether they should ever wait for it.
     float tierHandU = -1.f; const char* tierAnchor = "none";
@@ -2307,7 +2345,7 @@ bool OnMotionDrivenCheck(RE::Actor* actor)
             float  tripRise[2] = { -1.0e9f, -1.0e9f };      // v29: foot rise above the animation since contact (-1e9 = unknown)
             double legS[2] = { 0.0, 0.0 };                   // v29: last lift-zone contact per leg
             int    attEng = 0;                               // v29: 1 = engine (collision capsule) attribution
-            int   attSlot = -1, attChild = 0, attSrc = 0, attHow = 0;
+            int   attSlot = -1, attChild = 0, attSrc = 0, attHow = 0, attWand = -1;
             bool  attLeft = false;
             float attFrac = -1.f;
             {
@@ -2339,7 +2377,7 @@ bool OnMotionDrivenCheck(RE::Actor* actor)
                 std::memcpy(attPart, L.attPart, sizeof attPart);                           // v28 (receipts)
                 attPart[sizeof attPart - 1] = 0;
                 attSlot = L.attSlot; attChild = L.attChild; attSrc = L.attSrc; attHow = L.attHow;
-                attLeft = L.attLeft; attFrac = L.attFrac;
+                attLeft = L.attLeft; attFrac = L.attFrac; attWand = L.attWand;
                 // ★★ v28 THE RISE COUNTS FROM THE CONTACT. v23 counted it from minD[], whose floor is set only on
                 // the first frame BOTH feet are already over the bar, so the rise stacked ON the bar (8 + 3 = 11u)
                 // and 0 of 4 real sweeps fired (17:39). epMin[] is the floor since this lift-zone contact began:
@@ -2500,7 +2538,8 @@ bool OnMotionDrivenCheck(RE::Actor* actor)
                              tripMode ? "judged against the ANIMATION (walking / moving)" : "judged against the floor",
                              nowS - lastTouch, attBuf, riseFrom, riseR0, riseR1);
                 RagFrame::Arm(id, -1.f, tracked ? w.slot : 6, "lifted", 0.f, true);
-                QueueReaction(id, 0.f, 1.f, true, "sweeped");
+                QueueReaction(id, 0.f, 1.f, true, "sweeped",
+                              PushWho{ attWand, attSlot, attChild, attLeft });   // R6: the contact the lift was credited to
                 if (tracked && mc && PlannerActive(mc) && w.driving) {     // cannot be, by the walking gate — kept for safety
                     PlannerCtl(mc)->ClearPlannerDirectControl();
                     if (auto* task = SKSE::GetTaskInterface())
@@ -2741,7 +2780,7 @@ bool OnMotionDrivenCheck(RE::Actor* actor)
                          "{:.2f}s ago — she has nothing under her feet; ragdolling",
                          id, fall, nowS - w.lastPressureS);
             RagFrame::Arm(id, -1.f, w.slot, "unsupported", 0.f, true);
-            QueueReaction(id, 0.f, 1.f, true, "sweeped");   // the feet path (bFeetLift); ships off (pushStepFallRag 0)
+            QueueReaction(id, 0.f, 1.f, true, "sweeped", PusherOf(w));   // the feet path (bFeetLift); ships off (pushStepFallRag 0)
             // a ragdoll and a driven walk must never overlap (the warp-into-walls bug)
             if (mc && PlannerActive(mc)) {
                 PlannerCtl(mc)->ClearPlannerDirectControl();
@@ -3314,11 +3353,13 @@ bool OnMotionDrivenCheck(RE::Actor* actor)
                      w.rampTS, w.rampFloorE * 100.f, w.budgetU * ObjectHold::PushStepExtendMul());
         // 2.2.0 PPB_PushReaction "push": one per ENGAGE (this block runs once, when the planner is taken), sent on the
         // main thread. The planner control above has already been written, so the walk IS starting.
-        if (auto* task = SKSE::GetTaskInterface())
-            task->AddTask([id]() {
+        if (auto* task = SKSE::GetTaskInterface()) {
+            const PushWho who = PusherOf(w);
+            task->AddTask([id, who]() {
                 if (auto* f = RE::TESForm::LookupByID(id))
-                    if (auto* a = f->As<RE::Actor>()) SendPushReactionOnMain(a, "push");
+                    if (auto* a = f->As<RE::Actor>()) SendPushReactionOnMain(a, "push", who);
             });
+        }
         if (leverOn)
             logger::info("PUSHWALK {:08X} LEVER - crossed the {:.1f}u bar at {:.1f}u/s (norm {:.2f} of ref {:.0f}u/s) "
                          "-> speed {:.0f} u/s (band {:.0f}-{:.0f}), distance {:.1f}u of {:.1f}u cap, start-ramp x{:.2f}",

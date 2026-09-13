@@ -243,15 +243,24 @@ EndEvent
 ```
 
 **The push event** (build ≥ 20104) tells you what a push *did* to an NPC, once per reaction.
-`PPB_PushReaction` has strArg `"<kind>|<NPC name>"` with kind `push` (walked back), `shove`
-(stumbled), `dropped` (shoved to the ground) or `sweeped` (legs swept), and `sender` = the NPC. It
-is only sent for a reaction the game actually played. Details are in
-[INTEGRATION.md §2b](INTEGRATION.md#2b-the-push-event--ppb_pushreaction-build-20104).
+`PPB_PushReaction` has strArg `"<kind>|<NPC name>|<hand>|<slot>|<child>|<leftTwin>"` and `sender` =
+the NPC. The kind is `push` (walked back), `shove` (stumbled), `dropped` (shoved to the ground) or
+`sweeped` (legs swept); the last four fields (build ≥ 20105) name the hand and capsule that did it.
+It is only sent for a reaction the game actually played. Details are in
+[INTEGRATION.md §2b](INTEGRATION.md#2b-the-push-event--ppb_pushreaction).
 
-**Gesture events** tell you a hand just *did* something to a worn item: an undress armed or finished,
-a plug worked in or out, a device or piece of gear put on. They are `PPB_GestureUndressArm`,
-`PPB_GestureUndressEnd`, `PPB_GesturePlug`, `PPB_GestureDeviceEquipped`, `PPB_GestureGearEquipped`
-and `PPB_GestureClaim`. Field layouts are documented at the top of [`src/PpbTouchAPI.h`](src/PpbTouchAPI.h).
+**Gesture events** tell you a hand just *did* something to a worn item:
+- an undress armed or finished, and why it ended;
+- a plug worked in or out;
+- a device or piece of gear put on;
+- an equip **refused**, and why (slot taken, clothing in the way, wrong body part);
+- one hand gripping a worn piece before a two-hand undress arms.
+
+They are `PPB_GestureUndressGrip`, `PPB_GestureUndressGripEnd`, `PPB_GestureUndressArm`,
+`PPB_GestureUndressEnd`, `PPB_GesturePlug`, `PPB_GestureDeviceEquipped`, `PPB_GestureGearEquipped`,
+`PPB_GestureEquipRefused` and `PPB_GestureClaim`. Narration guide:
+[INTEGRATION.md §2c](INTEGRATION.md#2c-gesture-events-for-narration--refusals-and-grips-build-20105).
+Exact field layouts are at the top of [`src/PpbTouchAPI.h`](src/PpbTouchAPI.h).
 To stand the gestures down while your scene poses an actor's hands, call
 `PPB_Native.SetGesturePaused(True)`, then `False` afterwards.
 
