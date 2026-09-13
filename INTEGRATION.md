@@ -203,6 +203,43 @@ Event OnPpbPushReaction(String eventName, String strArg, Float numArg, Form send
 EndEvent
 ```
 
+**From an SKSE plugin (C++)** — recommended if you already have one. The event is an SKSE mod event,
+not a slot on the touch interface, so catch it with a `ModCallbackEvent` sink. No PPB header is needed
+for this. PPB sends it on the main thread, so your handler runs on the main thread at the moment of
+the reaction, with no Papyrus queue in between. Register once; unlike `RegisterForModEvent`, a sink
+survives save loads.
+
+```cpp
+class PushReactionSink : public RE::BSTEventSink<SKSE::ModCallbackEvent> {
+public:
+    RE::BSEventNotifyControl ProcessEvent(const SKSE::ModCallbackEvent* ev,
+                                          RE::BSTEventSource<SKSE::ModCallbackEvent>*) override
+    {
+        if (!ev || _stricmp(ev->eventName.c_str(), "PPB_PushReaction") != 0)
+            return RE::BSEventNotifyControl::kContinue;
+
+        auto* npc = ev->sender ? ev->sender->As<RE::Actor>() : nullptr;   // the NPC it happened to
+        std::string_view s = ev->strArg.c_str();                           // "<kind>|<name>"
+        const auto bar  = s.find('|');
+        const auto kind = s.substr(0, bar);                                 // push / shove / dropped / sweeped
+        const auto name = (bar == std::string_view::npos) ? std::string_view{} : s.substr(bar + 1);
+
+        if (npc && kind == "dropped") {
+            // e.g. narrate "the player knocked <name> down"
+        }
+        return RE::BSEventNotifyControl::kContinue;
+    }
+};
+PushReactionSink g_pushSink;
+
+// once, at kDataLoaded or later:
+if (auto* src = SKSE::GetModCallbackEventSource())
+    src->AddEventSink(&g_pushSink);
+```
+
+The same sink can handle PPB's other mod events (`PPB_Gesture*`, `PPB_MouthLips`) by name. Keep
+the handler short: it runs inside PPB's send call.
+
 **Guarantees:**
 
 - **Main thread, and only for a reaction the game accepted.** A refused knockdown sends nothing.
