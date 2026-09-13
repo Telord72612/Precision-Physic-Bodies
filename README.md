@@ -242,6 +242,12 @@ Event OnPpbMouthLips(String eventName, String strArg, Float numArg, Form sender)
 EndEvent
 ```
 
+**The push event** (build ≥ 20104) tells you what a push *did* to an NPC, once per reaction.
+`PPB_PushReaction` has strArg `"<kind>|<NPC name>"` with kind `push` (walked back), `shove`
+(stumbled), `dropped` (shoved to the ground) or `sweeped` (legs swept), and `sender` = the NPC. It
+is only sent for a reaction the game actually played. Details are in
+[INTEGRATION.md §2b](INTEGRATION.md#2b-the-push-event--ppb_pushreaction-build-20104).
+
 **Gesture events** tell you a hand just *did* something to a worn item: an undress armed or finished,
 a plug worked in or out, a device or piece of gear put on. They are `PPB_GestureUndressArm`,
 `PPB_GestureUndressEnd`, `PPB_GesturePlug`, `PPB_GestureDeviceEquipped`, `PPB_GestureGearEquipped`

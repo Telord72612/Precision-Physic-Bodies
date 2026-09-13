@@ -45,6 +45,17 @@ animation owns her movement can't be walked by the engine, so she stumbles or go
 
 Every outcome is its own switch — see *Feature switches* below.
 
+**The push event.** Each reaction is published to other mods as `PPB_PushReaction`, strArg
+`"<kind>|<NPC name>"`, sender = the NPC:
+
+- `push`: she walked back
+- `shove`: she stumbled
+- `dropped`: a shove knocked her down
+- `sweeped`: her legs were swept
+
+It is sent on the main thread, only after the game accepted the reaction, once per reaction. This is
+what lets VRTouchEvents narrate a push to SkyrimNet. See INTEGRATION.md §2b.
+
 ### Hand gestures (moved into PPB from the VRTouchEvents DD-ZaZ AddOn)
 
 The gestures run on PPB's contact stream, so the plugin that owns the sensor now owns the detection.
@@ -83,7 +94,7 @@ The gestures run on PPB's contact stream, so the plugin that owns the sensor now
 - **The kiss.** The mouth probe meeting her upper lip raises `PPB_MouthLips` with strArg
   `"R|LIPS|HEAD"`, `numArg` 1 at the start and 0 at the end. Entry is 2.2 u, exit 3.2 u, so it holds
   steady instead of flickering on and off. A kiss is lips only and can never open her mouth.
-- `GetBuildNumber()` → **20103**.
+- `GetBuildNumber()` → **20104** (20102 = the head source, 20103 = the kiss, 20104 = the push event).
 
 ### Genitals
 

@@ -2429,7 +2429,8 @@ namespace PpbApi {
         // 20103 (2026-09-12): the kiss is real — HEAD digest contacts now carry their "face" / "head" /
         // "mouth" sourceName, a kiss can fire PPB_MouthLips as "R|LIPS|HEAD", the head never reaches
         // an interior capsule, and engineContact is set on weapon contacts only.
-        unsigned int GetBuildNumber() override { return 20103; }
+        // 20104 (2026-09-12): PPB_PushReaction — "push" / "shove" / "dropped" / "sweeped" per reaction (PushStep.cpp).
+        unsigned int GetBuildNumber() override { return 20104; }
         bool IsDriven(unsigned int id) override {
             auto* a = RE::TESForm::LookupByID<RE::Actor>(id);
             return a && SkeletonOf(a) != nullptr;

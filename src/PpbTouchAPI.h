@@ -144,6 +144,34 @@
 //    round trip. Do not consume it and do not send it.
 // ═══════════════════════════════════════════════════════════════════════════════════════
 
+// ═══════════════════════════════════════════════════════════════════════════════════════
+//  THE PUSH EVENT  (added 2026-09-12, build 20104)
+// ═══════════════════════════════════════════════════════════════════════════════════════
+//  "The player just pushed / shoved / knocked down / swept this NPC." One SKSE mod event per
+//  reaction, separate from the touch contacts: a contact says a hand is ON her, this says
+//  what the push DID to her. Same rules as the gesture bus above.
+//
+//   PPB_PushReaction           "<kind>|<NPC display name>"      numArg 0 (reserved)
+//        sender = the NPC the reaction happened to. The pusher is always the player.
+//        <kind>:
+//          push     she started walking back from a push. Once per push walk, when it
+//                   engages — not per frame, and not again while the same walk continues.
+//          shove    a push made her STUMBLE (the stagger played).
+//          dropped  a SHOVE knocked her down (ragdoll).
+//          sweeped  her LEGS were swept — both feet lifted off the floor — and she went down.
+//        Split on the FIRST '|': everything after it is the name (a name could contain '|').
+//        Consumers must tolerate extra trailing fields; this event appends, it never renumbers.
+//
+//        Sent on the MAIN thread, and only after the game ACCEPTED the reaction (a refused
+//        knockdown sends nothing), so every event matches something the player saw.
+//        A knockdown is ONE event — "dropped" or "sweeped", never also "shove". A push that
+//        walks her back and then escalates sends "push" then "shove"/"dropped".
+//        Nothing fires while the matching PPB.ini [Features] switch is off (bPushShove,
+//        bPushWalk, bPushStumble, bShoveRagdoll, bFeetLift), nor for NPCs the push system
+//        leaves alone (combat, kill move, busy in furniture; a leaner can only be "sweeped").
+//        Requires GetBuildNumber() >= 20104.
+// ═══════════════════════════════════════════════════════════════════════════════════════
+
 namespace PPBAPI {
 
     // Source classification for a contact. Values are frozen; new kinds append.

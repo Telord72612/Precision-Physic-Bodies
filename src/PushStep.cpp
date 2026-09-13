@@ -786,14 +786,43 @@ static bool CanBeKnockedDown(RE::Actor* a)
 // v11 15:45: retreatHeading == kNoDir means "no push direction" (a LIFT or an UNSUPPORTED fall) — the knock
 // then throws her away from the PLAYER instead of from a direction we do not have.
 static constexpr float kNoDir = -1.0e9f;
-static void QueueReaction(std::uint32_t id, float relDeg, float mag, bool ragdoll, float retreatHeading = kNoDir)
+
+// ★★ 2.2.0 THE PUSH EVENT (user, 2026-09-12): "Player's push/shove/dropped/sweeped (NPC's name) each time it happens,
+// through the API — another event exposed, like the equip, but for push." One SKSE mod event, published alongside the
+// gesture bus in PpbTouchAPI.h (same contract, same append-only rule):
+//   PPB_PushReaction   strArg "<kind>|<NPC display name>"   numArg 0   sender = the NPC
+//     kind  push     a push walk ENGAGED (she starts stepping back) — once per engage, never per frame
+//           shove    a push STUMBLE played
+//           dropped  a SHOVE KNOCKDOWN played
+//           sweeped  a LEG SWEEP knockdown played (both feet lifted; also the unsupported-fall path, which ships off)
+// ⛔ MAIN THREAD ONLY, and only for a reaction the game ACCEPTED: the stumble/knockdown send it from inside
+// QueueReaction's task after the graph/knock call returned ok, the walk queues it onto the task interface. A refused
+// knock sends nothing, so a consumer never narrates something the player did not see.
+static void SendPushReactionOnMain(RE::Actor* a, const char* kind)
+{
+    auto* src = SKSE::GetModCallbackEventSource();
+    if (!a || !src || !kind) return;
+    const char* nm = a->GetDisplayFullName();
+    char buf[192];
+    std::snprintf(buf, sizeof buf, "%s|%s", kind, nm ? nm : "");
+    SKSE::ModCallbackEvent ev{};
+    ev.eventName = "PPB_PushReaction";
+    ev.strArg    = buf;
+    ev.numArg    = 0.f;
+    ev.sender    = a;
+    src->SendEvent(&ev);
+    logger::info("PUSHEVENT {:08X} PPB_PushReaction \"{}\"", a->GetFormID(), buf);
+}
+
+static void QueueReaction(std::uint32_t id, float relDeg, float mag, bool ragdoll, const char* kind,
+                          float retreatHeading = kNoDir)
 {
     // v11: the sensor stands down for the reaction we are about to play (user, 2026-09-07 — the stumble
     // itself was re-triggering the tier). Ragdolls are additionally covered by the knock state in PPBHook.
     ArmIK::SenseStandDown(id, ObjectHold::PushSenseStandDownS());
     auto* task = SKSE::GetTaskInterface();
     if (!task) return;
-    task->AddTask([id, relDeg, mag, ragdoll, retreatHeading]() {
+    task->AddTask([id, relDeg, mag, ragdoll, kind, retreatHeading]() {   // `kind` is always a string literal
         auto* f = RE::TESForm::LookupByID(id);
         auto* a = f ? f->As<RE::Actor>() : nullptr;
         if (!a) return;
@@ -871,6 +900,7 @@ static void QueueReaction(std::uint32_t id, float relDeg, float mag, bool ragdol
             }
             logger::info("PUSHREACT {:08X} RAGDOLL onset={} ({}) (accepted={})",
                          id, onset, what, ok ? 1 : 0);
+            if (ok) SendPushReactionOnMain(a, kind);     // 2.2.0: "dropped" / "sweeped"
             return;
         }
         // aggressor sits opposite the retreat bearing; normalise to the graph's 0..1
@@ -942,6 +972,7 @@ static void QueueReaction(std::uint32_t id, float relDeg, float mag, bool ragdol
         const bool ok = a->NotifyAnimationGraph("staggerStart");
         logger::info("PUSHREACT {:08X} STAGGER mag {:.2f} dir {:.2f} (aggressor {:+.0f}° from her "
                      "front; graph event accepted={}){}", id, mag, dir01, agg, ok ? 1 : 0, faced);
+        if (ok) SendPushReactionOnMain(a, kind);         // 2.2.0: "shove"
     });
 }
 
@@ -1846,7 +1877,7 @@ static int FireReactionTier(RE::Actor* actor, std::uint32_t id, const WalkState&
     const float faceHeading = (w.driving && (w.dirX * w.dirX + w.dirY * w.dirY) > 0.01f)
                             ? GetHeadingFromVector(RE::NiPoint3{ w.dirX, w.dirY, 0.f })
                             : GetHeadingFromVector(RE::NiPoint3{ mdx / mmag, mdy / mmag, 0.f });
-    QueueReaction(id, relD, mag, doRag, faceHeading);
+    QueueReaction(id, relD, mag, doRag, doRag ? "dropped" : "shove", faceHeading);
     // ★ v11.1 (user ruling 2026-09-07 evening): the tiers stay on HER displacement; the hand's travel is PRINTED
     // on every fire so the next session can judge from data whether they should ever wait for it.
     float tierHandU = -1.f; const char* tierAnchor = "none";
@@ -2469,7 +2500,7 @@ bool OnMotionDrivenCheck(RE::Actor* actor)
                              tripMode ? "judged against the ANIMATION (walking / moving)" : "judged against the floor",
                              nowS - lastTouch, attBuf, riseFrom, riseR0, riseR1);
                 RagFrame::Arm(id, -1.f, tracked ? w.slot : 6, "lifted", 0.f, true);
-                QueueReaction(id, 0.f, 1.f, true);
+                QueueReaction(id, 0.f, 1.f, true, "sweeped");
                 if (tracked && mc && PlannerActive(mc) && w.driving) {     // cannot be, by the walking gate — kept for safety
                     PlannerCtl(mc)->ClearPlannerDirectControl();
                     if (auto* task = SKSE::GetTaskInterface())
@@ -2710,7 +2741,7 @@ bool OnMotionDrivenCheck(RE::Actor* actor)
                          "{:.2f}s ago — she has nothing under her feet; ragdolling",
                          id, fall, nowS - w.lastPressureS);
             RagFrame::Arm(id, -1.f, w.slot, "unsupported", 0.f, true);
-            QueueReaction(id, 0.f, 1.f, true);
+            QueueReaction(id, 0.f, 1.f, true, "sweeped");   // the feet path (bFeetLift); ships off (pushStepFallRag 0)
             // a ragdoll and a driven walk must never overlap (the warp-into-walls bug)
             if (mc && PlannerActive(mc)) {
                 PlannerCtl(mc)->ClearPlannerDirectControl();
@@ -3281,6 +3312,13 @@ bool OnMotionDrivenCheck(RE::Actor* actor)
                      v5 ? 5 : 4, rel, w.budgetU, WalkIdealFor(mslotEff),
                      w.targetSpeedU, NormSpeedFor(actor, w.targetSpeedU),
                      w.rampTS, w.rampFloorE * 100.f, w.budgetU * ObjectHold::PushStepExtendMul());
+        // 2.2.0 PPB_PushReaction "push": one per ENGAGE (this block runs once, when the planner is taken), sent on the
+        // main thread. The planner control above has already been written, so the walk IS starting.
+        if (auto* task = SKSE::GetTaskInterface())
+            task->AddTask([id]() {
+                if (auto* f = RE::TESForm::LookupByID(id))
+                    if (auto* a = f->As<RE::Actor>()) SendPushReactionOnMain(a, "push");
+            });
         if (leverOn)
             logger::info("PUSHWALK {:08X} LEVER - crossed the {:.1f}u bar at {:.1f}u/s (norm {:.2f} of ref {:.0f}u/s) "
                          "-> speed {:.0f} u/s (band {:.0f}-{:.0f}), distance {:.1f}u of {:.1f}u cap, start-ramp x{:.2f}",

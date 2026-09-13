@@ -19,7 +19,7 @@ live capsule geometry, or to avoid the Papyrus VM.
 
 ## What changed in 2.2.0 — read this if you already integrated
 
-`GetBuildNumber()` now returns **20103**. `PpbTouchContact` is still the frozen 160-byte POD and the
+`GetBuildNumber()` now returns **20104**. `PpbTouchContact` is still the frozen 160-byte POD and the
 vtable is unchanged: nothing you already call moved.
 
 | build | change | what it means for you |
@@ -28,6 +28,7 @@ vtable is unchanged: nothing you already call moved.
 | 20102 | **`kSourceCount = 9`** | If you keep per-source arrays, size them by this, never by a literal. PPB itself published every head contact as `FINGER` for a while because of an `[8]`. |
 | 20103 | **The kiss** | The mouth probe meeting her upper lip raises `PPB_MouthLips` with strArg `"R\|LIPS\|HEAD"`: a third field **appended** to the usual `WAND\|STAGE`, `numArg` 1 at the start and 0 at the end. Entry 2.2 u, exit 3.2 u (hysteresis), so a held kiss does not flicker. Lips only; a kiss never raises `ENTER` or `THROAT`. Split on `\|` and tolerate extra fields. |
 | 20103 | **HEAD names reach the digest stream** | `face` / `head` / `mouth` used to be dropped from the packed digest strings. Gate on `>= 20103` if you branch on them. |
+| 20104 | **The push event: `PPB_PushReaction`** | One mod event per push reaction, separate from touch contacts: `push` (walk back engaged), `shove` (stumble), `dropped` (shove knockdown), `sweeped` (leg sweep knockdown). strArg `"<kind>\|<NPC name>"`, sender = the NPC. See **§2b**. |
 | — | **The gesture event bus** | `PPB_GestureUndressArm`, `PPB_GestureUndressEnd` (fires on cancel too, `done=0`), `PPB_GesturePlug` (`in`/`out`), `PPB_GestureDeviceEquipped`, `PPB_GestureGearEquipped`, `PPB_GestureClaim`; inbound `PPB_GestureSetPaused`. Field layouts at the top of `src/PpbTouchAPI.h`. The bus appends fields and never renumbers them. |
 | — | **`PPB_Native.SetGesturePaused(Bool)`** | Stand the gesture layer down while your scene places an actor's hands, so it doesn't read as a grab. |
 | — | **Feature switches** | A user can turn push/shove, its four outcomes, or the gestures off in `PPB.ini [Features]`. Touch contacts are never affected by these switches. |
@@ -165,6 +166,56 @@ Three events fire per contact: `PPB_TouchStart`, then `PPB_Touch` repeatedly whi
 `RegisterForModEvent` must be re-run every game load. Put it in `OnPlayerLoadGame()` on a
 player-alias script, or `OnInit()` plus `OnPlayerLoadGame()`. A quest script never receives
 `OnPlayerLoadGame` — use a `ReferenceAlias` filled with the player.
+
+---
+
+## 2b. The push event — `PPB_PushReaction` (build 20104)
+
+Touch contacts tell you a hand is **on** her. This event tells you what a push **did** to her. It is
+sent once per reaction, so it can be narrated directly: *"the player shoved Carmella"*.
+
+| | |
+|---|---|
+| event | `PPB_PushReaction` |
+| `sender` | the **NPC** the reaction happened to. The pusher is always the player. |
+| `strArg` | `"<kind>\|<NPC display name>"` |
+| `numArg` | `0` (reserved) |
+
+| `<kind>` | what happened |
+|---|---|
+| `push` | a push **walk** engaged: she started stepping back. Once per walk, not per frame. |
+| `shove` | a push made her **stumble** |
+| `dropped` | a **shove knocked her down** (ragdoll) |
+| `sweeped` | her **legs were swept**: both feet lifted off the floor and she went down |
+
+```papyrus
+Event OnPlayerLoadGame()
+    RegisterForModEvent("PPB_PushReaction", "OnPpbPushReaction")
+EndEvent
+
+Event OnPpbPushReaction(String eventName, String strArg, Float numArg, Form sender)
+    Actor npc = sender as Actor
+    Int bar = StringUtil.Find(strArg, "|")
+    String kind = strArg
+    If bar >= 0
+        kind = StringUtil.Substring(strArg, 0, bar)     ; "push" / "shove" / "dropped" / "sweeped"
+    EndIf
+EndEvent
+```
+
+**Guarantees:**
+
+- **Main thread, and only for a reaction the game accepted.** A refused knockdown sends nothing.
+- **One event per reaction.** A knockdown is `dropped` or `sweeped`, never also `shove`. A push that
+  walks her back and then builds sends `push`, then `shove` or `dropped`.
+- **Split on the first `|`.** Everything after it is the name. Tolerate extra trailing fields.
+- **Nothing is sent when the reaction can't happen:** its `PPB.ini [Features]` switch is off
+  (`bPushShove`, `bPushWalk`, `bPushStumble`, `bShoveRagdoll`, `bFeetLift`); she is in combat, a kill
+  move, busy in furniture, or in an OStim/SexLab scene. A leaning NPC can only produce `sweeped`.
+- **Reactions have a per-NPC cooldown** (1.5 s). `push` recurs once per new walk; throttle it on your
+  side if you narrate it.
+- **The touch contacts for the same moment still arrive as usual.** Decide which of the two your mod
+  narrates.
 
 ---
 
