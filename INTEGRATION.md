@@ -362,12 +362,16 @@ starts.
   - `gone`: the piece is no longer worn
   - `paused` / `disabled`
 
-A completed pull reads:
-1. `Grip` (R)
-2. `Grip` (L)
-3. `UndressArm`
-4. `GripEnd` (armed=1), just before
+A completed pull reads (VR-observed 2026-09-13):
+1. `Grip` (the first hand on the piece)
+2. `UndressArm` — the pull arms the moment the second hand grabs her, which can be a frame or two
+   **before** that hand's own `Grip` resolves a piece
+3. `Grip` (the second hand, already `armed`)
+4. `GripEnd` (armed=1, the pulling hand), in the same frame as
 5. `UndressEnd` (done=1, reason=done)
+6. `GripEnd` (armed=1, the holding hand, reason `gone`) once the piece is off
+
+Do not rely on both `Grip`s preceding `UndressArm`; treat `UndressArm` as authoritative on its own.
 
 ### `PPB_GestureUndressEnd` reasons
 
