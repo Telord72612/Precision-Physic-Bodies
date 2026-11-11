@@ -593,7 +593,7 @@ namespace PPBAPI {
     // GetApiFunction synchronously. GetApiFunction(1) -> IPpbTouchInterface1*.
     struct PpbMessage {
         enum : unsigned int { kGetTouchInterface = 0x50504254 };   // 'PPBT'
-        enum : unsigned int { kGetObservationInterface = 0x5050424F }; // 'PPBO', revision 1
+        enum : unsigned int { kGetObservationInterface = 0x5050424F }; // 'PPBO', revisions 1 and 2
         void* (*GetApiFunction)(unsigned int revision) = nullptr;
     };
 }

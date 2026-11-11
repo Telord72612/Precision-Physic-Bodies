@@ -1990,6 +1990,9 @@ namespace PpbApi {
 
     void OnFrame()
     {
+        if (g_frameGap && !g_pendingFrameTasks)
+            QueueObservationFrame(PPBAPI::kFrameStreamGap);
+
         // consume-and-clear the roster even when throttled/off — the pointers are
         // same-frame-only and must never survive into a later frame.
         RosterEntry roster[kMaxRoster];
