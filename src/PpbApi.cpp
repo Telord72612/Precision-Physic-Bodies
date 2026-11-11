@@ -350,19 +350,24 @@ namespace {
         }
         g_frameGap = false;
         ++g_pendingFrameTasks;
-        tasks->AddTask([event, contacts, recipients] {
+        try {
+            tasks->AddTask([event, contacts, recipients] {
+                --g_pendingFrameTasks;
+                // Old save data is never delivered into a new provider epoch.
+                auto delivered = event;
+                if (delivered.frame.sequence)
+                    delivered.frame.ageMs += NowMs() - delivered.publishedAtMs;
+                for (auto token : recipients) {
+                    if (event.frame.epoch != g_touchEpoch) break;
+                    if (token) g_frameSubscriptions.Deliver(token, delivered, contacts.data());
+                }
+                // Report overflow even if scanning stops before a later scan.
+                if (g_frameGap) QueueObservationFrame(PPBAPI::kFrameStreamGap);
+            });
+        } catch (...) {
             --g_pendingFrameTasks;
-            // Old save data is never delivered into a new provider epoch.
-            auto delivered = event;
-            if (delivered.frame.sequence)
-                delivered.frame.ageMs += NowMs() - delivered.publishedAtMs;
-            for (auto token : recipients) {
-                if (event.frame.epoch != g_touchEpoch) break;
-                if (token) g_frameSubscriptions.Deliver(token, delivered, contacts.data());
-            }
-            // Report overflow even if scanning was disabled and no later scan occurs.
-            if (g_frameGap) QueueObservationFrame(PPBAPI::kFrameStreamGap);
-        });
+            g_frameGap = true;
+        }
     }
 
     std::uint64_t g_lastTickMs = 0;
