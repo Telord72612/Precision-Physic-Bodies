@@ -24,6 +24,7 @@
 
 #include "PpbApi.h"
 #include "PpbTouchAPI.h"
+#include "PpbFrameSubscriptions.h"
 #include "CapFix.h"          // GrabDiag::ReadCapsuleWorldUSide / SlotHasLeftTwin / SlotLabel / SlotLiveChildren
 #include "Diag.h"
 #include "HandBox.h"         // HandBox::TipWorldU / BoxCenterWorldU
@@ -310,10 +311,64 @@ namespace {
     std::atomic<int> g_snapActive{ 0 };
     Snapshot         g_snapRaw[4];     // RAW
     std::atomic<int> g_snapRawActive{ 0 };
+    std::uint64_t g_touchEpoch = 1, g_touchSequence = 0, g_scanStartedMs = 0;
+    bool g_scanAvailable = false;  // metadata is read and published on the main thread
 
     // ── consumer callbacks ──────────────────────────────────────────────────
     PPBAPI::PpbTouchCallback g_cbs[kMaxCallbacks]{};
     int g_cbN = 0;
+
+    PpbFrameSubscriptions g_frameSubscriptions;
+    std::uint64_t g_surfaceSequence = 0;
+    unsigned int g_pendingFrameTasks = 0;
+    bool g_frameGap = false;
+
+    void QueueObservationFrame(unsigned int kind)
+    {
+        const auto recipients = g_frameSubscriptions.Recipients();
+        bool hasRecipient = false;
+        for (auto token : recipients) hasRecipient |= token != 0;
+        if (!hasRecipient) return;
+        auto* tasks = SKSE::GetTaskInterface();
+        if (!tasks || g_pendingFrameTasks >= 8) {
+            g_frameGap = true;
+            return;
+        }
+
+        PPBAPI::PpbFrameEvent event{};
+        event.size = sizeof(event);
+        event.kind = g_frameGap ? PPBAPI::kFrameStreamGap : kind;
+        event.frame.epoch = g_touchEpoch;
+        event.publishedAtMs = NowMs();
+        std::array<PpbTouchContact, kMaxContacts> contacts{};
+        if (kind == PPBAPI::kFramePublished && g_scanAvailable) {
+            const auto& snapshot = g_snap[g_snapActive.load(std::memory_order_acquire)];
+            event.frame.sequence = g_touchSequence;
+            event.frame.ageMs = event.publishedAtMs - g_scanStartedMs;
+            event.frame.available = event.frame.copied = snapshot.n;
+            std::copy_n(snapshot.c, snapshot.n, contacts.begin());
+        }
+        g_frameGap = false;
+        ++g_pendingFrameTasks;
+        try {
+            tasks->AddTask([event, contacts, recipients] {
+                --g_pendingFrameTasks;
+                // Old save data is never delivered into a new provider epoch.
+                auto delivered = event;
+                if (delivered.frame.sequence)
+                    delivered.frame.ageMs += NowMs() - delivered.publishedAtMs;
+                for (auto token : recipients) {
+                    if (event.frame.epoch != g_touchEpoch) break;
+                    if (token) g_frameSubscriptions.Deliver(token, delivered, contacts.data());
+                }
+                // Report overflow even if scanning stops before a later scan.
+                if (g_frameGap) QueueObservationFrame(PPBAPI::kFrameStreamGap);
+            });
+        } catch (...) {
+            --g_pendingFrameTasks;
+            g_frameGap = true;
+        }
+    }
 
     std::uint64_t g_lastTickMs = 0;
     int g_garmentChordN[2] = { 0, 0 };   // this-scan chord counts (tail, hair) for naming
@@ -1935,6 +1990,9 @@ namespace PpbApi {
 
     void OnFrame()
     {
+        if (g_frameGap && !g_pendingFrameTasks)
+            QueueObservationFrame(PPBAPI::kFrameStreamGap);
+
         // consume-and-clear the roster even when throttled/off — the pointers are
         // same-frame-only and must never survive into a later frame.
         RosterEntry roster[kMaxRoster];
@@ -1950,6 +2008,10 @@ namespace PpbApi {
         // from this tick, so it must be able to run with the contact engine off. Assemble the
         // probes for it, then leave — none of the contact/digest/event machinery below runs.
         const bool apiOn = ObjectHold::ApiTouchEnabled();
+        if (!apiOn && g_scanAvailable) {
+            g_scanAvailable = false;
+            QueueObservationFrame(PPBAPI::kFrameInvalidated);
+        }
         if (!apiOn && !ObjectHold::OrificeEnabled()) return;
         const std::uint64_t now = NowMs();
         const float hz = ObjectHold::ApiHz();
@@ -2248,6 +2310,10 @@ namespace PpbApi {
         }
 
         PublishSnapshot();
+        ++g_touchSequence;
+        g_scanStartedMs = now;
+        g_scanAvailable = true;
+        QueueObservationFrame(PPBAPI::kFramePublished);
     }
 
     // ── MOUTH GATE bridge (2026-07-31) ──────────────────────────────────────────────────
@@ -2425,6 +2491,9 @@ namespace PpbApi {
 
     void ClearOnLoad()
     {
+        ++g_touchEpoch;
+        g_touchSequence = 0;
+        g_scanAvailable = false;
         for (auto& L : g_engLatch) L.live = false;   // FormIDs recycle across saves
         g_engN = 0;
         for (Contact& ct : g_contacts) ct.live = false;
@@ -2434,6 +2503,7 @@ namespace PpbApi {
         g_bodyMissN = 0;
         g_rosterN = 0;
         PublishSnapshot();
+        QueueObservationFrame(PPBAPI::kFrameInvalidated);
     }
 
     // ── the native interface object ─────────────────────────────────────────
@@ -2511,6 +2581,115 @@ namespace PpbApi {
     };
     static TouchInterfaceImpl g_iface;
 
+    class ObservationInterfaceImpl : public PPBAPI::IPpbObservationInterface1 {
+    public:
+        bool ReadBodySurface(unsigned int id, int slot, bool left, int child,
+                             PPBAPI::PpbBodySurface* out) override {
+            if (!out || slot < 0 || slot >= kSlots || child < 0) return false;
+            auto* actor = RE::TESForm::LookupByID<RE::Actor>(id);
+            if (!actor || actor == RE::PlayerCharacter::GetSingleton() || !SkeletonOf(actor)) return false;
+            const bool male = IsMaleActor(actor);
+            PPBAPI::PpbBodySurface surface{};
+            if (!GrabDiag::ReadCapsuleWorldUSide(actor, slot, left, child, surface.endpointA,
+                                                surface.endpointB, &surface.radius)) return false;
+            if (!std::isfinite(surface.radius) || surface.radius <= 0.f) return false;
+            for (int axis = 0; axis < 3; ++axis)
+                if (!std::isfinite(surface.endpointA[axis]) || !std::isfinite(surface.endpointB[axis]))
+                    return false;
+            surface.region = RegionOfPart(slot, child);
+            const bool beast = GrabDiag::IsBeastActorForNames(actor);
+            // Beast head child indices have a different anatomical layout.
+            surface.subRegion = beast && slot == 3 ? PPBAPI::kSubNone : SubRegionOfPart(slot, child, male);
+            BodyPartName(slot, left, child, surface.bodyPart, sizeof(surface.bodyPart),
+                         male, beast);
+            *out = surface;
+            return true;
+        }
+
+        bool CopyTouchFrame(bool raw, PpbTouchContact* out, int capacity,
+                            PPBAPI::PpbTouchFrame* frame) override {
+            if (!frame || capacity < 0 || (capacity && !out)) return false;
+            *frame = {};
+            frame->epoch = g_touchEpoch;
+            if (!g_scanAvailable || !ObjectHold::ApiTouchEnabled()) return true;
+            const Snapshot& s = raw ? g_snapRaw[g_snapRawActive.load(std::memory_order_acquire)]
+                                    : g_snap[g_snapActive.load(std::memory_order_acquire)];
+            frame->sequence = g_touchSequence;
+            frame->ageMs = NowMs() - g_scanStartedMs;
+            frame->available = s.n;
+            frame->copied = s.n < capacity ? s.n : capacity;
+            if (frame->copied) std::memcpy(out, s.c, sizeof(*out) * frame->copied);
+            return true;
+        }
+    };
+    static ObservationInterfaceImpl g_observations;
+
+    class ObservationInterface2Impl : public PPBAPI::IPpbObservationInterface2 {
+    public:
+        unsigned int GetCapabilities() const override
+        {
+            return PPBAPI::kObservationSurfaceBatch | PPBAPI::kObservationGroupedFrames |
+                   PPBAPI::kObservationRemovableFrames;
+        }
+
+        bool CopySurfaceFrame(const PPBAPI::PpbSurfaceQuery* queries, unsigned int count,
+                              PPBAPI::PpbSurfaceSample* output, unsigned int capacity,
+                              PPBAPI::PpbSurfaceFrame* frame) override
+        {
+            if (!frame) return false;
+            *frame = {};
+            frame->queried = count;
+            if (count > 64 || capacity < count || (count && (!queries || !output)) ||
+                g_surfaceSequence == (std::numeric_limits<std::uint64_t>::max)())
+                return false;
+            std::array<PPBAPI::PpbSurfaceQuery, 64> copiedQueries{};
+            if (count) std::copy_n(queries, count, copiedQueries.begin());
+            frame->epoch = g_touchEpoch;
+            frame->sequence = ++g_surfaceSequence;
+            frame->readBeginMs = NowMs();
+            for (unsigned int i = 0; i < count; ++i) {
+                const auto& query = copiedQueries[i];
+                PPBAPI::PpbSurfaceSample sample{};
+                sample.query = query;
+                const bool sideSupported = query.leftTwin == 0 ||
+                    (query.leftTwin == 1 && GrabDiag::SlotHasLeftTwin(query.slot));
+                if (sideSupported)
+                    sample.valid = g_observations.ReadBodySurface(query.actorFormId,
+                        query.slot, query.leftTwin != 0, query.child, &sample.surface);
+                output[i] = sample;
+            }
+            frame->readEndMs = NowMs();
+            frame->copied = count;
+            return true;
+        }
+
+        bool CopyTouchFrame(bool raw, PpbTouchContact* output, int capacity,
+                            PPBAPI::PpbTouchFrame* frame) override
+        {
+            return g_observations.CopyTouchFrame(raw, output, capacity, frame);
+        }
+
+        unsigned long long SubscribeFrames(PPBAPI::PpbFrameCallback callback,
+                                            void* context) override
+        {
+            if (!SKSE::GetTaskInterface()) return 0;
+            return g_frameSubscriptions.Add(callback, context);
+        }
+
+        PPBAPI::PpbRemovalState RemoveFrameSubscription(unsigned long long token) override
+        {
+            return g_frameSubscriptions.Remove(token);
+        }
+    };
+    static ObservationInterface2Impl g_observations2;
+
+    static void* GetObservationInterface(unsigned int revision)
+    {
+        if (revision == 1) return static_cast<PPBAPI::IPpbObservationInterface1*>(&g_observations);
+        if (revision == 2) return static_cast<PPBAPI::IPpbObservationInterface2*>(&g_observations2);
+        return nullptr;
+    }
+
     static void* GetApiFunction(unsigned int revision)
     {
         return revision == 1 ? static_cast<PPBAPI::IPpbTouchInterface1*>(&g_iface) : nullptr;
@@ -2518,9 +2697,14 @@ namespace PpbApi {
 
     void OnPluginMessage(SKSE::MessagingInterface::Message* msg)
     {
-        if (!msg || msg->type != PPBAPI::PpbMessage::kGetTouchInterface || !msg->data) return;
+        if (!msg || !msg->data) return;
         if (msg->dataLen < sizeof(PPBAPI::PpbMessage)) return;
         auto* req = static_cast<PPBAPI::PpbMessage*>(msg->data);
+        if (msg->type == PPBAPI::PpbMessage::kGetObservationInterface) {
+            req->GetApiFunction = &GetObservationInterface;
+            return;
+        }
+        if (msg->type != PPBAPI::PpbMessage::kGetTouchInterface) return;
         req->GetApiFunction = &GetApiFunction;
         logger::info("API: touch interface handed to '{}' (revision query pattern).",
                      msg->sender ? msg->sender : "<unknown>");

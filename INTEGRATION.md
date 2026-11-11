@@ -1,5 +1,19 @@
 # Integrating with the PPB Touch API
 
+## Proposed optional observation revision 2
+
+Request `PpbMessage::kGetObservationInterface`, then call the returned getter with revision 2. A null result means the service is unavailable. The original touch interface and observation revision 1 remain separately accessible. All revision 2 calls are main-thread only. `GetCapabilities()` describes batch surface reads, grouped frame observations and removable frame subscriptions.
+
+`CopySurfaceFrame` reads up to 64 requested actor/slot/side/child capsules in one main-thread call. Each result has independent validity and includes the actor-specific anatomical name and current world geometry in Skyrim units. The frame records the provider load epoch, a unique read sequence and the beginning/end of the read interval. Capacity must cover the requested count. No partial buffer is written when capacity is insufficient. This is a live read interval. It provides no body-lifetime lease, completed solver tick, model generation or cross-world contact witness. Consumers requiring those guarantees must decline that feature until a qualified provider supplies them.
+
+`CopyTouchFrame` preserves the digest/raw reporting semantics of observation revision 1. A completed empty scan differs from an unavailable scan. Neither a retained `engineContact` flag nor a scan sequence identifies a particular new PLANCK hit.
+
+`SubscribeFrames` returns an owned token for completed digest scans and invalidation. Each callback receives its own copied frame and records, valid for that invocation. Delivery uses SKSE main tasks after scanning. The service has eight registrations and at most eight pending copied publications. Overflow produces `kFrameStreamGap`, including when scanning stops before another scan. A gap invalidates continuity. A load prevents queued old-epoch samples from reaching remaining recipients. Subscribers added after a publication do not receive it.
+
+Call `RemoveFrameSubscription` before freeing callback code or context. `Drained` means no further invocation can use that registration. Removal within its own callback returns `Pending`, followed by `Drained` after returning. A retired token cannot remove a replacement subscription. New frame subscriptions have no effect on the legacy permanent callback list. The standalone lifecycle regression builds from `src/test/frame_subscriptions_tests.cpp` with the `src` include directory.
+
+PPB owns anatomy, fitting and qualified touch evidence. HIGGS supplies hand state, action selection and physical hand operations. PLANCK supplies NPC body lifetime, applied geometry and its physical-hit decision path. Body Slots uses logical regions with optional anatomical evidence. Revision 2 does not migrate PPB's physical backend or assign its private worlds to PLANCK. The proposed integration follows the [maintained cooperation concept](https://github.com/Vhodnoylogin/body-pouches/blob/main/docs/trinity-synergy/concept-en.md).
+
 **Precision Physic Bodies (PPB) tells your mod when the player touches an NPC, where, with what,
 and for how long.** This document is everything you need to consume it. No prior PPB knowledge
 assumed.
@@ -493,6 +507,16 @@ void AcquirePPB() {
 `GetApiFunction` null ⇒ PPB is not installed. `GetApiFunction(1)` returning null ⇒ PPB does not
 speak revision 1 (it will, for the foreseeable future). **Both are normal.** Ship a fallback path;
 never assume PPB is there.
+
+### Reading a named NPC surface or a dated touch scan
+
+Request `kGetObservationInterface` with a fresh `PpbMessage{}` using the same handshake above. If its reply function is present, request revision 1 and cast the returned pointer to `PPBAPI::IPpbObservationInterface1*`. Both methods run on the main thread. Older PPB builds leave the request unanswered.
+
+`ReadBodySurface(actorId, slot, leftTwin, child, &surface)` reads one body capsule in Skyrim world units and returns its actor-specific part name, region and subregion. For example, a mod can use the same geometry and side label as PPB when positioning an interaction near a forearm. The call returns false for the player, unsupported NPCs, missing sides or unavailable geometry. On failure the output is untouched. A readable capsule may be disabled for collision at the current level of detail. Beast head layouts have actor-specific names; their finer subregion is reported as `kSubNone`. Read again when the target moves or its model changes. The coordinates describe the shape at the time of the read; the query supplies no physics-step or persistent surface identity.
+
+`CopyTouchFrame(raw, contacts, capacity, &frame)` returns the last completed scan for either existing stream. Compare `(epoch, sequence)` to detect a new sample. A load or new game changes the epoch. Sequence zero means that no sample is available, including while touch reporting is disabled. A positive sequence with zero records means that the scan published an empty stream. `ageMs` measures time from the start of that scan, including time spent collecting it. If `copied < available`, the caller's buffer omitted records. A valid size query uses a null buffer and zero capacity. Grouping and dwell follow the selected stream. An engine-contact flag can carry forward evidence for the same actor and hand across scans. The frame number dates the publication; a consumer requiring an exact child or physics step needs separate evidence. A read inside a touch callback sees the previous completed scan.
+
+Consumers can use these observations to locate an interaction. HIGGS arbitrates hand actions and PLANCK interprets its physical hits. An anatomical observation alone grants neither operation.
 
 ### Receiving contacts
 

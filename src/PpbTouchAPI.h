@@ -494,10 +494,106 @@ namespace PPBAPI {
         virtual int  WeaponEdgeOf(int weaponClass) = 0;                                  // 15
     };
 
+    // Optional main-thread observation interface, queried separately from the touch API.
+    struct PpbBodySurface {
+        float endpointA[3], endpointB[3], radius;  // Skyrim world units
+        int region, subRegion;
+        char bodyPart[48];                       // actor-specific part, including limb side
+    };
+    static_assert(sizeof(PpbBodySurface) == 84);
+
+    struct PpbTouchFrame {
+        unsigned long long epoch;                // changes on load/new game
+        unsigned long long sequence;             // 0 means no available sample
+        unsigned long long ageMs;                // time since PPB started the sampled scan
+        unsigned int available;                  // published records before caller truncation
+        unsigned int copied;
+    };
+    static_assert(sizeof(PpbTouchFrame) == 32);
+
+    class IPpbObservationInterface1 {
+    public:
+        // Resolved at call time. True only for a readable capsule of a mapped NPC.
+        virtual bool ReadBodySurface(unsigned int actorFormId, int slot, bool leftTwin,
+                                     int child, PpbBodySurface* out) = 0;
+        // Copy a completed digest or raw scan. Capacity 0 permits a null buffer.
+        // False for invalid arguments. A valid call may report sequence 0 or an empty scan.
+        virtual bool CopyTouchFrame(bool raw, PpbTouchContact* contacts, int capacity,
+                                    PpbTouchFrame* frame) = 0;
+    };
+
+    // Revision 2 is separately discovered. All calls and callbacks are main-thread only.
+    // Existing touch/observation vtables and reporting semantics remain unchanged.
+    enum class PpbRemovalState : unsigned int { Unknown, Pending, Drained };
+
+    enum : unsigned int {
+        kObservationSurfaceBatch = 1u << 0,
+        kObservationGroupedFrames = 1u << 1,
+        kObservationRemovableFrames = 1u << 2,
+        kFramePublished = 1,
+        kFrameInvalidated = 2,
+        kFrameStreamGap = 3
+    };
+
+    struct PpbSurfaceQuery {
+        unsigned int actorFormId;
+        int slot, leftTwin, child;
+    };
+
+    struct PpbSurfaceSample {
+        PpbSurfaceQuery query;
+        unsigned int valid;
+        PpbBodySurface surface;
+    };
+
+    struct PpbSurfaceFrame {
+        unsigned long long epoch, sequence, readBeginMs, readEndMs;
+        unsigned int queried, copied;
+        // Read interval only. No physics tick, body generation or cross-world witness.
+    };
+
+    struct PpbFrameEvent {
+        unsigned int size, kind;
+        PpbTouchFrame frame;
+        unsigned long long publishedAtMs;
+        // contacts[frame.copied] is a callback-local copied DIGEST scan.
+        // Grouped/dwell-filtered records retain legacy engineContact semantics.
+    };
+
+    static_assert(sizeof(PpbSurfaceQuery) == 16);
+    static_assert(sizeof(PpbSurfaceSample) == 104);
+    static_assert(sizeof(PpbSurfaceFrame) == 40);
+    static_assert(sizeof(PpbFrameEvent) == 48);
+
+    using PpbFrameCallback = void (*)(const PpbFrameEvent*, const PpbTouchContact*, void*);
+
+    class IPpbObservationInterface2 {
+    public:
+        virtual unsigned int GetCapabilities() const = 0;
+
+        // One bounded main-thread read, up to 64 requested capsules. Every output
+        // has its own validity. Samples are live read evidence, not lifetime leases.
+        virtual bool CopySurfaceFrame(const PpbSurfaceQuery*, unsigned int count,
+                                      PpbSurfaceSample*, unsigned int capacity,
+                                      PpbSurfaceFrame*) = 0;
+
+        virtual bool CopyTouchFrame(bool raw, PpbTouchContact*, int capacity,
+                                    PpbTouchFrame*) = 0;
+
+        // Returns an owned token, or 0 when unavailable/full. Delivery is deferred
+        // to SKSE main tasks, outside the scan. Remove before freeing code/context.
+        virtual unsigned long long SubscribeFrames(PpbFrameCallback, void* context) = 0;
+
+        // Pending when called from its own callback. Call again after returning.
+        // A retired token cannot name a replacement registration.
+        virtual PpbRemovalState RemoveFrameSubscription(unsigned long long token) = 0;
+    };
+
     // The messaging request. Dispatch to sender "PPB" with this struct as data; PPB fills
     // GetApiFunction synchronously. GetApiFunction(1) -> IPpbTouchInterface1*.
     struct PpbMessage {
         enum : unsigned int { kGetTouchInterface = 0x50504254 };   // 'PPBT'
+        enum : unsigned int { kGetObservationInterface = 0x5050424F }; // 'PPBO', revisions 1 and 2
         void* (*GetApiFunction)(unsigned int revision) = nullptr;
     };
 }
