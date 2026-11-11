@@ -2528,7 +2528,6 @@ namespace PpbApi {
             auto* actor = RE::TESForm::LookupByID<RE::Actor>(id);
             if (!actor || actor == RE::PlayerCharacter::GetSingleton() || !SkeletonOf(actor)) return false;
             const bool male = IsMaleActor(actor);
-            if (male && !ObjectHold::MaleGeometryOn()) return false;
             PPBAPI::PpbBodySurface surface{};
             if (!GrabDiag::ReadCapsuleWorldUSide(actor, slot, left, child, surface.endpointA,
                                                 surface.endpointB, &surface.radius)) return false;
@@ -2537,9 +2536,11 @@ namespace PpbApi {
                 if (!std::isfinite(surface.endpointA[axis]) || !std::isfinite(surface.endpointB[axis]))
                     return false;
             surface.region = RegionOfPart(slot, child);
-            surface.subRegion = SubRegionOfPart(slot, child, male);
+            const bool beast = GrabDiag::IsBeastActorForNames(actor);
+            // Beast head child indices have a different anatomical layout.
+            surface.subRegion = beast && slot == 3 ? PPBAPI::kSubNone : SubRegionOfPart(slot, child, male);
             BodyPartName(slot, left, child, surface.bodyPart, sizeof(surface.bodyPart),
-                         male, GrabDiag::IsBeastActorForNames(actor));
+                         male, beast);
             *out = surface;
             return true;
         }
