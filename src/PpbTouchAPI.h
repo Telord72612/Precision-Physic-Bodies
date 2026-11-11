@@ -494,10 +494,39 @@ namespace PPBAPI {
         virtual int  WeaponEdgeOf(int weaponClass) = 0;                                  // 15
     };
 
+    // Optional main-thread observation interface, queried separately from the touch API.
+    struct PpbBodySurface {
+        float endpointA[3], endpointB[3], radius;  // Skyrim world units
+        int region, subRegion;
+        char bodyPart[48];                       // actor-specific part, including limb side
+    };
+    static_assert(sizeof(PpbBodySurface) == 84);
+
+    struct PpbTouchFrame {
+        unsigned long long epoch;                // changes on load/new game
+        unsigned long long sequence;             // 0 means no available sample
+        unsigned long long ageMs;                // time since PPB started the sampled scan
+        unsigned int available;                  // published records before caller truncation
+        unsigned int copied;
+    };
+    static_assert(sizeof(PpbTouchFrame) == 32);
+
+    class IPpbObservationInterface1 {
+    public:
+        // Resolved at call time. True only for a readable capsule of a mapped NPC.
+        virtual bool ReadBodySurface(unsigned int actorFormId, int slot, bool leftTwin,
+                                     int child, PpbBodySurface* out) = 0;
+        // Copy a completed digest or raw scan. Capacity 0 permits a null buffer.
+        // False for invalid arguments. A valid call may report sequence 0 or an empty scan.
+        virtual bool CopyTouchFrame(bool raw, PpbTouchContact* contacts, int capacity,
+                                    PpbTouchFrame* frame) = 0;
+    };
+
     // The messaging request. Dispatch to sender "PPB" with this struct as data; PPB fills
     // GetApiFunction synchronously. GetApiFunction(1) -> IPpbTouchInterface1*.
     struct PpbMessage {
         enum : unsigned int { kGetTouchInterface = 0x50504254 };   // 'PPBT'
+        enum : unsigned int { kGetObservationInterface = 0x5050424F }; // 'PPBO', revision 1
         void* (*GetApiFunction)(unsigned int revision) = nullptr;
     };
 }

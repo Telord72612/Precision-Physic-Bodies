@@ -310,6 +310,8 @@ namespace {
     std::atomic<int> g_snapActive{ 0 };
     Snapshot         g_snapRaw[4];     // RAW
     std::atomic<int> g_snapRawActive{ 0 };
+    std::uint64_t g_touchEpoch = 1, g_touchSequence = 0, g_scanStartedMs = 0;
+    bool g_scanAvailable = false;  // metadata is read and published on the main thread
 
     // ── consumer callbacks ──────────────────────────────────────────────────
     PPBAPI::PpbTouchCallback g_cbs[kMaxCallbacks]{};
@@ -1950,6 +1952,7 @@ namespace PpbApi {
         // from this tick, so it must be able to run with the contact engine off. Assemble the
         // probes for it, then leave — none of the contact/digest/event machinery below runs.
         const bool apiOn = ObjectHold::ApiTouchEnabled();
+        if (!apiOn) g_scanAvailable = false;
         if (!apiOn && !ObjectHold::OrificeEnabled()) return;
         const std::uint64_t now = NowMs();
         const float hz = ObjectHold::ApiHz();
@@ -2248,6 +2251,9 @@ namespace PpbApi {
         }
 
         PublishSnapshot();
+        ++g_touchSequence;
+        g_scanStartedMs = now;
+        g_scanAvailable = true;
     }
 
     // ── MOUTH GATE bridge (2026-07-31) ──────────────────────────────────────────────────
@@ -2425,6 +2431,9 @@ namespace PpbApi {
 
     void ClearOnLoad()
     {
+        ++g_touchEpoch;
+        g_touchSequence = 0;
+        g_scanAvailable = false;
         for (auto& L : g_engLatch) L.live = false;   // FormIDs recycle across saves
         g_engN = 0;
         for (Contact& ct : g_contacts) ct.live = false;
@@ -2511,6 +2520,53 @@ namespace PpbApi {
     };
     static TouchInterfaceImpl g_iface;
 
+    class ObservationInterfaceImpl : public PPBAPI::IPpbObservationInterface1 {
+    public:
+        bool ReadBodySurface(unsigned int id, int slot, bool left, int child,
+                             PPBAPI::PpbBodySurface* out) override {
+            if (!out || slot < 0 || slot >= kSlots || child < 0) return false;
+            auto* actor = RE::TESForm::LookupByID<RE::Actor>(id);
+            if (!actor || actor == RE::PlayerCharacter::GetSingleton() || !SkeletonOf(actor)) return false;
+            const bool male = IsMaleActor(actor);
+            if (male && !ObjectHold::MaleGeometryOn()) return false;
+            PPBAPI::PpbBodySurface surface{};
+            if (!GrabDiag::ReadCapsuleWorldUSide(actor, slot, left, child, surface.endpointA,
+                                                surface.endpointB, &surface.radius)) return false;
+            if (!std::isfinite(surface.radius) || surface.radius <= 0.f) return false;
+            for (int axis = 0; axis < 3; ++axis)
+                if (!std::isfinite(surface.endpointA[axis]) || !std::isfinite(surface.endpointB[axis]))
+                    return false;
+            surface.region = RegionOfPart(slot, child);
+            surface.subRegion = SubRegionOfPart(slot, child, male);
+            BodyPartName(slot, left, child, surface.bodyPart, sizeof(surface.bodyPart),
+                         male, GrabDiag::IsBeastActorForNames(actor));
+            *out = surface;
+            return true;
+        }
+
+        bool CopyTouchFrame(bool raw, PpbTouchContact* out, int capacity,
+                            PPBAPI::PpbTouchFrame* frame) override {
+            if (!frame || capacity < 0 || (capacity && !out)) return false;
+            *frame = {};
+            frame->epoch = g_touchEpoch;
+            if (!g_scanAvailable || !ObjectHold::ApiTouchEnabled()) return true;
+            const Snapshot& s = raw ? g_snapRaw[g_snapRawActive.load(std::memory_order_acquire)]
+                                    : g_snap[g_snapActive.load(std::memory_order_acquire)];
+            frame->sequence = g_touchSequence;
+            frame->ageMs = NowMs() - g_scanStartedMs;
+            frame->available = s.n;
+            frame->copied = s.n < capacity ? s.n : capacity;
+            if (frame->copied) std::memcpy(out, s.c, sizeof(*out) * frame->copied);
+            return true;
+        }
+    };
+    static ObservationInterfaceImpl g_observations;
+
+    static void* GetObservationInterface(unsigned int revision)
+    {
+        return revision == 1 ? static_cast<PPBAPI::IPpbObservationInterface1*>(&g_observations) : nullptr;
+    }
+
     static void* GetApiFunction(unsigned int revision)
     {
         return revision == 1 ? static_cast<PPBAPI::IPpbTouchInterface1*>(&g_iface) : nullptr;
@@ -2518,9 +2574,14 @@ namespace PpbApi {
 
     void OnPluginMessage(SKSE::MessagingInterface::Message* msg)
     {
-        if (!msg || msg->type != PPBAPI::PpbMessage::kGetTouchInterface || !msg->data) return;
+        if (!msg || !msg->data) return;
         if (msg->dataLen < sizeof(PPBAPI::PpbMessage)) return;
         auto* req = static_cast<PPBAPI::PpbMessage*>(msg->data);
+        if (msg->type == PPBAPI::PpbMessage::kGetObservationInterface) {
+            req->GetApiFunction = &GetObservationInterface;
+            return;
+        }
+        if (msg->type != PPBAPI::PpbMessage::kGetTouchInterface) return;
         req->GetApiFunction = &GetApiFunction;
         logger::info("API: touch interface handed to '{}' (revision query pattern).",
                      msg->sender ? msg->sender : "<unknown>");

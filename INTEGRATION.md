@@ -494,6 +494,16 @@ void AcquirePPB() {
 speak revision 1 (it will, for the foreseeable future). **Both are normal.** Ship a fallback path;
 never assume PPB is there.
 
+### Reading a named NPC surface or a dated touch scan
+
+Request `kGetObservationInterface` with a fresh `PpbMessage{}` using the same handshake above. If its reply function is present, request revision 1 and cast the returned pointer to `PPBAPI::IPpbObservationInterface1*`. Both methods run on the main thread. Older PPB builds leave the request unanswered.
+
+`ReadBodySurface(actorId, slot, leftTwin, child, &surface)` reads one body capsule in Skyrim world units and returns its actor-specific part name, region and subregion. For example, a mod can use the same geometry and side label as PPB when positioning an interaction near a forearm. The call returns false for the player, unsupported NPCs, missing sides or unavailable geometry. On failure the output is untouched. Read again when the target moves or its model changes. The coordinates describe the shape at the time of the read; the query supplies no physics-step or persistent surface identity.
+
+`CopyTouchFrame(raw, contacts, capacity, &frame)` returns the last completed scan for either existing stream. Compare `(epoch, sequence)` to detect a new sample. A load or new game changes the epoch. Sequence zero means that no sample is available, including while touch reporting is disabled. A positive sequence with zero records means that the scan published an empty stream. `ageMs` measures time from the start of that scan, including time spent collecting it. If `copied < available`, the caller's buffer omitted records. A valid size query uses a null buffer and zero capacity. Existing grouping, dwell and engine-contact semantics apply. A read inside a touch callback sees the previous completed scan.
+
+Consumers can use these observations to locate an interaction. HIGGS arbitrates hand actions and PLANCK interprets its physical hits. An anatomical observation alone grants neither operation.
+
 ### Receiving contacts
 
 Either register a callback:
